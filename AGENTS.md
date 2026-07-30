@@ -25,7 +25,7 @@ pnpm tauri dev                           # Tauri dev server
 pawflash/
 ├── Cargo.toml                        → workspace: core, pawflash, src-tauri
 ├── crates/pawflash-core/             → domain: flash/, force_fastboot/,
-│                                        scatter_parser/, format/, output/
+│                                        scatter_parser/, output/
 ├── src-tauri/                        → Tauri v2 backend (lib.rs has commands, ProgressEvent)
 ├── src/                              → React 19 + Tailwind v4 frontend
 │   ├── components/{console,layout,tabs,ui}/

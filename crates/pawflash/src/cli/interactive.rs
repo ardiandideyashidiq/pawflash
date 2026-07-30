@@ -1,8 +1,9 @@
 use std::path::Path;
 use std::time::Duration;
 
-use miette::{Context, IntoDiagnostic, Result};
 use inquire::{Confirm, Select};
+use miette::{Context, IntoDiagnostic, Result};
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use pawflash_core::flash::executor::{BootTarget, FlashExecutor};
@@ -129,7 +130,7 @@ pub async fn run(
 
     let mut executor = output::spinner::run_with_spinner(
         "Connecting to fastboot device (60s timeout)...",
-        FlashExecutor::wait_for_device(Duration::from_secs(60)),
+        FlashExecutor::wait_for_device(Duration::from_secs(60), CancellationToken::default()),
     )
     .await?;
 

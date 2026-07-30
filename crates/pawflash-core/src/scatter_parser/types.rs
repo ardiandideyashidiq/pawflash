@@ -102,10 +102,10 @@ pub struct ScatterPartition {
 }
 
 impl ScatterPartition {
-    /// End offset (`linear_start` + size).
+    /// End offset (`linear_start` + size), saturating to avoid silent wrap.
     #[must_use]
     pub const fn end(&self) -> i64 {
-        self.linear_start + self.size
+        self.linear_start.saturating_add(self.size)
     }
 
     /// Base partition name without slot suffix.

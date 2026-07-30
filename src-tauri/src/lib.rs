@@ -75,7 +75,7 @@ async fn get_device_info() -> Result<DeviceInfo, String> {
     warn!(error = %e, "get_all_vars failed");
     e.to_string()
   })?;
-  let serial = vars.get("serial").cloned();
+  let serial = vars.get("serialno").cloned();
   let connected = true;
   info!(connected, serial = serial.as_deref().unwrap_or("?"), "device info retrieved");
   Ok(DeviceInfo { connected, serial, vars })

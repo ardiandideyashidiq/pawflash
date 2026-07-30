@@ -25,13 +25,13 @@ impl<T: FlashTransport> FlashExecutor<T> {
     /// # Errors
     /// Returns an error if the reboot command fails.
     pub async fn reboot(&mut self) -> Result<()> {
-        self.fb.reboot().await.map(drop)
+        self.fb.reboot().await
     }
 
     /// # Errors
     /// Returns an error if the reboot command fails.
     pub async fn reboot_to(&mut self, target: BootTarget) -> Result<()> {
-        self.fb.reboot_to(target.as_str()).await.map(drop)
+        self.fb.reboot_to(target.as_str()).await
     }
 
     /// # Errors

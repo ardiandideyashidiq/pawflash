@@ -131,9 +131,13 @@ impl<T: FlashTransport> FlashExecutor<T> {
         } else {
             info!(total, "starting flash execution");
         }
-        let max_download = self.fb.get_var("max-download-size").await.ok()
-            .and_then(|s| fastboot_protocol::protocol::parse_u32(&s).ok())
-            .unwrap_or(256 * 1024 * 1024);
+        let max_download = match parse_max_download(&mut self.fb).await {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(error = %e, "falling back to default max-download-size");
+                256 * 1024 * 1024
+            }
+        };
         for action in &all_actions {
             let partition = &action.partition;
             info!(%partition, "Writing partition");

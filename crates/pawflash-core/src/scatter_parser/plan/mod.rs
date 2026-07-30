@@ -87,40 +87,57 @@ fn build_partition_actions<'a>(
     (actions, skipped)
 }
 
+/// Holds the working data that `finalize_plan` mutates to produce a [`FlashPlan`].
+///
+/// Collapsed from the previous 7-parameter signature so callers self-document
+/// via field names and ordering mistakes become impossible.
+pub(crate) struct PlanFinalizationContext<'a> {
+    pub scatter: &'a ScatterFile,
+    pub actions: Vec<FlashAction>,
+    pub skipped: Vec<SkippedPartition>,
+    pub warnings: Vec<String>,
+    pub errors: Vec<String>,
+    pub explicit_names: &'a BTreeSet<String>,
+    pub available_names: &'a BTreeSet<String>,
+    pub selected_parts: &'a [ScatterPartition],
+}
+
 #[must_use]
 fn finalize_plan(
+    ctx: &mut PlanFinalizationContext,
     options: &FlashPlanOptions,
-    scatter: &ScatterFile,
-    actions: &mut Vec<FlashAction>,
-    skipped: &mut Vec<SkippedPartition>,
-    logs: (&mut Vec<String>, &mut Vec<String>),
-    names: (&BTreeSet<String>, &BTreeSet<String>),
-    selected_parts: &[ScatterPartition],
 ) -> FlashPlan {
-    let (warnings, errors) = logs;
-    let (explicit_names, available_names) = names;
+    let PlanFinalizationContext {
+        scatter,
+        warnings,
+        errors,
+        explicit_names,
+        available_names,
+        selected_parts,
+        ..
+    } = ctx;
     warn_for_missing_selective_requests(
         options.mode,
-        actions,
+        &ctx.actions,
         explicit_names,
         available_names,
         warnings,
     );
 
-    synthesize_slot_actions_if_needed(selected_parts, actions);
+    synthesize_slot_actions_if_needed(selected_parts, &mut ctx.actions);
 
-    apply_exclude_filter(actions, skipped, warnings, &options.exclude, available_names);
+    apply_exclude_filter(&mut ctx.actions, &mut ctx.skipped, warnings, &options.exclude, available_names);
 
     let incomplete_slots = check_incomplete_slots(
         selected_parts,
-        actions,
+        &ctx.actions,
         options.allowance.allow_incomplete_slots,
         warnings,
         errors,
     );
 
     let (missing_images, oversized_images, action_warning_count) =
-        compute_image_counts(actions);
+        compute_image_counts(&ctx.actions);
 
     if options.image_verification.check_images && missing_images > 0 {
         errors.push(format!("missing images: {missing_images}"));
@@ -130,17 +147,17 @@ fn finalize_plan(
     }
 
     debug!(
-        actions = actions.len(),
-        skipped = skipped.len(),
+        actions = ctx.actions.len(),
+        skipped = ctx.skipped.len(),
         warnings = warnings.len(),
         errors = errors.len(),
         "flash plan summary",
     );
 
     let summary = finalize_plan_summary(
-        actions,
+        &ctx.actions,
         &PlanSummaryCounts {
-            skipped: skipped.len(),
+            skipped: ctx.skipped.len(),
             missing_image: missing_images,
             oversized_image: oversized_images,
             action_warnings: action_warning_count,
@@ -169,8 +186,8 @@ fn finalize_plan(
             "exclude": options.exclude.clone(),
         }),
         summary,
-        actions: core::mem::take(actions),
-        skipped: core::mem::take(skipped),
+        actions: core::mem::take(&mut ctx.actions),
+        skipped: core::mem::take(&mut ctx.skipped),
         incomplete_slots,
         warnings: core::mem::take(warnings),
         errors: core::mem::take(errors),
@@ -191,7 +208,7 @@ pub fn build_flash_plan(scatter: &ScatterFile, options: &FlashPlanOptions) -> Fl
         groups = options.groups.join(","),
         "building flash plan",
     );
-    let mut warnings = Vec::new();
+    let warnings = Vec::new();
     let mut errors = Vec::new();
     record_unknown_groups(&options.groups, &mut errors);
 
@@ -207,7 +224,7 @@ pub fn build_flash_plan(scatter: &ScatterFile, options: &FlashPlanOptions) -> Fl
     let explicit_names = expand_requested_names(&options.parts, &available_names);
 
     let scatter_dir = scatter.path.parent();
-    let (mut actions, mut skipped) = build_partition_actions(
+    let (actions, skipped) = build_partition_actions(
         &selected_parts,
         options,
         &explicit_names,
@@ -215,15 +232,17 @@ pub fn build_flash_plan(scatter: &ScatterFile, options: &FlashPlanOptions) -> Fl
         scatter_dir,
     );
 
-    finalize_plan(
-        options,
+    let mut ctx = PlanFinalizationContext {
         scatter,
-        &mut actions,
-        &mut skipped,
-        (&mut warnings, &mut errors),
-        (&explicit_names, &available_names),
-        &selected_parts,
-    )
+        actions,
+        skipped,
+        warnings,
+        errors,
+        explicit_names: &explicit_names,
+        available_names: &available_names,
+        selected_parts: &selected_parts,
+    };
+    finalize_plan(&mut ctx, options)
 }
 
 #[cfg(test)]

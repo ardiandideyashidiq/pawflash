@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use fastboot_protocol::nusb::NusbFastBoot;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::flash::error::{FlashError, Result};
@@ -91,14 +92,24 @@ impl FlashExecutor<NusbFastBoot> {
         Ok(Self { fb, device_vars })
     }
 
+    /// Wait for a fastboot device to reappear after reboot.
+    ///
     /// # Errors
-    /// Returns `NoDevice` if no fastboot device appears within the timeout.
-    pub async fn wait_for_device(timeout: Duration) -> Result<Self> {
+    ///
+    /// Returns `NoDevice` if no fastboot device appears within the timeout,
+    /// or if the provided `cancel` token is fired.
+    pub async fn wait_for_device(
+        timeout: Duration,
+        cancel: CancellationToken,
+    ) -> Result<Self> {
         tokio::time::sleep(Duration::from_secs(2)).await;
         let start = std::time::Instant::now();
         let mut last_log = start;
         loop {
             if start.elapsed() > timeout {
+                return Err(FlashError::NoDevice);
+            }
+            if cancel.is_cancelled() {
                 return Err(FlashError::NoDevice);
             }
             match Self::connect().await {
@@ -108,7 +119,12 @@ impl FlashExecutor<NusbFastBoot> {
                         warn!("waiting for fastboot device after reboot (error: {e}) ...");
                         last_log = std::time::Instant::now();
                     }
-                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    tokio::select! {
+                        () = cancel.cancelled() => {
+                            return Err(FlashError::NoDevice);
+                        }
+                        () = tokio::time::sleep(Duration::from_millis(250)) => {}
+                    }
                 }
             }
         }
@@ -122,7 +138,7 @@ impl FlashExecutor<NusbFastBoot> {
             warn!(?target, error = %e, "reboot command error (device may have disconnected)");
         }
         drop(self);
-        Self::wait_for_device(Duration::from_secs(120)).await
+        Self::wait_for_device(Duration::from_secs(120), CancellationToken::default()).await
     }
 
     /// # Errors

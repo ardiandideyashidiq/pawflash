@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use miette::{bail, miette, Result};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 use crate::cli::args::DeviceAction;
@@ -48,7 +49,7 @@ pub async fn run(action: DeviceAction, simulate: bool) -> Result<()> {
 
     let mut executor = output::spinner::run_with_spinner(
         "Connecting to fastboot device (60s timeout)...",
-        FlashExecutor::wait_for_device(Duration::from_secs(60)),
+        FlashExecutor::wait_for_device(Duration::from_secs(60), CancellationToken::default()),
     )
     .await?;
 

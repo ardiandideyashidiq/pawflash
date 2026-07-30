@@ -28,6 +28,7 @@ miette = { version = "7", features = ["derive"] }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-serial = "5"
+tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 fastboot-protocol = { path = "../../vendor/fastboot-rs/fastboot-protocol" }
 android-sparse-image = { path = "../../vendor/fastboot-rs/android-sparse-image" }

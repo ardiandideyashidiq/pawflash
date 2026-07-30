@@ -246,16 +246,16 @@ impl FlashTransport for SimulatedTransport {
         Ok(format!("OKAY erased {partition}"))
     }
 
-    async fn reboot(&mut self) -> Result<String> {
+    async fn reboot(&mut self) -> Result<()> {
         self.commands.push("SIM reboot".into());
         tokio::time::sleep(Duration::from_millis(500)).await;
-        Ok("OKAY".into())
+        Ok(())
     }
 
-    async fn reboot_to(&mut self, target: &str) -> Result<String> {
+    async fn reboot_to(&mut self, target: &str) -> Result<()> {
         self.commands.push(format!("SIM reboot_to:{target}"));
         tokio::time::sleep(Duration::from_secs(2)).await;
-        Ok("OKAY".into())
+        Ok(())
     }
 
     async fn is_logical(&mut self, partition: &str) -> Result<bool> {
