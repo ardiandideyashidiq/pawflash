@@ -190,6 +190,7 @@ impl ScatterFile {
 
 /// Whether to include userdata in the flash plan via --clean.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum CleanMode {
     /// Do not include userdata in the flash plan.
     #[default]

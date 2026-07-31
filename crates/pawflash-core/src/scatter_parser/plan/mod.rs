@@ -407,4 +407,19 @@ mod tests {
             "dry run should skip userdata"
         );
     }
+
+    #[test]
+    fn flash_plan_options_should_use_kebab_case_wire_contract() {
+        let options = FlashPlanOptions::default();
+        let json = serde_json::to_string(&options).expect("default options serialize");
+        assert!(json.contains("\"clean\":\"no\""), "json: {json}");
+        assert!(json.contains("\"mode\":\"dry-run\""), "json: {json}");
+        assert!(json.contains("\"storage\":\"auto\""), "json: {json}");
+
+        let round_tripped: FlashPlanOptions =
+            serde_json::from_str(&json).expect("kebab-case json deserializes");
+        assert_eq!(round_tripped.clean, options.clean);
+        assert_eq!(round_tripped.mode, options.mode);
+        assert_eq!(round_tripped.storage, options.storage);
+    }
 }
