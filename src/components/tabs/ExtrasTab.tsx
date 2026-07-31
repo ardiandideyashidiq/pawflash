@@ -49,8 +49,12 @@ export default function ExtrasTab({ device }: ExtrasTabProps) {
   };
 
   const copyText = async (text: string) => {
-    await navigator.clipboard.writeText(text);
-    toast.success("Copied to clipboard");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Copy failed");
+    }
   };
 
   const sortedVars = allVars

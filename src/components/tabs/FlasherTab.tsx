@@ -149,6 +149,7 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
       allowance: { include_preloader: includePreloader, allow_incomplete_slots: false },
       clean: "no",
     };
+    let shouldReboot = false;
     try {
       const result = await invoke<FlashResult>("execute_plan", {
         path: scatterPath,
@@ -159,14 +160,19 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
         toast.error(`${result.failed}/${result.total} partitions failed`);
       } else {
         toast.success(`${result.succeeded} partitions flashed`);
-        if (rebootAfter) {
-          toast.info("Rebooting into recovery...");
-          await invoke("reboot_device", { target: "recovery" });
-        }
+        shouldReboot = rebootAfter;
+      }
+    } catch (e) {
+      toast.error(`Flash plan failed: ${e}`);
+    }
+    try {
+      if (shouldReboot) {
+        toast.info("Rebooting into recovery...");
+        await invoke("reboot_device", { target: "recovery" });
       }
       await onRefresh();
     } catch (e) {
-      toast.error(`Flash plan failed: ${e}`);
+      toast.error(`Device reboot/refresh failed: ${e}`);
     } finally {
       setPlanLoading(false);
     }
