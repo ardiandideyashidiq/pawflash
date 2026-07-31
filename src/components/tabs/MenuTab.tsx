@@ -30,6 +30,7 @@ export default function MenuTab({ device, onRefresh }: MenuTabProps) {
       const channel = new Channel<ProgressEvent>();
       channel.onmessage = addProgressEvent;
       await invoke("force_fastboot", { onEvent: channel });
+      toast.success("Entered fastboot mode");
       await onRefresh();
     } catch (e) {
       toast.error(`Force fastboot failed: ${e}`);
