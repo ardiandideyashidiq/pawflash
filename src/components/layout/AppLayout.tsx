@@ -9,6 +9,8 @@ import {
   PanelLeftOpen,
   Sun,
   Moon,
+  PanelBottom,
+  Search,
 } from "lucide-react";
 
 const SIDEBAR_OPEN = 224;
@@ -26,8 +28,9 @@ interface AppLayoutProps {
 }
 
 const navItems = [
-  { id: "main", label: "Flasher", icon: Zap },
-  { id: "tools", label: "Tools", icon: Wrench },
+  { id: "flasher", label: "Flasher", icon: Zap },
+  { id: "menu", label: "Menu", icon: Wrench },
+  { id: "extras", label: "Extras", icon: Search },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -38,7 +41,8 @@ export default function AppLayout({
   onThemeChange,
 }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [tab, setTab] = useState("main");
+  const [consoleOpen, setConsoleOpen] = useState(true);
+  const [tab, setTab] = useState("flasher");
   const userOverride = useRef(false);
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -151,39 +155,61 @@ export default function AppLayout({
           </div>
         )}
 
-        {/* Theme toggle */}
+        {/* Log panel + theme */}
         <div className={"shrink-0 border-t border-sidebar-border py-4 " + (sidebarOpen ? "px-4" : "px-1.5")}>
           {sidebarOpen ? (
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="space-y-1.5">
               <Button
-                variant={theme === "light" ? "secondary" : "ghost"}
+                variant={consoleOpen ? "secondary" : "ghost"}
                 size="sm"
-                onClick={() => onThemeChange("light")}
+                onClick={() => setConsoleOpen((c) => !c)}
                 className="w-full"
               >
-                <Sun size={16} />
-                <span>Light</span>
+                <PanelBottom size={16} />
+                <span>Log</span>
               </Button>
-              <Button
-                variant={theme === "dark" ? "secondary" : "ghost"}
-                size="sm"
-                onClick={() => onThemeChange("dark")}
-                className="w-full"
-              >
-                <Moon size={16} />
-                <span>Dark</span>
-              </Button>
+              <div className="grid grid-cols-2 gap-1.5">
+                <Button
+                  variant={theme === "light" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => onThemeChange("light")}
+                  className="w-full"
+                >
+                  <Sun size={16} />
+                  <span>Light</span>
+                </Button>
+                <Button
+                  variant={theme === "dark" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => onThemeChange("dark")}
+                  className="w-full"
+                >
+                  <Moon size={16} />
+                  <span>Dark</span>
+                </Button>
+              </div>
             </div>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={toggleTheme}
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-              className="w-full"
-            >
-              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-            </Button>
+            <div className="space-y-1.5">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setConsoleOpen((c) => !c)}
+                aria-label="Toggle log panel"
+                className="w-full"
+              >
+                <PanelBottom size={18} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={toggleTheme}
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+                className="w-full"
+              >
+                {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+              </Button>
+            </div>
           )}
         </div>
       </aside>
@@ -194,7 +220,7 @@ export default function AppLayout({
       </main>
 
       {/* ── Console panel (sticky bottom) ── */}
-      <ConsolePanel />
+      {consoleOpen && <ConsolePanel />}
     </div>
   );
 }

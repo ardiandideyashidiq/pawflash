@@ -8,8 +8,9 @@ import { Select, SelectTrigger, SelectContent, SelectItem } from "@/components/u
 import { RotateCcw, RefreshCw } from "lucide-react";
 import type { Theme, DeviceInfo } from "@/types/api";
 
-const MainTab = lazy(() => import("@/components/tabs/MainTab"));
-const ToolsTab = lazy(() => import("@/components/tabs/ToolsTab"));
+const FlasherTab = lazy(() => import("@/components/tabs/FlasherTab"));
+const MenuTab = lazy(() => import("@/components/tabs/MenuTab"));
+const ExtrasTab = lazy(() => import("@/components/tabs/ExtrasTab"));
 const SettingsTab = lazy(() => import("@/components/tabs/SettingsTab"));
 
 const rebootTargets = [
@@ -137,8 +138,9 @@ function App() {
         {({ tab }) => (
           <Suspense fallback={null}>
             <div key={tab} className="animate-in fade-in duration-200 ease-out">
-              {tab === "main" && <MainTab device={device} onRefresh={fetchDevice} />}
-              {tab === "tools" && <ToolsTab />}
+              {tab === "flasher" && <FlasherTab device={device} onRefresh={fetchDevice} />}
+              {tab === "menu" && <MenuTab device={device} onRefresh={fetchDevice} />}
+              {tab === "extras" && <ExtrasTab device={device} />}
               {tab === "settings" && <SettingsTab />}
             </div>
           </Suspense>
