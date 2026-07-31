@@ -6,7 +6,7 @@
 cargo build -p pawflash-core            # core lib only
 cargo build -p pawflash                 # CLI (debug)
 cargo build --release -p pawflash       # matches CI
-cargo build -p pawflash-gui             # Tauri (Rust side)
+cargo build -p pawflash-gui             # Tauri (Rust side, src-tauri crate)
 cargo test --workspace                  # all tests
 cargo test -p pawflash-core <name>      # single test
 cargo clippy --all-targets --all-features --locked -- -D warnings
@@ -18,6 +18,10 @@ pnpm tauri dev                           # Tauri dev server
 ```
 
 **Order:** `pnpm build` before `cargo build -p pawflash-gui`.
+
+## CLI global flags
+
+`--serial <sn>` verifies the connected device matches; `--simulate` runs every command against a mock device (real disk I/O, realistic timing) — use it for safe end-to-end runs without hardware (see `crates/pawflash/src/cli/simulate.rs`).
 
 ## Project structure
 
@@ -60,13 +64,14 @@ Affected commands: `force_fastboot`, `disable_vbmeta`, `execute_plan`, `flash_ra
 
 ## Rust conventions
 
-- Zero `#[allow]`/`#[expect]` — fix the issue.
+- No `#[allow]` anywhere; exactly one `#[expect]` (see below) — otherwise fix the lint.
 - Max ~400 lines per file; split into directory submodules.
 - `tracing` with fields always: `info!(field = value, "msg")` — never format! in log calls.
 - CLI prints via `output::status::*` helpers (`data()`, `ok()`/`warn()`/`fail()`, etc.) — never raw println/eprintln.
-- Edition 2024, MSRV 1.85. Release: LTO (thin), panic=abort.
-- Clippy: `all`+`pedantic`+`perf` = warn, `cast_lossless`/`missing_const_for_fn`/etc. = deny (see `Cargo.toml`).
-- All tests in-module (`#[cfg(test)]`), no `tests/` integration dir.
+- Edition 2024, MSRV 1.85. Release profile (`.cargo/config.toml`): `lto = true`, `panic = "abort"`, `strip = "symbols"`.
+- Clippy: `all`+`pedantic` = warn; `perf`, `cast_lossless`, `cast_precision_loss`, `cast_sign_loss`, `cargo_common_metadata`, `doc_markdown`, `large_enum_variant`, `missing_const_for_fn`, `needless_pass_by_value`, `redundant_clone` = deny. Workspace rust lints: `unused`, `dead_code` = deny.
+- Exactly one `#[expect]` in the repo: `clippy::implicit_hasher` in `output/tables.rs` (tabled-derive workaround, documented inline). No `#[allow]`.
+- All tests in-module (`#[cfg(test)]`) in `pawflash-core`; no `tests/` integration dirs. `crates/pawflash` (CLI) declares `assert_cmd`/`predicates` dev-deps but has **no tests yet**.
 
 ## CI & release
 
