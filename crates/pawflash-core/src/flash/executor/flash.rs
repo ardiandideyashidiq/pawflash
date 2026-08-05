@@ -138,6 +138,12 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 256 * 1024 * 1024
             }
         };
+        if !dry_run {
+            match self.set_active_slot("a").await {
+                Ok(response) => info!(slot = "a", response, "active slot set to a"),
+                Err(e) => warn!(slot = "a", error = %e, "set_active failed; continuing"),
+            }
+        }
         for action in &all_actions {
             let partition = &action.partition;
             info!(%partition, "Writing partition");
