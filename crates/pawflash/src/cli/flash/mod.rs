@@ -26,10 +26,7 @@ enum Action {
 struct ScatterConfig<'a> {
     scatter_path: &'a Path,
     action: Action,
-    mode: sp::Mode,
     storage: sp::StorageSelect,
-    parts: &'a [String],
-    groups: &'a [String],
     exclude: &'a [String],
     firmware_dir: Option<&'a Path>,
     image_verification: sp::ImageVerification,
@@ -72,10 +69,7 @@ pub async fn run(
             full_json,
             dry_run,
             json,
-            mode,
             storage,
-            ref part,
-            ref group,
             ref exclude,
             ref firmware_dir,
             check_images,
@@ -89,14 +83,9 @@ pub async fn run(
             };
             let scatter_path = p.clone();
 
-            if !show && !dry_run
-                && mode == sp::Mode::Selective
-                && part.is_empty()
-                && group.is_empty()
-                && !json
-            {
+            if !show && !dry_run && !json {
                 if !simulate {
-                    warn!("no --part/--group specified; interactive mode uses --mode dirty-flash (your --mode {mode:?} is ignored)");
+                    warn!("no --json/--dry-run specified; entering interactive confirmation flow");
                 }
                 return crate::cli::interactive::run(&scatter_path, exclude, simulate).await;
             }
@@ -111,10 +100,7 @@ pub async fn run(
             let cfg = ScatterConfig {
                 scatter_path: &scatter_path,
                 action,
-                mode,
                 storage,
-                parts: part,
-                groups: group,
                 exclude,
                 firmware_dir: firmware_dir.as_deref(),
                 image_verification: sp::ImageVerification {

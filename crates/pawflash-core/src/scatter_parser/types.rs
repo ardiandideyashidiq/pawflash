@@ -17,19 +17,6 @@ pub enum StorageSelect {
     Emmc,
 }
 
-/// Flash planning mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
-pub enum Mode {
-    /// Reflect scatter-selected flashable partitions (no side effects).
-    #[default]
-    DryRun,
-    /// Flash only explicitly requested partitions or groups.
-    Selective,
-    /// Flash safe firmware and Android partitions.
-    DirtyFlash,
-}
-
 /// Image path resolution result.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ResolvedPath {
@@ -211,7 +198,7 @@ pub struct ImageVerification {
 /// Flash allowance options.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Allowance {
-    /// Whether to include preloader in dirty-flash mode.
+    /// Whether to include preloader in full flash.
     pub include_preloader: bool,
     /// Whether to allow incomplete slot pairs.
     pub allow_incomplete_slots: bool,
@@ -220,14 +207,8 @@ pub struct Allowance {
 /// Flash plan options.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FlashPlanOptions {
-    /// Flash planning mode.
-    pub mode: Mode,
     /// Storage layout selection strategy.
     pub storage: StorageSelect,
-    /// Explicit partition names to include.
-    pub parts: Vec<String>,
-    /// Partition groups to include.
-    pub groups: Vec<String>,
     /// Partition names to exclude.
     pub exclude: Vec<String>,
     /// Directory containing firmware images.
@@ -337,8 +318,6 @@ pub struct SkippedPartition {
 /// Planned flash operations.
 #[derive(Debug, Clone, Serialize)]
 pub struct FlashPlan {
-    /// Effective flash mode.
-    pub mode: String,
     /// Storage selection strategy used.
     pub storage_selection: String,
     /// Names of selected layouts.

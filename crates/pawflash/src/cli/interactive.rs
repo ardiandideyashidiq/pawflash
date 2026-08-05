@@ -91,7 +91,6 @@ pub async fn run(
         .with_context(|| format!("failed to parse {}", scatter_path.display()))?;
 
     let options = sp::FlashPlanOptions {
-        mode: sp::Mode::DirtyFlash,
         storage: sp::StorageSelect::Auto,
         image_verification: sp::ImageVerification {
             check_images: true,

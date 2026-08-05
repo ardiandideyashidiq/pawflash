@@ -2,7 +2,7 @@ use serde_json::{json, Value};
 
 use crate::scatter_parser::parse::{human_size, image_magic};
 use crate::scatter_parser::path::resolve_image_path;
-use crate::scatter_parser::types::{FlashPlanOptions, Mode, ScatterPartition};
+use crate::scatter_parser::types::{FlashPlanOptions, ScatterPartition};
 
 pub(super) fn resolve_images_for_plan(
     part: &ScatterPartition,
@@ -25,7 +25,7 @@ pub(super) fn resolve_images_for_plan(
     if let Some(warning) = &resolved.warning {
         warnings.insert(0, warning.clone());
     }
-    if resolved.outside_package_root == Some(true) && options.mode != Mode::DryRun {
+    if resolved.outside_package_root == Some(true) {
         warnings.push(format!(
             "image path outside package_root and was blocked: {}",
             resolved.warning.as_deref().unwrap_or("unknown location")

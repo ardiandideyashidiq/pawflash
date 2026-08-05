@@ -146,7 +146,6 @@ mod tests {
     fn make_empty_plan(actions: Vec<FlashAction>) -> FlashPlan {
         FlashPlan {
             actions,
-            mode: String::new(),
             storage_selection: String::new(),
             selected_layouts: Vec::new(),
             platform: None,

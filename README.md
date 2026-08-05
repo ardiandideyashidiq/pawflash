@@ -15,7 +15,7 @@ Prebuilt binaries for Linux (x86_64) and Windows (x86_64) on [releases](https://
 
 ```
 pawflash force-fastboot [-v]
-pawflash flash scatter <scatter-path> [--mode dry-run|selective|dirty-flash] [--storage auto|all|ufs|emmc] [--part <name>]... [--group <name>]... [--firmware-dir <dir>] [--check-images] [--dry-run] [--json] [--exclude <name>]... [--image-search] [--allow-incomplete-slots] [--include-preloader] [--clean] [--no-format] [--clean-test] [-v]
+pawflash flash scatter <scatter-path> [--storage auto|all|ufs|emmc] [--firmware-dir <dir>] [--check-images] [--dry-run] [--json] [--exclude <name>]... [--image-search] [--allow-incomplete-slots] [--include-preloader] [--clean] [--no-format] [--clean-test] [-v]
 
 pawflash flash <partition> <image> [--slot a|b] [--both]
 pawflash disable-vbmeta [-v]
@@ -26,7 +26,7 @@ pawflash device set-active <a|b>
 pawflash device get-var <var-name>
 ```
 
-Flash modes: `dry-run` (preview via `--dry-run` flag), `selective` (explicit `--part`/`--group`, the default), `dirty-flash` (safe firmware + Android). Storage: `auto` (default, prefers UFS), `all`, `ufs`, `emmc`.
+Flash policy: always **full** — flash all safe firmware + Android partitions from the scatter, skipping identity/calibration and dangerous partitions (e.g. nvram, pgpt, userdata). `--include-preloader` opts preloader in; `--exclude` narrows the set. Storage: `auto` (default, prefers UFS), `all`, `ufs`, `emmc`.
 
 ## License
 

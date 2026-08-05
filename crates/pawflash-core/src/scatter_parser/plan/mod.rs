@@ -22,19 +22,15 @@ use self::action::{
 };
 use self::image::resolve_images_for_plan;
 use self::layout::{selected_layout_names, selected_partitions};
-use self::mode::{
-    mode_allows_partition, mode_str, record_unknown_groups, select_partition_for_mode,
-    storage_str, warn_for_missing_selective_requests,
-};
+use self::mode::{full_flash_allows_partition, storage_str};
 use self::slot::{
-    check_incomplete_slots, expand_requested_names, inherited_action_reason,
-    inherited_image_source_for_slot_b, synthesize_slot_actions_if_needed,
+    check_incomplete_slots, inherited_action_reason, inherited_image_source_for_slot_b,
+    synthesize_slot_actions_if_needed,
 };
 
 fn build_partition_actions<'a>(
     selected_parts: &'a [ScatterPartition],
     options: &FlashPlanOptions,
-    explicit_names: &BTreeSet<String>,
     parts_by_name: &BTreeMap<String, &'a ScatterPartition>,
     scatter_dir: Option<&std::path::Path>,
 ) -> (Vec<FlashAction>, Vec<SkippedPartition>) {
@@ -42,23 +38,14 @@ fn build_partition_actions<'a>(
     let mut skipped = Vec::new();
 
     for part in selected_parts {
-        let (selected, selection_reason) =
-            select_partition_for_mode(part, options, explicit_names);
-
-        if !selected {
-            skipped.push(skipped_partition(part, "not selected"));
-            continue;
-        }
-
         if part.slot().is_some() && !part.flashable_by_profile() {
             continue;
         }
 
         let image_source = inherited_image_source_for_slot_b(part, parts_by_name);
-        let (allowed, reason) = mode_allows_partition(
+        let (allowed, reason) = full_flash_allows_partition(
             part,
             image_source,
-            options.mode,
             options.allowance.include_preloader,
             options.clean != CleanMode::No,
         );
@@ -69,11 +56,8 @@ fn build_partition_actions<'a>(
 
         let (image, action_warnings) =
             resolve_images_for_plan(image_source, scatter_dir, options);
-        let action_reason = if selection_reason.is_empty() {
-            inherited_action_reason(reason, part, image_source)
-        } else {
-            inherited_action_reason(selection_reason, part, image_source)
-        };
+        let action_reason =
+            inherited_action_reason(reason, part, image_source);
 
         actions.push(flash_action(
             "flash",
@@ -97,7 +81,6 @@ pub(crate) struct PlanFinalizationContext<'a> {
     pub skipped: Vec<SkippedPartition>,
     pub warnings: Vec<String>,
     pub errors: Vec<String>,
-    pub explicit_names: &'a BTreeSet<String>,
     pub available_names: &'a BTreeSet<String>,
     pub selected_parts: &'a [ScatterPartition],
 }
@@ -111,18 +94,10 @@ fn finalize_plan(
         scatter,
         warnings,
         errors,
-        explicit_names,
         available_names,
         selected_parts,
         ..
     } = ctx;
-    warn_for_missing_selective_requests(
-        options.mode,
-        &ctx.actions,
-        explicit_names,
-        available_names,
-        warnings,
-    );
 
     synthesize_slot_actions_if_needed(selected_parts, &mut ctx.actions);
 
@@ -168,7 +143,6 @@ fn finalize_plan(
     );
 
     FlashPlan {
-        mode: mode_str(options.mode),
         storage_selection: storage_str(options.storage),
         selected_layouts: selected_layout_names(scatter, options.storage),
         platform: scatter.platform.clone(),
@@ -181,8 +155,6 @@ fn finalize_plan(
             "include_preloader": options.allowance.include_preloader,
             "allow_incomplete_slots": options.allowance.allow_incomplete_slots,
             "clean": options.clean != CleanMode::No,
-            "parts": options.parts.clone(),
-            "groups": options.groups.clone(),
             "exclude": options.exclude.clone(),
         }),
         summary,
@@ -202,15 +174,11 @@ fn finalize_plan(
 #[must_use]
 pub fn build_flash_plan(scatter: &ScatterFile, options: &FlashPlanOptions) -> FlashPlan {
     debug!(
-        mode = %mode_str(options.mode),
         storage = %storage_str(options.storage),
-        parts = options.parts.join(","),
-        groups = options.groups.join(","),
         "building flash plan",
     );
     let warnings = Vec::new();
-    let mut errors = Vec::new();
-    record_unknown_groups(&options.groups, &mut errors);
+    let errors = Vec::new();
 
     let selected_parts = selected_partitions(scatter, options.storage);
     let parts_by_name = selected_parts
@@ -221,13 +189,11 @@ pub fn build_flash_plan(scatter: &ScatterFile, options: &FlashPlanOptions) -> Fl
         .iter()
         .map(|part| part.name.to_lowercase())
         .collect::<BTreeSet<_>>();
-    let explicit_names = expand_requested_names(&options.parts, &available_names);
 
     let scatter_dir = scatter.path.parent();
     let (actions, skipped) = build_partition_actions(
         &selected_parts,
         options,
-        &explicit_names,
         &parts_by_name,
         scatter_dir,
     );
@@ -238,7 +204,6 @@ pub fn build_flash_plan(scatter: &ScatterFile, options: &FlashPlanOptions) -> Fl
         skipped,
         warnings,
         errors,
-        explicit_names: &explicit_names,
         available_names: &available_names,
         selected_parts: &selected_parts,
     };
@@ -248,7 +213,7 @@ pub fn build_flash_plan(scatter: &ScatterFile, options: &FlashPlanOptions) -> Fl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scatter_parser::types::{Mode, ScatterPartition};
+    use crate::scatter_parser::types::ScatterPartition;
 
     fn synthetic_part(name: &str, download: bool, has_file: bool, size: i64) -> ScatterPartition {
         ScatterPartition {
@@ -360,8 +325,7 @@ mod tests {
             errors: Vec::new(),
         };
         let options = FlashPlanOptions {
-            mode: Mode::Selective,
-            parts: vec!["boot_a".to_string()],
+            exclude: vec!["boot_b".to_string()],
             ..FlashPlanOptions::default()
         };
         let plan = build_flash_plan(&scatter, &options);
@@ -376,10 +340,7 @@ mod tests {
     #[test]
     fn build_flash_plan_should_synthesize_non_download_b_slots() {
         let scatter = synthetic_ab_scatter();
-        let options = FlashPlanOptions {
-            mode: Mode::DryRun,
-            ..FlashPlanOptions::default()
-        };
+        let options = FlashPlanOptions::default();
         let plan = build_flash_plan(&scatter, &options);
         let b_actions: Vec<_> = plan
             .actions
@@ -395,16 +356,13 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_should_skip_userdata() {
+    fn full_flash_should_skip_userdata() {
         let scatter = synthetic_ab_scatter();
-        let options = FlashPlanOptions {
-            mode: Mode::DryRun,
-            ..FlashPlanOptions::default()
-        };
+        let options = FlashPlanOptions::default();
         let plan = build_flash_plan(&scatter, &options);
         assert!(
             !plan.actions.iter().any(|a| a.partition == "userdata"),
-            "dry run should skip userdata"
+            "full flash should skip userdata"
         );
     }
 
@@ -413,13 +371,11 @@ mod tests {
         let options = FlashPlanOptions::default();
         let json = serde_json::to_string(&options).expect("default options serialize");
         assert!(json.contains("\"clean\":\"no\""), "json: {json}");
-        assert!(json.contains("\"mode\":\"dry-run\""), "json: {json}");
         assert!(json.contains("\"storage\":\"auto\""), "json: {json}");
 
         let round_tripped: FlashPlanOptions =
             serde_json::from_str(&json).expect("kebab-case json deserializes");
         assert_eq!(round_tripped.clean, options.clean);
-        assert_eq!(round_tripped.mode, options.mode);
         assert_eq!(round_tripped.storage, options.storage);
     }
 }

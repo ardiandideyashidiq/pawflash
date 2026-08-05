@@ -14,8 +14,7 @@ use super::{Action, ScatterConfig};
 
 pub(super) async fn run_scatter(cfg: &ScatterConfig<'_>) -> Result<()> {
     debug!(
-        scatter_path = %cfg.scatter_path.display(), ?cfg.action, ?cfg.mode,
-        parts = %cfg.parts.join(","),
+        scatter_path = %cfg.scatter_path.display(), ?cfg.action,
         "run_scatter entered",
     );
 
@@ -37,10 +36,7 @@ pub(super) async fn run_scatter(cfg: &ScatterConfig<'_>) -> Result<()> {
     let is_dry_run = matches!(cfg.action, Action::DryRun);
 
     let options = sp::FlashPlanOptions {
-        mode: cfg.mode,
         storage: cfg.storage,
-        parts: cfg.parts.to_vec(),
-        groups: cfg.groups.to_vec(),
         exclude: cfg.exclude.to_vec(),
         firmware_dir: cfg.firmware_dir.map(Path::to_path_buf),
         package_root: Some(cfg.scatter_path.parent()

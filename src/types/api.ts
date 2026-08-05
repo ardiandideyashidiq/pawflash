@@ -26,7 +26,6 @@ export interface ScatterFile {
   errors: string[];
 }
 
-export type FlashMode = "dry-run" | "selective" | "dirty-flash";
 export type StorageSelect = "auto" | "all" | "ufs" | "emmc";
 export type CleanMode = "no" | "yes";
 
@@ -54,10 +53,7 @@ export interface ScatterPartition {
 }
 
 export interface FlashPlanOptions {
-  mode: FlashMode;
   storage: StorageSelect;
-  parts: string[];
-  groups: string[];
   exclude: string[];
   firmware_dir: string | null;
   package_root: string | null;
@@ -79,13 +75,4 @@ export interface FlashResult {
   succeeded: number;
   failed: number;
   outcomes: FlashOutcome[];
-}
-
-export interface PartitionRow {
-  name: string;
-  size: number;
-  imageType: string | null;
-  fileName: string | null;
-  layout: string;
-  flashable: boolean;
 }

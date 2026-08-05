@@ -70,18 +70,9 @@ pub enum FlashAction {
         /// With --dry-run: output plan as JSON instead of human-readable
         #[arg(long)]
         json: bool,
-        /// Flash planning mode
-        #[arg(long, default_value = "selective", value_parser = parse_mode)]
-        mode: sp::Mode,
         /// Storage layout selection
         #[arg(long, default_value = "auto", value_parser = parse_storage)]
         storage: sp::StorageSelect,
-        /// Explicit partition names to include (repeatable)
-        #[arg(long)]
-        part: Vec<String>,
-        /// Partition groups to include (repeatable)
-        #[arg(long)]
-        group: Vec<String>,
         /// Partition names to exclude from the flash plan (repeatable)
         #[arg(long)]
         exclude: Vec<String>,
@@ -91,7 +82,7 @@ pub enum FlashAction {
         /// Verify image file existence and size
         #[arg(long)]
         check_images: bool,
-        /// Include preloader in dirty-flash mode
+        /// Include preloader in full flash
         #[arg(long)]
         include_preloader: bool,
         /// Also search adjacent directories for images
@@ -130,15 +121,6 @@ pub enum DeviceAction {
         /// Variable name (e.g., max-download-size, product, version)
         var: String,
     },
-}
-
-fn parse_mode(s: &str) -> std::result::Result<sp::Mode, String> {
-    match s.to_lowercase().as_str() {
-        "dry-run" | "dry_run" => Ok(sp::Mode::DryRun),
-        "selective" => Ok(sp::Mode::Selective),
-        "dirty-flash" | "dirty_flash" => Ok(sp::Mode::DirtyFlash),
-        _ => Err(format!("invalid mode '{s}': expected dry-run, selective, or dirty-flash")),
-    }
 }
 
 fn parse_storage(s: &str) -> std::result::Result<sp::StorageSelect, String> {

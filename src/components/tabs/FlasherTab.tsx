@@ -4,13 +4,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import PartitionTable from "@/components/partition-table/PartitionTable";
 import { useConsole } from "@/hooks/useConsole";
 import type {
   DeviceInfo,
   FlashPlanOptions,
   FlashResult,
-  PartitionRow,
   ScatterFile,
   ScatterPartition,
 } from "@/types/api";
@@ -31,16 +29,15 @@ function preferredLayout(layouts: Record<string, ScatterPartition[]>): string {
   return keys[0] ?? "";
 }
 
-function buildRows(scatter: ScatterFile): PartitionRow[] {
+function partitionCounts(scatter: ScatterFile): { total: number; flashable: number } {
   const layout = preferredLayout(scatter.layouts);
-  return (scatter.layouts[layout] ?? []).map((p) => ({
-    name: p.name,
-    size: p.size,
-    imageType: p.type,
-    fileName: p.file_name,
-    layout: p.layout,
-    flashable: p.is_download && p.file_name !== null && p.size > 0,
-  }));
+  const parts = scatter.layouts[layout] ?? [];
+  return {
+    total: parts.length,
+    flashable: parts.filter(
+      (p) => p.is_download && p.file_name !== null && p.size > 0,
+    ).length,
+  };
 }
 
 export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
@@ -51,36 +48,21 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
   const [includePreloader, setIncludePreloader] = useState(false);
   const [rebootAfter, setRebootAfter] = useState(false);
   const [planLoading, setPlanLoading] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
   const connected = device?.connected ?? false;
 
-  const partitions = useMemo(
-    () => (scatterMeta ? buildRows(scatterMeta) : []),
+  const counts = useMemo(
+    () => (scatterMeta ? partitionCounts(scatterMeta) : null),
     [scatterMeta],
   );
-
-  const flashableCount = partitions.filter((p) => p.flashable).length;
-  const selectedFlashable = partitions.filter(
-    (p) => p.flashable && selected.has(p.name),
-  ).length;
-  const selectAllChecked =
-    flashableCount > 0 && selectedFlashable === flashableCount;
-  const selectAllIndeterminate =
-    selectedFlashable > 0 && selectedFlashable < flashableCount;
 
   const parseScatter = async (path: string) => {
     setScatterLoading(true);
     try {
       const meta = await invoke<ScatterFile>("parse_scatter", { path });
       setScatterMeta(meta);
-      const flashable = buildRows(meta)
-        .filter((row) => row.flashable)
-        .map((row) => row.name);
-      setSelected(new Set(flashable));
     } catch (e) {
       setScatterMeta(null);
-      setSelected(new Set());
       toast.error(`Failed to parse scatter: ${e}`);
     }
     setScatterLoading(false);
@@ -102,46 +84,16 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
     }
   };
 
-  const togglePartition = (name: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  };
-
-  const toggleAll = () => {
-    const flashableNames = partitions
-      .filter((p) => p.flashable)
-      .map((p) => p.name);
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (selectAllChecked) {
-        flashableNames.forEach((name) => next.delete(name));
-      } else {
-        flashableNames.forEach((name) => next.add(name));
-      }
-      return next;
-    });
-  };
-
-  const executeSelected = async () => {
-    if (!scatterMeta || selectedFlashable === 0) {
-      toast.error("Select at least one partition to flash");
+  const executeFullFlash = async () => {
+    if (!scatterMeta) {
+      toast.error("Load a scatter file first");
       return;
     }
-    const parts = partitions
-      .filter((p) => selected.has(p.name))
-      .map((p) => p.name);
     setPlanLoading(true);
     const channel = new Channel<ProgressEvent>();
     channel.onmessage = addProgressEvent;
     const options: FlashPlanOptions = {
-      mode: "selective",
       storage: "auto",
-      parts,
-      groups: [],
       exclude: [],
       firmware_dir: null,
       package_root: null,
@@ -192,7 +144,7 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
             </h2>
             <p className="mt-1 text-label leading-normal text-muted-foreground">
               Select a MediaTek scatter file to load the partition layout, then
-              flash the partitions you need.
+              flash the safe firmware and Android partitions in full.
             </p>
             <div className="mt-3 flex items-center gap-2 max-sm:flex-wrap">
               <Button variant="outline" size="sm" onClick={pickScatter}>
@@ -259,13 +211,13 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
             </label>
             <div className="ml-auto flex items-center gap-3">
               <span className="text-caption text-muted-foreground tabular-nums">
-                {selectedFlashable}/{flashableCount} selected
+                {counts ? `${counts.flashable} flashable / ${counts.total} partitions` : ""}
               </span>
               <Button
                 variant="accent"
                 size="sm"
-                onClick={executeSelected}
-                disabled={planLoading || selectedFlashable === 0 || !connected}
+                onClick={executeFullFlash}
+                disabled={planLoading || !connected}
               >
                 {planLoading ? (
                   <>
@@ -273,26 +225,23 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
                   </>
                 ) : (
                   <>
-                    <Play size={14} className="mr-1" /> Flash Selected
+                    <Play size={14} className="mr-1" /> Flash
                   </>
                 )}
               </Button>
             </div>
           </section>
 
-          {/* Partition table */}
+          {/* Partition summary */}
           <section className="space-y-2">
             <h3 className="text-caption font-display font-medium uppercase tracking-wider text-muted-foreground">
-              Partitions — {preferredLayout(scatterMeta.layouts)}
+              Layout — {preferredLayout(scatterMeta.layouts)}
             </h3>
-            <PartitionTable
-              partitions={partitions}
-              selected={selected}
-              selectAllChecked={selectAllChecked}
-              selectAllIndeterminate={selectAllIndeterminate}
-              onToggle={togglePartition}
-              onToggleAll={toggleAll}
-            />
+            <p className="text-label leading-normal text-muted-foreground">
+              Full flash writes all {counts?.flashable} safe partitions
+              ({counts?.total} total in scatter). Identity, calibration, and
+              dangerous partitions (e.g. nvram, pgpt, userdata) are skipped.
+            </p>
           </section>
         </>
       )}
