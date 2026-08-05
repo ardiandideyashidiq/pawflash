@@ -8,10 +8,25 @@ fn multi() -> &'static MultiProgress {
     MP.get_or_init(MultiProgress::new)
 }
 
-pub(crate) fn spinner_style() -> ProgressStyle {
+fn spinner_style() -> ProgressStyle {
     ProgressStyle::with_template("{spinner:.green} {msg}")
         .unwrap()
         .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+}
+
+fn progress_style() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{prefix:>16}: [{bar:40.green/red}] {bytes}/{total_bytes}  {bytes_per_sec}  [{elapsed_precise}]",
+    )
+    .expect("valid progress bar template")
+    .progress_chars("#=- ")
+}
+
+/// Shared `MultiProgress` for all spinners and progress bars, so every
+/// rendered element occupies its own line.
+#[must_use]
+pub fn multi_progress() -> &'static MultiProgress {
+    multi()
 }
 
 /// Start a new spinner with the given message.
@@ -29,21 +44,18 @@ pub fn succeed(pb: &ProgressBar) {
     pb.finish_and_clear();
 }
 
-/// Create a progress bar for flash/download operations.
+/// Create a progress bar for a single partition, attached to the shared
+/// `MultiProgress` so each partition renders on its own line. The caller
+/// must finish (and optionally clear) it once the partition completes.
 ///
 /// # Panics
 ///
 /// Panics if the template string is invalid (always valid for the built-in template).
 #[must_use]
-pub fn progress_bar(len: u64) -> ProgressBar {
-    let pb = ProgressBar::new(len);
-    pb.set_style(
-        ProgressStyle::with_template(
-            "{prefix:>16}: [{bar:40.green/red}] {bytes}/{total_bytes}  {bytes_per_sec}  ETA {eta}  [{elapsed_precise}]",
-        )
-        .expect("valid progress bar template")
-        .progress_chars("#=- "),
-    );
+pub fn partition_progress_bar(partition: &str) -> ProgressBar {
+    let pb = multi().add(ProgressBar::new(0));
+    pb.set_style(progress_style());
+    pb.set_prefix(partition.to_string());
     pb
 }
 

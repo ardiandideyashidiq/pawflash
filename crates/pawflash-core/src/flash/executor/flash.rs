@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use indicatif::ProgressBar;
+use indicatif::{MultiProgress, ProgressBar};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, info, warn};
 
@@ -121,7 +121,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         &mut self,
         plan: &FlashPlan,
         dry_run: bool,
-        progress_bar: Option<&ProgressBar>,
+        progress: Option<&MultiProgress>,
     ) -> FlashResult {
         let all_actions: Vec<_> = plan.actions.iter().filter(|a| a.action == "flash").collect();
         let total = all_actions.len();
@@ -147,14 +147,18 @@ impl<T: FlashTransport> FlashExecutor<T> {
         for action in &all_actions {
             let partition = &action.partition;
             info!(%partition, "Writing partition");
+            let pb = progress.map(|_| crate::output::spinner::partition_progress_bar(partition));
             let start = Instant::now();
             let result = self
-                .flash_partition(action, dry_run, max_download, progress_bar)
+                .flash_partition(action, dry_run, max_download, pb.as_ref())
                 .await;
             let duration = start.elapsed();
             match result {
                 Ok(response) => {
                     info!(%partition, duration = ?duration, response, "flash successful");
+                    if let Some(pb) = &pb {
+                        pb.finish();
+                    }
                     outcomes.push(FlashOutcome {
                         partition: partition.clone(),
                         success: true,
@@ -165,7 +169,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 }
                 Err(e) => {
                     warn!(%partition, duration = ?duration, error = %e, "flash failed, skipping");
-                    if let Some(pb) = progress_bar {
+                    if let Some(pb) = &pb {
                         pb.abandon_with_message(format!("{partition} failed"));
                     }
                     outcomes.push(FlashOutcome {

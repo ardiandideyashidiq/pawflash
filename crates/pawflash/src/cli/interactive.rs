@@ -128,9 +128,8 @@ async fn execute_interactive_plan<T: pawflash_core::flash::transport::FlashTrans
     executor: &mut FlashExecutor<T>,
     plan: &sp::FlashPlan,
 ) -> Result<()> {
-    let pb = output::spinner::progress_bar(0);
-    let result = executor.execute_plan(plan, false, Some(&pb)).await;
-    pb.finish_and_clear();
+    let pb = output::spinner::multi_progress();
+    let result = executor.execute_plan(plan, false, Some(pb)).await;
 
     output::status::blank();
     output::status::data(output::tables::flash_result(&result));
