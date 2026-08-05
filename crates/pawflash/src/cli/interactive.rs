@@ -84,26 +84,13 @@ async fn do_reboot<T: pawflash_core::flash::transport::FlashTransport>(executor:
 /// be built, the device is not reachable, or any flash operation fails.
 pub async fn run(
     scatter_path: &Path,
-    exclude: &[String],
+    options: &sp::FlashPlanOptions,
     simulate: bool,
 ) -> Result<()> {
     let parsed = sp::parse_scatter(scatter_path)
         .with_context(|| format!("failed to parse {}", scatter_path.display()))?;
 
-    let options = sp::FlashPlanOptions {
-        storage: sp::StorageSelect::Auto,
-        image_verification: sp::ImageVerification {
-            check_images: true,
-            image_search: true,
-        },
-        exclude: exclude.to_vec(),
-        clean: sp::CleanMode::No,
-        package_root: Some(scatter_path.parent()
-            .unwrap_or_else(|| std::path::Path::new("."))
-            .to_path_buf()),
-        ..Default::default()
-    };
-    let plan = sp::build_flash_plan(&parsed, &options);
+    let plan = sp::build_flash_plan(&parsed, options);
 
     if !show_plan(&parsed, &plan)? {
         return Ok(());

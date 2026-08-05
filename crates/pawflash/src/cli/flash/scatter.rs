@@ -35,20 +35,10 @@ pub(super) async fn run_scatter(cfg: &ScatterConfig<'_>) -> Result<()> {
 
     let is_dry_run = matches!(cfg.action, Action::DryRun);
 
-    let options = sp::FlashPlanOptions {
-        storage: cfg.storage,
-        exclude: cfg.exclude.to_vec(),
-        firmware_dir: cfg.firmware_dir.map(Path::to_path_buf),
-        package_root: Some(cfg.scatter_path.parent()
-            .unwrap_or_else(|| std::path::Path::new("."))
-            .to_path_buf()),
-        image_verification: cfg.image_verification,
-        allowance: cfg.allowance,
-        clean: sp::CleanMode::No,
-    };
+    let options = &cfg.options;
 
     info!("building flash plan");
-    let plan = sp::build_flash_plan(&parsed, &options);
+    let plan = sp::build_flash_plan(&parsed, options);
     debug!(actions = plan.actions.len(), skipped = plan.skipped.len(), "flash plan built");
 
     // Show errors early (before bail! so user sees them)

@@ -26,13 +26,37 @@ enum Action {
 struct ScatterConfig<'a> {
     scatter_path: &'a Path,
     action: Action,
-    storage: sp::StorageSelect,
-    exclude: &'a [String],
-    firmware_dir: Option<&'a Path>,
-    image_verification: sp::ImageVerification,
-    allowance: sp::Allowance,
+    options: sp::FlashPlanOptions,
     json: bool,
     simulate: bool,
+}
+
+/// Build shared flash plan options from parsed CLI args.
+///
+/// Both the interactive and the direct execution paths must use identical
+/// options, otherwise flags such as `--include-preloader` silently diverge.
+fn build_flash_options(
+    scatter_path: &Path,
+    storage: sp::StorageSelect,
+    exclude: &[String],
+    firmware_dir: Option<&Path>,
+    image_verification: sp::ImageVerification,
+    allowance: sp::Allowance,
+) -> sp::FlashPlanOptions {
+    sp::FlashPlanOptions {
+        storage,
+        exclude: exclude.to_vec(),
+        firmware_dir: firmware_dir.map(Path::to_path_buf),
+        package_root: Some(
+            scatter_path
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .to_path_buf(),
+        ),
+        image_verification,
+        allowance,
+        clean: sp::CleanMode::No,
+    }
 }
 
 fn print_flash_help() -> Result<()> {
@@ -83,11 +107,26 @@ pub async fn run(
             };
             let scatter_path = p.clone();
 
+            let options = build_flash_options(
+                &scatter_path,
+                storage,
+                exclude,
+                firmware_dir.as_deref(),
+                sp::ImageVerification {
+                    check_images,
+                    image_search,
+                },
+                sp::Allowance {
+                    include_preloader,
+                    allow_incomplete_slots,
+                },
+            );
+
             if !show && !dry_run && !json {
                 if !simulate {
                     warn!("no --json/--dry-run specified; entering interactive confirmation flow");
                 }
-                return crate::cli::interactive::run(&scatter_path, exclude, simulate).await;
+                return crate::cli::interactive::run(&scatter_path, &options, simulate).await;
             }
 
             let action = if show {
@@ -100,17 +139,7 @@ pub async fn run(
             let cfg = ScatterConfig {
                 scatter_path: &scatter_path,
                 action,
-                storage,
-                exclude,
-                firmware_dir: firmware_dir.as_deref(),
-                image_verification: sp::ImageVerification {
-                    check_images,
-                    image_search,
-                },
-                allowance: sp::Allowance {
-                    include_preloader,
-                    allow_incomplete_slots,
-                },
+                options,
                 json,
                 simulate,
             };
