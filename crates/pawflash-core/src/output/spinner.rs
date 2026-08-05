@@ -16,7 +16,7 @@ fn spinner_style() -> ProgressStyle {
 
 fn progress_style() -> ProgressStyle {
     ProgressStyle::with_template(
-        "{prefix:>16}: [{bar:40.green/red}] {bytes}/{total_bytes}  {bytes_per_sec}  [{elapsed_precise}]",
+        "{prefix:>16}: [{bar:30.green/red}] {bytes:>10}/{total_bytes:<10}  {bytes_per_sec:>12}  [{elapsed_precise}]",
     )
     .expect("valid progress bar template")
     .progress_chars("#=- ")
