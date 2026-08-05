@@ -20,7 +20,7 @@ use self::action::{
     apply_exclude_filter, compute_image_counts, finalize_plan_summary, flash_action,
     PlanSummaryCounts, skipped_partition,
 };
-use self::image::resolve_images_for_plan;
+use self::image::{image_exists, resolve_images_for_plan};
 use self::layout::{selected_layout_names, selected_partitions};
 use self::mode::{full_flash_allows_partition, storage_str};
 use self::slot::{
@@ -56,6 +56,10 @@ fn build_partition_actions<'a>(
 
         let (image, action_warnings) =
             resolve_images_for_plan(image_source, scatter_dir, options);
+        if !image_exists(&image) {
+            skipped.push(skipped_partition(part, "image not found"));
+            continue;
+        }
         let action_reason =
             inherited_action_reason(reason, part, image_source);
 
@@ -250,6 +254,19 @@ mod tests {
         }
     }
 
+    /// Write a dummy image file for every flashable partition and point the
+    /// scatter path into the temp dir so image resolution succeeds.
+    fn scatter_with_images(scatter: &mut ScatterFile) -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        for part in scatter.layouts.values().flatten() {
+            if let Some(name) = part.file_name.as_deref() {
+                std::fs::write(dir.path().join(name), b"dummy image").expect("write image");
+            }
+        }
+        scatter.path = dir.path().join("test.xml");
+        dir
+    }
+
     fn synthetic_ab_scatter() -> ScatterFile {
         let mut layouts = std::collections::BTreeMap::new();
         layouts.insert(
@@ -313,7 +330,7 @@ mod tests {
                 userdata_part(),
             ],
         );
-        let scatter = ScatterFile {
+        let mut scatter = ScatterFile {
             path: std::path::PathBuf::from("test.xml"),
             format: "xml".to_string(),
             text_hash: "abc".to_string(),
@@ -324,6 +341,7 @@ mod tests {
             warnings: Vec::new(),
             errors: Vec::new(),
         };
+        let _dir = scatter_with_images(&mut scatter);
         let options = FlashPlanOptions {
             exclude: vec!["boot_b".to_string()],
             ..FlashPlanOptions::default()
@@ -339,7 +357,8 @@ mod tests {
 
     #[test]
     fn build_flash_plan_should_synthesize_non_download_b_slots() {
-        let scatter = synthetic_ab_scatter();
+        let mut scatter = synthetic_ab_scatter();
+        let _dir = scatter_with_images(&mut scatter);
         let options = FlashPlanOptions::default();
         let plan = build_flash_plan(&scatter, &options);
         let b_actions: Vec<_> = plan
@@ -357,7 +376,8 @@ mod tests {
 
     #[test]
     fn full_flash_should_skip_userdata() {
-        let scatter = synthetic_ab_scatter();
+        let mut scatter = synthetic_ab_scatter();
+        let _dir = scatter_with_images(&mut scatter);
         let options = FlashPlanOptions::default();
         let plan = build_flash_plan(&scatter, &options);
         assert!(

@@ -41,6 +41,11 @@ pub(super) fn resolve_images_for_plan(
     )
 }
 
+/// Whether a resolved image value points at a file that exists on disk.
+pub(super) fn image_exists(image: &Value) -> bool {
+    image.pointer("/path/exists").and_then(Value::as_bool) == Some(true)
+}
+
 pub(super) fn checked_image_status(
     resolved_path: Option<&str>,
     exists: Option<bool>,
