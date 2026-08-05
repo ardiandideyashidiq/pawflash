@@ -134,10 +134,6 @@ async fn execute_interactive_plan<T: pawflash_core::flash::transport::FlashTrans
     output::status::blank();
     output::status::data(output::tables::flash_result(&result));
 
-    if result.failed > 0 {
-        return Ok(());
-    }
-
     let reboot_target = Select::new("Reboot to:", vec!["none (skip)", "system", "recovery", "bootloader", "fastbootd"]).prompt().into_diagnostic()?;
 
     do_reboot(executor, reboot_target).await
