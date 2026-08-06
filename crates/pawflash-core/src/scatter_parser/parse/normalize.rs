@@ -8,6 +8,7 @@ use crate::scatter_parser::error::{Error, Result};
 use crate::scatter_parser::parse::helpers::{
     get_first, normalize_none_string, parse_bool, parse_field_int, value_to_string,
 };
+use crate::scatter_parser::safety::safety_class;
 use crate::scatter_parser::types::ScatterPartition;
 use crate::scatter_parser::util::{region_family, storage_family};
 
@@ -55,6 +56,7 @@ pub(super) fn normalize_partition(
         .unwrap_or_else(|| "UNKNOWN".to_string());
     let storage = normalize_none_string(get_first(&entry, &["storage"]));
     let ef_layout = effective_layout(&region, storage.as_deref());
+    let safety_class = safety_class(&name);
 
     Ok(ScatterPartition {
         source: path.to_string_lossy().into_owned(),
@@ -94,6 +96,7 @@ pub(super) fn normalize_partition(
         combo_partsize_check: entry
             .get("combo_partsize_check")
             .map(|v| parse_bool(Some(v), false)),
+        safety_class,
         raw: Value::Object(entry),
         unknown_fields,
     })

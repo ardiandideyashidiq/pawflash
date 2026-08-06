@@ -82,6 +82,8 @@ pub struct ScatterPartition {
     pub empty_boot_needed: Option<bool>,
     /// Whether combo partition size check is enabled.
     pub combo_partsize_check: Option<bool>,
+    /// Safety classification for this partition.
+    pub safety_class: String,
     /// Raw partition data from scatter.
     pub raw: Value,
     /// Unknown or unrecognized fields from the scatter.

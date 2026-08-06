@@ -48,6 +48,7 @@ export interface ScatterPartition {
   is_upgradable: boolean | null;
   empty_boot_needed: boolean | null;
   combo_partsize_check: boolean | null;
+  safety_class: string;
   raw: unknown;
   unknown_fields: Record<string, unknown>;
 }

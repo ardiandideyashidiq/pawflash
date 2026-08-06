@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useConsole } from "@/hooks/useConsole";
+import FlasherPartitionTable from "@/components/tabs/FlasherPartitionTable";
+import { isSelectable } from "@/lib/scatter";
 import type {
   DeviceInfo,
   FlashPlanOptions,
@@ -34,9 +36,7 @@ function partitionCounts(scatter: ScatterFile): { total: number; flashable: numb
   const parts = scatter.layouts[layout] ?? [];
   return {
     total: parts.length,
-    flashable: parts.filter(
-      (p) => p.is_download && p.file_name !== null && p.size > 0,
-    ).length,
+    flashable: parts.filter(isSelectable).length,
   };
 }
 
@@ -48,6 +48,7 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
   const [includePreloader, setIncludePreloader] = useState(false);
   const [rebootAfter, setRebootAfter] = useState(false);
   const [planLoading, setPlanLoading] = useState(false);
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
 
   const connected = device?.connected ?? false;
 
@@ -55,6 +56,46 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
     () => (scatterMeta ? partitionCounts(scatterMeta) : null),
     [scatterMeta],
   );
+
+  const selectedCount = useMemo(() => {
+    if (!scatterMeta) return null;
+    const layout = preferredLayout(scatterMeta.layouts);
+    const parts = scatterMeta.layouts[layout] ?? [];
+    return parts
+      .filter(isSelectable)
+      .filter((p) => !excluded.has(p.name)).length;
+  }, [scatterMeta, excluded]);
+
+  const togglePartition = (name: string) => {
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
+  const toggleAll = (included: boolean) => {
+    if (!scatterMeta) return;
+    const layout = preferredLayout(scatterMeta.layouts);
+    const parts = scatterMeta.layouts[layout] ?? [];
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      for (const p of parts) {
+        if (isSelectable(p)) {
+          if (included) {
+            next.delete(p.name);
+          } else {
+            next.add(p.name);
+          }
+        }
+      }
+      return next;
+    });
+  };
 
   const parseScatter = async (path: string) => {
     setScatterLoading(true);
@@ -94,7 +135,7 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
     channel.onmessage = addProgressEvent;
     const options: FlashPlanOptions = {
       storage: "auto",
-      exclude: [],
+      exclude: Array.from(excluded),
       firmware_dir: null,
       package_root: null,
       image_verification: { check_images: false, image_search: false },
@@ -211,7 +252,9 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
             </label>
             <div className="ml-auto flex items-center gap-3">
               <span className="text-caption text-muted-foreground tabular-nums">
-                {counts ? `${counts.flashable} flashable / ${counts.total} partitions` : ""}
+                {counts && selectedCount !== null
+                  ? `${selectedCount} selected / ${counts.flashable} flashable / ${counts.total} partitions`
+                  : ""}
               </span>
               <Button
                 variant="accent"
@@ -232,16 +275,22 @@ export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
             </div>
           </section>
 
-          {/* Partition summary */}
-          <section className="space-y-2">
-            <h3 className="text-caption font-display font-medium uppercase tracking-wider text-muted-foreground">
-              Layout — {preferredLayout(scatterMeta.layouts)}
-            </h3>
-            <p className="text-label leading-normal text-muted-foreground">
-              Full flash writes all {counts?.flashable} safe partitions
-              ({counts?.total} total in scatter). Identity, calibration, and
-              dangerous partitions (e.g. nvram, pgpt, userdata) are skipped.
-            </p>
+          {/* Partition table */}
+          <section className="panel-shell overflow-hidden">
+            <div className="flex items-baseline justify-between gap-4 px-5 pt-4 pb-2">
+              <h3 className="text-caption font-display font-medium uppercase tracking-wider text-muted-foreground">
+                Layout — {preferredLayout(scatterMeta.layouts)}
+              </h3>
+              <p className="text-caption text-muted-foreground">
+                Uncheck a partition to exclude it from the flash.
+              </p>
+            </div>
+            <FlasherPartitionTable
+              parts={scatterMeta.layouts[preferredLayout(scatterMeta.layouts)] ?? []}
+              excluded={excluded}
+              onToggle={togglePartition}
+              onToggleAll={toggleAll}
+            />
           </section>
         </>
       )}

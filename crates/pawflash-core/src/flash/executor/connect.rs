@@ -102,7 +102,6 @@ impl FlashExecutor<NusbFastBoot> {
         timeout: Duration,
         cancel: CancellationToken,
     ) -> Result<Self> {
-        tokio::time::sleep(Duration::from_secs(2)).await;
         let start = std::time::Instant::now();
         let mut last_log = start;
         loop {
