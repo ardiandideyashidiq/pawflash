@@ -137,4 +137,3 @@ export interface FlashPlanView {
   skippedCount: number;
 }
 
-export type SlotOverride = "" | "a" | "b" | "active" | "inactive" | "all";

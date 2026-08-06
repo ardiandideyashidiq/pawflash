@@ -6,7 +6,6 @@ import { PartitionTable } from "@/components/main-tab/PartitionTable";
 import { FlashFab } from "@/components/main-tab/FlashFab";
 import { useFlashPlan } from "@/hooks/useFlashPlan";
 import { cn } from "@/lib/utils";
-import { slotLabel } from "@/lib/slot";
 import type { ReactNode } from "react";
 
 interface FlasherTabProps {
@@ -29,16 +28,14 @@ function FlashTabInner({
     options,
     setAdvanced,
     setIncludePreloader,
-    setSlot,
     setRebootRecovery,
     togglePartition,
     toggleAllPartitions,
     allSelected,
     someSelected,
     selectedFlashCount,
+    rows,
   } = useFlashPlan();
-
-  const displayRows = plan?.rows ?? [];
 
   return (
     <div className="flex min-h-full min-h-0 flex-col gap-4 lg:gap-6">
@@ -49,15 +46,13 @@ function FlashTabInner({
         onAdvancedChange={setAdvanced}
         includePreloader={options.includePreloader}
         onIncludePreloaderChange={setIncludePreloader}
-        slot={options.slot}
-        onSlotChange={setSlot}
         rebootRecovery={options.rebootRecovery}
         onRebootRecoveryChange={setRebootRecovery}
       />
 
       <PartitionTable
         className="min-h-0 flex-1"
-        partitions={displayRows}
+        partitions={rows}
         loading={loading}
         onToggle={togglePartition}
         onToggleAll={toggleAllPartitions}
@@ -90,14 +85,9 @@ function FlashTabInner({
       )}
 
       <div className="panel-shell shrink-0 px-5 py-4 sm:px-6 sm:py-5">
-        <div className="grid grid-cols-6 items-center gap-3 lg:grid-cols-5 lg:gap-4">
-          <SummaryCard label="Chipset" value={plan?.chipset ?? "—"} className="col-span-2 lg:col-span-1" />
-          <SummaryCard label="Storage" value={plan?.storage ?? "—"} className="col-span-2 lg:col-span-1" />
-          <SummaryCard
-            label="Slot"
-            value={options.slot === "" ? (plan ? "default" : "—") : slotLabel[options.slot]}
-            className="col-span-2 lg:col-span-1"
-          />
+        <div className="grid grid-cols-2 items-center gap-3 lg:grid-cols-4 lg:gap-4">
+          <SummaryCard label="Chipset" value={plan?.chipset ?? "—"} />
+          <SummaryCard label="Storage" value={plan?.storage ?? "—"} />
           <SummaryCard
             label="Actions"
             value={
@@ -114,9 +104,8 @@ function FlashTabInner({
               )
             }
             accent
-            className="col-span-3 lg:col-span-1"
           />
-          <div className="col-span-3 flex overflow-hidden lg:col-span-1">
+          <div className="flex overflow-hidden">
             <FlashFab onClick={onStartFlash} disabled={flashDisabled} />
           </div>
         </div>

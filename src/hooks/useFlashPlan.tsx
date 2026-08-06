@@ -14,7 +14,6 @@ import type {
   FlashPlanDto,
   FlashPlanView,
   PartitionRow,
-  SlotOverride,
 } from "@/types/api";
 import { buildFlashPlanOptions } from "@/lib/plan";
 
@@ -23,7 +22,6 @@ const SCATTER_STORAGE_KEY = "last-scatter-path";
 interface PlanOptions {
   advanced: boolean;
   includePreloader: boolean;
-  slot: SlotOverride;
   rebootRecovery: boolean;
 }
 
@@ -36,12 +34,12 @@ export interface FlashPlanState {
   loadScatter: (path: string) => void;
   setAdvanced: (v: boolean) => void;
   setIncludePreloader: (v: boolean) => void;
-  setSlot: (v: SlotOverride) => void;
   setRebootRecovery: (v: boolean) => void;
   togglePartition: (name: string) => void;
   toggleAllPartitions: () => void;
   allSelected: boolean;
   someSelected: boolean;
+  rows: PartitionRow[];
   selectedRows: PartitionRow[];
   selectedFlashCount: number;
   buildExclude: () => string[];
@@ -64,7 +62,7 @@ function toPlanView(dto: FlashPlanDto): FlashPlanView {
         image_name: imageName,
         image_type: a.image_type,
         region: a.region,
-        selected: true,
+        selected: false,
       };
     });
   return {
@@ -89,7 +87,6 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [includePreloader, setIncludePreloader] = useState(false);
-  const [slot, setSlot] = useState<SlotOverride>("");
   const [rebootRecovery, setRebootRecovery] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -167,7 +164,14 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
     });
   }, [plan]);
 
-  const rows = useMemo(() => plan?.rows ?? [], [plan]);
+  const rows = useMemo(
+    () =>
+      (plan?.rows ?? []).map((row) => ({
+        ...row,
+        selected: selected.has(row.partition),
+      })),
+    [plan, selected],
+  );
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.partition));
   const someSelected = rows.some((r) => selected.has(r.partition)) && !allSelected;
   const selectedRows = useMemo(
@@ -190,16 +194,16 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       plan,
       loading,
       error,
-      options: { advanced, includePreloader, slot, rebootRecovery },
+      options: { advanced, includePreloader, rebootRecovery },
       loadScatter,
       setAdvanced,
       setIncludePreloader,
-      setSlot,
       setRebootRecovery,
       togglePartition,
       toggleAllPartitions,
       allSelected,
       someSelected,
+      rows,
       selectedRows,
       selectedFlashCount,
       buildExclude,
@@ -211,13 +215,13 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       error,
       advanced,
       includePreloader,
-      slot,
       rebootRecovery,
       loadScatter,
       togglePartition,
       toggleAllPartitions,
       allSelected,
       someSelected,
+      rows,
       selectedRows,
       selectedFlashCount,
       buildExclude,
