@@ -24,6 +24,13 @@ impl MockDownloadSink {
         Ok(())
     }
 
+    pub(crate) async fn get_mut_data(&mut self, max: usize) -> Result<&mut [u8]> {
+        tokio::task::yield_now().await;
+        let start = self.data.len();
+        self.data.resize(start + max, 0);
+        Ok(&mut self.data[start..])
+    }
+
     pub(crate) async fn finish(mut self) -> Result<()> {
         tokio::task::yield_now().await;
         self.finished = true;

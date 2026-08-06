@@ -6,11 +6,16 @@
 //! `Flashing` events with bytes/total and cumulative overall progress).
 
 use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 use indicatif::{MultiProgress, ProgressBar};
 
 /// Throttle window for byte-progress callbacks (256 KiB).
 const REPORT_THRESHOLD: u64 = 256 * 1024;
+
+/// Minimum interval between byte-progress callbacks, so high-throughput
+/// transfers do not flood the GUI with thousands of IPC messages per second.
+const REPORT_INTERVAL: Duration = Duration::from_millis(100);
 
 /// A single byte-level transfer update for one partition flash.
 #[derive(Debug, Clone)]
@@ -49,6 +54,7 @@ pub(crate) struct TransferReporter<'a> {
     cli: Option<&'a ProgressBar>,
     on_bytes: Option<&'a mut (dyn FnMut(u64, u64) + Send)>,
     last_reported: u64,
+    last_emit_at: Instant,
 }
 
 impl<'a> TransferReporter<'a> {
@@ -60,6 +66,7 @@ impl<'a> TransferReporter<'a> {
             cli,
             on_bytes,
             last_reported: 0,
+            last_emit_at: Instant::now(),
         }
     }
 
@@ -77,6 +84,7 @@ impl<'a> TransferReporter<'a> {
 
     pub(crate) fn reset(&mut self) {
         self.last_reported = 0;
+        self.last_emit_at = Instant::now();
         if let Some(pb) = self.cli {
             pb.reset();
         }
@@ -94,16 +102,19 @@ impl<'a> TransferReporter<'a> {
         }
     }
 
-    /// Forward `bytes`/`total` to the callback, throttled to
-    /// `REPORT_THRESHOLD` except for the first (0) and last (>= total)
-    /// reports so the UI gets a live but not overwhelming stream.
+    /// Forward `bytes`/`total` to the callback, throttled to at most one
+    /// callback per `REPORT_INTERVAL` (and per `REPORT_THRESHOLD` bytes),
+    /// except for the first (0) and last (>= total) reports so the UI gets a
+    /// live but not overwhelming stream.
     pub(crate) fn report(&mut self, bytes: u64, total: u64) {
         let reached_end = bytes >= total;
         let advanced = bytes.saturating_sub(self.last_reported) >= REPORT_THRESHOLD;
-        if !(bytes == 0 || reached_end || advanced) {
+        let fresh = self.last_emit_at.elapsed() >= REPORT_INTERVAL;
+        if !(bytes == 0 || reached_end || (advanced && fresh)) {
             return;
         }
         self.last_reported = bytes;
+        self.last_emit_at = Instant::now();
         if let Some(cb) = self.on_bytes.as_mut() {
             cb(bytes, total);
         }

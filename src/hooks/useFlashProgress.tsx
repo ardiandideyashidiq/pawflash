@@ -41,14 +41,27 @@ export interface FlashProgressData {
   statusText: string;
 }
 
-export interface FlashProgressState extends FlashProgressData {
+export interface FlashProgressActions {
   reset: () => void;
   fail: (message: string) => void;
   setIsMinimized: (v: boolean) => void;
   onEvent: (event: ProgressEvent) => void;
 }
 
+export interface FlashProgressState extends FlashProgressData, FlashProgressActions {}
+
+/**
+ * Coarse-grained flash session state: only `phase` and the stable action
+ * callbacks. The context value changes only on phase transitions, so
+ * consumers such as `App` and `LogPanel` stay out of the per-byte
+ * re-render storm driven by high-frequency `Flashing` events.
+ */
+export interface FlashPhaseState extends FlashProgressActions {
+  phase: FlashPhase;
+}
+
 const FlashProgressContext = createContext<FlashProgressState | null>(null);
+const FlashPhaseContext = createContext<FlashPhaseState | null>(null);
 
 const initialState: FlashProgressData = {
   phase: "idle",
@@ -182,20 +195,38 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const value = useMemo(
-    () => ({ ...state, reset, fail, setIsMinimized, onEvent }),
-    [state, reset, fail, setIsMinimized, onEvent],
+  const actions = useMemo(
+    () => ({ reset, fail, setIsMinimized, onEvent }),
+    [reset, fail, setIsMinimized, onEvent],
+  );
+
+  const fineValue = useMemo<FlashProgressState>(
+    () => ({ ...state, ...actions }),
+    [state, actions],
+  );
+
+  const coarseValue = useMemo<FlashPhaseState>(
+    () => ({ phase: state.phase, ...actions }),
+    [state.phase, actions],
   );
 
   return (
-    <FlashProgressContext.Provider value={value}>
-      {children}
-    </FlashProgressContext.Provider>
+    <FlashPhaseContext.Provider value={coarseValue}>
+      <FlashProgressContext.Provider value={fineValue}>
+        {children}
+      </FlashProgressContext.Provider>
+    </FlashPhaseContext.Provider>
   );
 }
 
 export function useFlashProgress() {
   const ctx = useContext(FlashProgressContext);
   if (!ctx) throw new Error("useFlashProgress must be used within FlashProgressProvider");
+  return ctx;
+}
+
+export function useFlashPhase() {
+  const ctx = useContext(FlashPhaseContext);
+  if (!ctx) throw new Error("useFlashPhase must be used within FlashProgressProvider");
   return ctx;
 }

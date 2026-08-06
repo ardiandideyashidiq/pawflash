@@ -2,9 +2,9 @@
 //! IPC commands with progress reporting via `Channel<ProgressEvent>`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use pawflash_core::flash::executor::BootTarget;
 use pawflash_core::flash::progress::{FlashRunOptions, FlashTransferEvent};
@@ -12,7 +12,7 @@ use pawflash_core::flash::FlashExecutor;
 use pawflash_core::scatter_parser as sp;
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::{Emitter, State};
+use tauri::State;
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
@@ -75,6 +75,48 @@ struct CancelState {
   force_fastboot: Arc<AtomicBool>,
 }
 
+/// In-memory cache of parsed scatter files, keyed by path and invalidated on
+/// mtime/size change. A single GUI flash session parses the scatter through
+/// three commands (validate → plan → execute); this collapses that to one
+/// parse and one disk read + hash.
+#[derive(Default)]
+struct ScatterCache {
+  inner: Mutex<HashMap<PathBuf, CachedScatter>>,
+}
+
+struct CachedScatter {
+  mtime: std::time::SystemTime,
+  size: u64,
+  parsed: Arc<sp::ScatterFile>,
+}
+
+impl ScatterCache {
+  fn get_or_parse(&self, path: &Path) -> Result<Arc<sp::ScatterFile>, String> {
+    let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+    let size = meta.len();
+
+    let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+    let cached = inner
+      .get(path)
+      .filter(|c| c.mtime == mtime && c.size == size);
+    if let Some(cached) = cached {
+      return Ok(cached.parsed.clone());
+    }
+
+    let parsed = Arc::new(sp::parse_scatter(path).map_err(|e| e.to_string())?);
+    inner.insert(
+      path.to_path_buf(),
+      CachedScatter {
+        mtime,
+        size,
+        parsed: parsed.clone(),
+      },
+    );
+    Ok(parsed)
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────
 
 fn send_progress(ch: &Channel<ProgressEvent>, event: ProgressEvent) {
@@ -110,10 +152,9 @@ async fn wait_for_cancel(flag: &AtomicBool) {
   }
 }
 
-#[tracing::instrument(skip(app, on_event, cancel))]
+#[tracing::instrument(skip(on_event, cancel))]
 #[tauri::command]
 async fn force_fastboot(
-  app: tauri::AppHandle,
   on_event: Channel<ProgressEvent>,
   cancel: State<'_, CancelState>,
 ) -> Result<(), String> {
@@ -123,7 +164,6 @@ async fn force_fastboot(
     info!("already in fastboot mode");
     send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "confirmed".into(), message: "Device already in fastboot mode.".into() });
     send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Already in fastboot mode".into() });
-    let _ = app.emit("fastboot-devices", ());
     return Ok(());
   }
 
@@ -196,7 +236,6 @@ async fn force_fastboot(
   send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "confirmed".into(), message: "Fastboot mode confirmed.".into() });
   info!("device now in fastboot mode");
   send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Device now in fastboot mode".into() });
-  let _ = app.emit("fastboot-devices", ());
   Ok(())
 }
 
@@ -309,25 +348,23 @@ async fn disable_vbmeta(on_event: Channel<ProgressEvent>) -> Result<(), String> 
 
 // ── Scatter commands ──────────────────────────────────────────────────
 
-#[tracing::instrument(skip_all, fields(path))]
+#[tracing::instrument(skip(cache), fields(path))]
 #[tauri::command]
-async fn parse_scatter(path: String) -> Result<sp::ScatterFile, String> {
-  let parsed = sp::parse_scatter(Path::new(&path)).map_err(|e| {
-    warn!(%path, error = %e, "parse_scatter failed");
-    e.to_string()
-  })?;
+async fn parse_scatter(path: String, cache: State<'_, ScatterCache>) -> Result<sp::ScatterFile, String> {
+  let parsed = cache.get_or_parse(Path::new(&path))?;
   let count: usize = parsed.layouts.values().map(Vec::len).sum();
   info!(%path, partition_count = %count, "scatter parsed");
-  Ok(parsed)
+  Ok((*parsed).clone())
 }
 
-#[tracing::instrument(skip_all, fields(path))]
+#[tracing::instrument(skip(cache), fields(path))]
 #[tauri::command]
-async fn build_plan(path: String, options: sp::FlashPlanOptions) -> Result<sp::FlashPlan, String> {
-  let parsed = sp::parse_scatter(Path::new(&path)).map_err(|e| {
-    warn!(%path, error = %e, "parse_scatter for plan failed");
-    e.to_string()
-  })?;
+async fn build_plan(
+  path: String,
+  options: sp::FlashPlanOptions,
+  cache: State<'_, ScatterCache>,
+) -> Result<sp::FlashPlan, String> {
+  let parsed = cache.get_or_parse(Path::new(&path))?;
   let plan = sp::build_flash_plan(&parsed, &options);
   info!(
     actions = %plan.actions.len(),
@@ -338,23 +375,20 @@ async fn build_plan(path: String, options: sp::FlashPlanOptions) -> Result<sp::F
   Ok(plan)
 }
 
-#[tracing::instrument(skip(app, on_event, options, cancel), fields(path))]
+#[tracing::instrument(skip(on_event, options, cancel, cache), fields(path))]
 #[tauri::command]
 async fn execute_plan(
-  app: tauri::AppHandle,
   path: String,
   options: sp::FlashPlanOptions,
   on_event: Channel<ProgressEvent>,
   cancel: State<'_, CancelState>,
+  cache: State<'_, ScatterCache>,
 ) -> Result<pawflash_core::flash::results::FlashResult, String> {
   cancel.flash.store(false, Ordering::Relaxed);
 
   // Parse
   send_progress(&on_event, ProgressEvent::Phase { phase: "parsing".into(), message: "Parsing scatter file...".into() });
-  let parsed = sp::parse_scatter(Path::new(&path)).map_err(|e| {
-    warn!(%path, error = %e, "execute_plan: parse failed");
-    e.to_string()
-  })?;
+  let parsed = cache.get_or_parse(Path::new(&path))?;
 
   // Build plan
   send_progress(&on_event, ProgressEvent::Phase { phase: "planning".into(), message: "Building flash plan...".into() });
@@ -408,8 +442,6 @@ async fn execute_plan(
     )
     .await;
 
-  let _ = app.emit("flash-complete", ());
-
   if result.cancelled {
     info!("flash plan cancelled by user");
     send_progress(&on_event, ProgressEvent::Cancelled { message: "Flash cancelled by user".into() });
@@ -461,10 +493,9 @@ async fn cancel_flash(cancel: State<'_, CancelState>) -> Result<(), String> {
   Ok(())
 }
 
-#[tracing::instrument(skip(app, on_event), fields(partition, image_path))]
+#[tracing::instrument(skip(on_event), fields(partition, image_path))]
 #[tauri::command]
 async fn flash_raw_image(
-  app: tauri::AppHandle,
   partition: String,
   image_path: String,
   on_event: Channel<ProgressEvent>,
@@ -488,7 +519,6 @@ async fn flash_raw_image(
     e.to_string()
   })?;
 
-  let _ = app.emit("flash-complete", ());
   info!(%partition, response = %resp, "raw flash complete");
   send_progress(&on_event, ProgressEvent::FlashComplete { partition, success: true, response: Some(resp.clone()) });
   send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Raw flash complete".into() });
@@ -505,6 +535,7 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
     .manage(CancelState::default())
+    .manage(ScatterCache::default())
     .invoke_handler(tauri::generate_handler![
       get_device_info,
       force_fastboot,

@@ -10,7 +10,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-use encoding_rs::{UTF_16BE, UTF_16LE, UTF_8};
+use encoding_rs::{UTF_16BE, UTF_16LE};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tracing::debug;
@@ -116,20 +116,52 @@ fn sha256_text(text: &str) -> String {
 
 fn decode_text(path: &Path) -> Result<String> {
     let raw = fs::read(path)?;
-    let candidates = [
-        UTF_8.decode(&raw).0.into_owned(),
-        UTF_16LE.decode(&raw).0.into_owned(),
-        UTF_16BE.decode(&raw).0.into_owned(),
-        raw.iter().map(|&byte| char::from(byte)).collect::<String>(),
-    ];
-    for text in candidates {
-        if text.matches('\0').count() < std::cmp::max(1, text.len() / 20) {
-            return Ok(text.replace("\r\n", "\n").replace('\r', "\n"));
+
+    // Sniff the encoding once instead of decoding into four full copies of
+    // the file and picking the least-NUL result.
+    let text = if raw.starts_with(&[0xFF, 0xFE]) {
+        UTF_16LE.decode(&raw[2..]).0.into_owned()
+    } else if raw.starts_with(&[0xFE, 0xFF]) {
+        UTF_16BE.decode(&raw[2..]).0.into_owned()
+    } else {
+        // A NUL byte is essentially never present in ASCII/UTF-8 scatter
+        // text but appears in ~half of the bytes of UTF-16 ASCII text, so a
+        // majority-NUL buffer is treated as UTF-16 without a BOM.
+        let nul_count = raw.iter().fold(0usize, |acc, &b| acc + usize::from(b == 0));
+        if nul_count > 0 && nul_count * 2 > raw.len() {
+            // ASCII 'a' is [0x61, 0x00] in UTF-16LE and [0x00, 0x61] in BE.
+            if matches!(raw.get(0..2), Some(&[0x00, 0x61])) {
+                UTF_16BE.decode(&raw).0.into_owned()
+            } else {
+                UTF_16LE.decode(&raw).0.into_owned()
+            }
+        } else {
+            String::from_utf8_lossy(&raw).into_owned()
+        }
+    };
+
+    Ok(normalize_newlines(&text))
+}
+
+/// Single-pass `\r\n`/`\r` → `\n` normalization (avoids two full-string
+/// `replace` passes over potentially megabytes of text).
+fn normalize_newlines(text: &str) -> String {
+    if !text.contains('\r') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\r' {
+            if chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            out.push('\n');
+        } else {
+            out.push(c);
         }
     }
-    Ok(String::from_utf8_lossy(&raw)
-        .replace("\r\n", "\n")
-        .replace('\r', "\n"))
+    out
 }
 
 fn looks_like_xml(text: &str) -> bool {

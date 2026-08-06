@@ -16,7 +16,7 @@ import { ConsoleProvider } from "@/components/console/ConsoleContext";
 import { useConsole } from "@/hooks/useConsole";
 import {
   FlashProgressProvider,
-  useFlashProgress,
+  useFlashPhase,
 } from "@/hooks/useFlashProgress";
 import {
   ForceFastbootProvider,
@@ -52,7 +52,7 @@ function buildDeviceSummary(info: DeviceInfo) {
 function AppRoot() {
   const { theme, setTheme } = useUI();
   const { addProgressEvent, addEntry } = useConsole();
-  const flash = useFlashProgress();
+  const flash = useFlashPhase();
   const force = useForceFastboot();
   const planState = useFlashPlan();
   const device = useDevice();

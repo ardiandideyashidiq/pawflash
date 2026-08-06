@@ -15,14 +15,12 @@ fn colored(mut table: Table) -> String {
 }
 
 fn apply_colors(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
-        match ch {
-            '╭' | '╮' | '╰' | '╯' | '│' | '├' | '┤' | '┬' | '┴' | '─' | '┼' | '╵' => {
-                out.push_str(&dim_colored(ch.to_string()));
-            }
-            _ => out.push(ch),
-        }
+    // Precompute each distinct box-drawing character's colored form once, then
+    // replace whole substrings — avoids hundreds of per-char allocations.
+    let mut out = s.to_string();
+    for ch in ['╭', '╮', '╰', '╯', '│', '├', '┤', '┬', '┴', '─', '┼', '╵'] {
+        let colored = dim_colored(ch.to_string());
+        out = out.replace(ch, &colored);
     }
     out
 }

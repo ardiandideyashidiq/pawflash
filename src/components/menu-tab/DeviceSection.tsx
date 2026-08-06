@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { SectionCard } from "@/components/menu-tab/SectionCard";
 import { useConsole } from "@/hooks/useConsole";
-import { useFlashProgress } from "@/hooks/useFlashProgress";
+import { useFlashPhase } from "@/hooks/useFlashProgress";
 import type { ProgressEvent } from "@/types/progress";
 
 interface DeviceSectionProps {
@@ -25,7 +25,7 @@ export const DeviceSection = memo(function DeviceSection({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const { addProgressEvent } = useConsole();
-  const { reset } = useFlashProgress();
+  const { reset } = useFlashPhase();
 
   const disableVbmeta = async () => {
     setBusy(true);

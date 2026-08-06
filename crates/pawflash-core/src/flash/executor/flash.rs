@@ -11,8 +11,11 @@ use crate::flash::progress::{FlashRunOptions, FlashTransferEvent, TransferReport
 use crate::flash::results::{FlashOutcome, FlashResult};
 use crate::flash::transport::FlashTransport;
 use crate::scatter_parser::types::FlashPlan;
-use super::{parse_max_download, FlashExecutor};
+use super::FlashExecutor;
 use super::EMPTY_VBMETA;
+
+/// Transfer chunk size used when streaming files into the USB buffer.
+const TRANSFER_CHUNK: u64 = 1024 * 1024;
 
 impl<T: FlashTransport> FlashExecutor<T> {
     /// # Errors
@@ -51,7 +54,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         image_path: &Path,
     ) -> Result<String> {
         debug!(%partition, image_path = %image_path.display(), "flash_raw_image entry");
-        let max_download = parse_max_download(&mut self.fb).await?;
+        let max_download = self.max_download().await?;
 
         self.flash_image_to_partition(partition, image_path, max_download, None).await
     }
@@ -132,7 +135,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         } else {
             info!(total, "starting flash execution");
         }
-        let max_download = match parse_max_download(&mut self.fb).await {
+        let max_download = match self.max_download().await {
             Ok(v) => v,
             Err(e) => {
                 warn!(error = %e, "falling back to default max-download-size");
@@ -262,23 +265,27 @@ impl<T: FlashTransport> FlashExecutor<T> {
         path: &Path,
         size: u32,
         mut reporter: Option<&mut TransferReporter<'_>>,
-        xbuf: &mut crate::flash::sparse::XferBuf,
+        _xbuf: &mut crate::flash::sparse::XferBuf,
     ) -> Result<String> {
         debug!(%partition, file_size = size, "flashing raw partition");
         let mut file = tokio::fs::File::open(path).await?;
         let mut sender = self.fb.download(size).await?;
 
-        let buf = xbuf.get(1024 * 1024);
+        // Read the file directly into the USB transfer buffer, avoiding the
+        // intermediate copy of `extend_from_slice`. `get_mut_data` reserves
+        // bytes against the download budget; `read_exact` fills the reserved
+        // slice, and `size` (from metadata) guarantees we never reserve more
+        // than the file holds.
         let mut written = 0u64;
-        loop {
-            let n = file.read(buf).await?;
-            if n == 0 {
-                break;
-            }
-            sender.extend_from_slice(&buf[..n]).await?;
-            written += n as u64;
+        while written < u64::from(size) {
+            let remaining = u64::from(size) - written;
+            let want = usize::try_from(remaining.min(TRANSFER_CHUNK)).unwrap_or(usize::MAX);
+            let buf = sender.get_mut_data(want).await?;
+            file.read_exact(buf).await?;
+            let n = buf.len() as u64;
+            written += n;
             if let Some(rep) = reporter.as_mut() {
-                rep.inc(n as u64);
+                rep.inc(n);
                 rep.report(written, u64::from(size));
             }
         }

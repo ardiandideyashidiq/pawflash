@@ -27,6 +27,8 @@ export interface ConsoleEntry {
   id: number;
   /** Wall-clock timestamp in milliseconds. */
   timestamp: number;
+  /** Precomputed `HH:MM:SS` label, formatted once at insert time. */
+  time: string;
   text: string;
   level: ConsoleLevel;
 }

@@ -38,18 +38,6 @@ pub(super) fn normalize_partition(
             span: None,
         })?;
     let file_name = normalize_none_string(get_first(&entry, &["file_name", "filename"]));
-    let known = [
-        "partition_index", "partition_name", "file_name", "is_download", "type",
-        "linear_start_addr", "physical_start_addr", "partition_size", "region",
-        "storage", "boundary_check", "is_reserved", "operation_type",
-        "is_upgradable", "empty_boot_needed", "combo_partsize_check", "reserve",
-    ];
-    let unknown_fields = entry
-        .iter()
-        .filter(|(key, _)| !known.contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
-
     let region = value_to_string(get_first(&entry, &["region"]))
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
@@ -98,7 +86,6 @@ pub(super) fn normalize_partition(
             .map(|v| parse_bool(Some(v), false)),
         safety_class,
         raw: Value::Object(entry),
-        unknown_fields,
     })
 }
 

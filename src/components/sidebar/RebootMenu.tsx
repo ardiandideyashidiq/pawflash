@@ -3,7 +3,7 @@ import { Menu } from "@base-ui/react/menu";
 import { Check, ChevronDown, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { useDevice } from "@/hooks/useDevice";
-import { useFlashProgress } from "@/hooks/useFlashProgress";
+import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +39,7 @@ export const RebootMenu = memo(function RebootMenu({
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { reboot } = useDevice();
-  const flash = useFlashProgress();
+  const flash = useFlashPhase();
   const force = useForceFastboot();
 
   const sessionLive = useMemo(

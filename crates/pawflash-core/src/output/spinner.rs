@@ -9,17 +9,27 @@ fn multi() -> &'static MultiProgress {
 }
 
 fn spinner_style() -> ProgressStyle {
-    ProgressStyle::with_template("{spinner:.green} {msg}")
-        .unwrap()
-        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+    static STYLE: OnceLock<ProgressStyle> = OnceLock::new();
+    STYLE
+        .get_or_init(|| {
+            ProgressStyle::with_template("{spinner:.green} {msg}")
+                .expect("valid spinner template")
+                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+        })
+        .clone()
 }
 
 fn progress_style() -> ProgressStyle {
-    ProgressStyle::with_template(
-        "{prefix:>16}: [{bar:30.green/red}] {bytes:>10}/{total_bytes:<10}  {bytes_per_sec:>12}  [{elapsed_precise}]",
-    )
-    .expect("valid progress bar template")
-    .progress_chars("#=- ")
+    static STYLE: OnceLock<ProgressStyle> = OnceLock::new();
+    STYLE
+        .get_or_init(|| {
+            ProgressStyle::with_template(
+                "{prefix:>16}: [{bar:30.green/red}] {bytes:>10}/{total_bytes:<10}  {bytes_per_sec:>12}  [{elapsed_precise}]",
+            )
+            .expect("valid progress bar template")
+            .progress_chars("#=- ")
+        })
+        .clone()
 }
 
 /// Shared `MultiProgress` for all spinners and progress bars, so every

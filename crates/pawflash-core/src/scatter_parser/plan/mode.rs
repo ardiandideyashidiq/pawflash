@@ -80,7 +80,6 @@ mod tests {
             combo_partsize_check: None,
             safety_class: String::new(),
             raw: serde_json::json!({}),
-            unknown_fields: std::collections::BTreeMap::new(),
         }
     }
 

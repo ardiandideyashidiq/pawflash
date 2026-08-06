@@ -314,12 +314,26 @@ fn absolutize(path: &Path) -> PathBuf {
     if path.is_absolute() {
         normalize_components(path)
     } else {
-        let cwd = std::env::current_dir().unwrap_or_else(|err| {
-            warn!(%err, "failed to get current directory, using '.'");
-            PathBuf::from(".")
-        });
-        normalize_components(&cwd.join(path))
+        normalize_components(&current_dir_cached().join(path))
     }
+}
+
+/// Current working directory, resolved once per thread instead of issuing a
+/// `getcwd` syscall for every relative image path candidate.
+fn current_dir_cached() -> PathBuf {
+    thread_local! {
+        static CWD: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+    }
+    CWD.with(|cell| {
+        let mut cwd = cell.borrow_mut();
+        cwd.get_or_insert_with(|| {
+            std::env::current_dir().unwrap_or_else(|err| {
+                warn!(%err, "failed to get current directory, using '.'");
+                PathBuf::from(".")
+            })
+        })
+        .clone()
+    })
 }
 
 fn normalize_components(path: &Path) -> PathBuf {

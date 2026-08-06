@@ -31,6 +31,23 @@ impl DownloadSender<'_> {
         }
     }
 
+    /// Reserve up to `max` bytes of the download for writing directly into
+    /// the transport buffer, avoiding the intermediate copy of
+    /// [`Self::extend_from_slice`]. The returned slice must be filled
+    /// completely; the reserved bytes are committed to the download budget.
+    ///
+    /// # Errors
+    /// Returns an error if the data transfer fails or `max` exceeds the
+    /// remaining download size.
+    pub async fn get_mut_data(&mut self, max: usize) -> Result<&mut [u8]> {
+        match self {
+            Self::Real(inner) => inner.get_mut_data(max).await.map_err(FlashError::from),
+            #[cfg(test)]
+            Self::Mock(inner) => inner.get_mut_data(max).await,
+            Self::Simulated(inner) => inner.get_mut_data(max).await,
+        }
+    }
+
     /// Finalise the download.
     ///
     /// # Errors

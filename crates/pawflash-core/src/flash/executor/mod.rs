@@ -77,17 +77,31 @@ impl std::str::FromStr for BootTarget {
 pub struct FlashExecutor<T: FlashTransport = NusbFastBoot> {
     pub(crate) fb: T,
     device_vars: HashMap<String, String>,
+    /// Cached `max-download-size`, queried once per executor lifetime.
+    max_download: Option<u32>,
 }
 
 impl<T: FlashTransport> FlashExecutor<T> {
     #[must_use]
     pub const fn new(fb: T, device_vars: HashMap<String, String>) -> Self {
-        Self { fb, device_vars }
+        Self { fb, device_vars, max_download: None }
     }
 
     #[must_use]
     pub const fn device_vars(&self) -> &HashMap<String, String> {
         &self.device_vars
+    }
+
+    /// Query `max-download-size` once per executor lifetime and reuse it for
+    /// every subsequent flash, avoiding redundant USB round-trips on
+    /// multi-target operations (e.g. `--both`).
+    async fn max_download(&mut self) -> Result<u32> {
+        if let Some(v) = self.max_download {
+            return Ok(v);
+        }
+        let v = parse_max_download(&mut self.fb).await?;
+        self.max_download = Some(v);
+        Ok(v)
     }
 }
 
@@ -227,5 +241,28 @@ mod tests {
         // Only get_var for max-download-size, no download/flash commands
         let cmds = exec.fb.commands();
         assert!(cmds.iter().all(|c| c.starts_with("get_var:")), "dry run should only query vars, got: {cmds:?}");
+    }
+
+    #[tokio::test]
+    async fn execute_plan_flashes_image_via_direct_read() {
+        // Exercises the get_mut_data transfer path (file read directly into
+        // the transport buffer) end-to-end against the mock sink.
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("boot.img");
+        let payload: Vec<u8> = (0..2_000_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&img, &payload).unwrap();
+        let mut exec = mock_executor();
+        let plan = make_empty_plan(vec![
+            make_action("boot", img.to_str()),
+        ]);
+        let result = exec.execute_plan(&plan, FlashRunOptions::default()).await;
+        assert_eq!(result.total, 1);
+        assert_eq!(result.succeeded, 1);
+        assert_eq!(result.failed, 0);
+        let cmds = exec.fb.commands();
+        assert!(
+            cmds.iter().any(|c| c.starts_with("download:")),
+            "expected a download command, got: {cmds:?}",
+        );
     }
 }

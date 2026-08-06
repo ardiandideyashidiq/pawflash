@@ -86,8 +86,6 @@ pub struct ScatterPartition {
     pub safety_class: String,
     /// Raw partition data from scatter.
     pub raw: Value,
-    /// Unknown or unrecognized fields from the scatter.
-    pub unknown_fields: BTreeMap<String, Value>,
 }
 
 impl ScatterPartition {

@@ -42,7 +42,6 @@ export interface ScatterPartition {
   combo_partsize_check: boolean | null;
   safety_class: string;
   raw: unknown;
-  unknown_fields: Record<string, unknown>;
 }
 
 export interface FlashPlanOptions {

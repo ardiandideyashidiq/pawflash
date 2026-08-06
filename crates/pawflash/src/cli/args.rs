@@ -4,7 +4,6 @@ use pawflash_core::scatter_parser as sp;
 
 #[derive(Parser)]
 #[command(name = "pawflash", about = "MTK device flashing toolkit", version)]
-#[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
     /// Logging verbosity: -v = info, -vv = debug, -vvv = trace
     #[arg(short, long, global = true, action = clap::ArgAction::Count)]

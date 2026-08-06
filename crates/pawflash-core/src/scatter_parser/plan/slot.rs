@@ -68,19 +68,19 @@ pub(super) fn expand_requested_names(
 }
 
 pub(super) fn synthesize_slot_actions_if_needed(
-    selected_parts: &[ScatterPartition],
+    selected_parts: &[&ScatterPartition],
     actions: &mut Vec<FlashAction>,
 ) {
     synthesize_non_download_slot_actions(selected_parts, actions);
 }
 
 fn synthesize_non_download_slot_actions(
-    selected_parts: &[ScatterPartition],
+    selected_parts: &[&ScatterPartition],
     actions: &mut Vec<FlashAction>,
 ) {
     let parts_by_name: BTreeMap<_, _> = selected_parts
         .iter()
-        .map(|p| (p.name.to_lowercase(), p))
+        .map(|p| (p.name.to_lowercase(), *p))
         .collect();
     let actions_by_partition: BTreeMap<_, _> = actions
         .iter()
@@ -146,7 +146,7 @@ fn slot_synthesized_action(
 }
 
 pub(super) fn check_incomplete_slots(
-    selected_parts: &[ScatterPartition],
+    selected_parts: &[&ScatterPartition],
     actions: &[FlashAction],
     allow_incomplete_slots: bool,
     warnings: &mut Vec<String>,

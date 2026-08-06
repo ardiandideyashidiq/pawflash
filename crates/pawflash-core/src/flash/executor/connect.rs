@@ -89,7 +89,7 @@ impl FlashExecutor<NusbFastBoot> {
             version = device_vars.get("version").map_or("?", |s| s.as_str()),
             "connected to fastboot device"
         );
-        Ok(Self { fb, device_vars })
+        Ok(Self { fb, device_vars, max_download: None })
     }
 
     /// Wait for a fastboot device to reappear after reboot.

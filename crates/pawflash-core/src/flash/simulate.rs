@@ -93,6 +93,23 @@ impl SimulatedDownloadSink {
         Ok(())
     }
 
+    /// Reserve up to `max` bytes for direct writes, simulating the same USB
+    /// transfer delay as [`Self::extend_from_slice`]. The reserved bytes are
+    /// committed to the buffer; the caller must fill them.
+    ///
+    /// # Errors
+    /// Returns an error if reservation fails (never in practice).
+    pub async fn get_mut_data(&mut self, max: usize) -> Result<&mut [u8]> {
+        let delay = bytes_to_delay(max as u64, self.speed.usb_bytes_per_sec);
+        if delay > Duration::from_millis(1) {
+            tokio::time::sleep(delay).await;
+        }
+        let start = self.data.len();
+        self.data.reserve(max);
+        self.data.resize(start + max, 0);
+        Ok(&mut self.data[start..])
+    }
+
     /// Finalise the download with a short latency.
     ///
     /// # Errors

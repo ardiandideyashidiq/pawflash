@@ -1,5 +1,7 @@
 //! Shared parsing helpers for MTK scatter values.
 
+use std::borrow::Cow;
+
 use serde_json::Value;
 
 use crate::scatter_parser::error::{Error, Result};
@@ -21,23 +23,30 @@ fn invalid(field_name: &str, value: &str) -> Error {
 ///
 /// Returns [`Error::InvalidValue`] when the string cannot be parsed.
 pub fn parse_int(value: &str, field_name: &str) -> Result<i64> {
-    let mut s = value.trim().replace('_', "");
-    if s.is_empty() {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
         return Err(Error::InvalidValue {
             detail: format!("empty {field_name}"),
             source_text: None,
             span: None,
         });
     }
-    let sign = if let Some(rest) = s.strip_prefix('-') {
-        s = rest.to_string();
-        -1
-    } else if let Some(rest) = s.strip_prefix('+') {
-        s = rest.to_string();
-        1
+    let (sign, unsigned) = if let Some(rest) = trimmed.strip_prefix('-') {
+        (-1i64, rest)
+    } else if let Some(rest) = trimmed.strip_prefix('+') {
+        (1i64, rest)
     } else {
-        1
+        (1i64, trimmed)
     };
+
+    // Only allocate when underscores are actually present (the common case
+    // has none).
+    let digits: Cow<'_, str> = if unsigned.contains('_') {
+        Cow::Owned(unsigned.replace('_', ""))
+    } else {
+        Cow::Borrowed(unsigned)
+    };
+    let s = digits.as_ref();
 
     let parsed = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         i64::from_str_radix(rest, 16)
@@ -48,7 +57,7 @@ pub fn parse_int(value: &str, field_name: &str) -> Result<i64> {
     } else if s.chars().all(|c| c.is_ascii_hexdigit())
         && s.chars().any(|c| c.is_ascii_hexdigit() && c.is_ascii_alphabetic())
     {
-        i64::from_str_radix(&s, 16)
+        i64::from_str_radix(s, 16)
     } else {
         return Err(invalid(field_name, value));
     };
@@ -88,10 +97,11 @@ pub(crate) fn scalar_json(value: &str) -> Value {
     if s.is_empty() {
         return Value::String(String::new());
     }
-    match s.to_lowercase().as_str() {
-        "true" | "yes" => return Value::Bool(true),
-        "false" | "no" => return Value::Bool(false),
-        _ => {}
+    if s.eq_ignore_ascii_case("true") || s.eq_ignore_ascii_case("yes") {
+        return Value::Bool(true);
+    }
+    if s.eq_ignore_ascii_case("false") || s.eq_ignore_ascii_case("no") {
+        return Value::Bool(false);
     }
     parse_int(s, "scalar").map_or_else(
         |_| Value::String(s.to_string()),
@@ -114,16 +124,28 @@ pub(crate) fn parse_bool(value: Option<&Value>, default: bool) -> bool {
         None | Some(Value::Null) => default,
         Some(Value::Bool(b)) => *b,
         Some(Value::Number(n)) => n.as_i64().unwrap_or_default() != 0,
-        Some(v) => match value_to_string(Some(v))
-            .unwrap_or_default()
-            .trim()
-            .to_lowercase()
-            .as_str()
-        {
-            "true" | "1" | "yes" | "y" | "on" => true,
-            "false" | "0" | "no" | "n" | "off" => false,
-            _ => default,
-        },
+        Some(Value::String(s)) => parse_bool_str(s.trim(), default),
+        Some(v) => parse_bool_str(value_to_string(Some(v)).unwrap_or_default().trim(), default),
+    }
+}
+
+fn parse_bool_str(s: &str, default: bool) -> bool {
+    if s.eq_ignore_ascii_case("true")
+        || s.eq_ignore_ascii_case("1")
+        || s.eq_ignore_ascii_case("yes")
+        || s.eq_ignore_ascii_case("y")
+        || s.eq_ignore_ascii_case("on")
+    {
+        true
+    } else if s.eq_ignore_ascii_case("false")
+        || s.eq_ignore_ascii_case("0")
+        || s.eq_ignore_ascii_case("no")
+        || s.eq_ignore_ascii_case("n")
+        || s.eq_ignore_ascii_case("off")
+    {
+        false
+    } else {
+        default
     }
 }
 
@@ -139,10 +161,8 @@ pub(crate) fn parse_field_int(
             span: None,
         }),
         Some(Value::Bool(b)) => Ok(i64::from(*b)),
-        Some(v) => parse_int(
-            &value_to_string(Some(v)).unwrap_or_default(),
-            field_name,
-        ),
+        Some(Value::String(s)) => parse_int(s, field_name),
+        Some(v) => parse_int(&value_to_string(Some(v)).unwrap_or_default(), field_name),
         None => Ok(default),
     }
 }

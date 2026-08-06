@@ -1,5 +1,6 @@
 import { createContext, useState, useCallback, useRef, type ReactNode } from "react";
 import type { ProgressEvent, ConsoleEntry, ConsoleLevel } from "@/types/progress";
+import { formatClockTime } from "@/lib/format";
 
 export interface ConsoleContextType {
   entries: ConsoleEntry[];
@@ -16,6 +17,8 @@ export const ConsoleContext = createContext<ConsoleContextType | null>(null);
 export function ConsoleProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<ConsoleEntry[]>([]);
   const nextId = useRef(0);
+  const lastFlashPct = useRef<{ partition: string; pct: number }>({ partition: "", pct: -1 });
+  const lastOverallPct = useRef<{ pct: number; at: number }>({ pct: -1, at: 0 });
 
   const addEntry = useCallback((entry: { text: string; level: ConsoleLevel }) => {
     setEntries((prev) => {
@@ -30,6 +33,7 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
       const next: ConsoleEntry = {
         id: nextId.current,
         timestamp: Date.now(),
+        time: formatClockTime(Date.now()),
         text: entry.text,
         level: entry.level,
       };
@@ -46,10 +50,20 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
           addEntry({ text: event.data.message, level: "info" });
           break;
         case "Flashing":
-          addEntry({
-            text: `[${event.data.partition}] ${Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100)}%`,
-            level: "info",
-          });
+          // Throttle byte-level progress to one log line per 1% step per
+          // partition — the full-fidelity stream drives the progress bars.
+          {
+            const pct = Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100);
+            const last = lastFlashPct.current;
+            if (last.partition === event.data.partition && last.pct === pct) {
+              return;
+            }
+            lastFlashPct.current = { partition: event.data.partition, pct };
+            addEntry({
+              text: `[${event.data.partition}] ${pct}%`,
+              level: "info",
+            });
+          }
           break;
         case "FlashProgress":
           addEntry({
@@ -70,10 +84,20 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
           addEntry({ text: `${event.data.action}: ${event.data.detail}`, level: "command" });
           break;
         case "Overall":
-          addEntry({
-            text: `Progress ${Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100)}%`,
-            level: "info",
-          });
+          // Throttle cumulative progress to one log line per 5% step.
+          {
+            const now = Date.now();
+            const pct = Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100);
+            const last = lastOverallPct.current;
+            if (pct - last.pct < 5 && now - last.at < 2000 && last.pct >= 0) {
+              return;
+            }
+            lastOverallPct.current = { pct, at: now };
+            addEntry({
+              text: `Progress ${pct}%`,
+              level: "info",
+            });
+          }
           break;
         case "ForceFastbootStage":
           addEntry({ text: event.data.message, level: "info" });
@@ -101,6 +125,8 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
   const clearConsole = useCallback(() => {
     setEntries([]);
     nextId.current = 0;
+    lastFlashPct.current = { partition: "", pct: -1 };
+    lastOverallPct.current = { pct: -1, at: 0 };
   }, []);
 
   return (

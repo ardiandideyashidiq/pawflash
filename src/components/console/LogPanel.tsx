@@ -3,7 +3,7 @@ import { Copy, Terminal, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useUI } from "@/hooks/useUI";
 import { useConsole } from "@/hooks/useConsole";
-import { useFlashProgress } from "@/hooks/useFlashProgress";
+import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
 import { ProgressWidget } from "@/components/console/ProgressWidget";
 import type { ConsoleLevel } from "@/types/progress";
@@ -11,10 +11,7 @@ import type { ConsoleLevel } from "@/types/progress";
 const MIN_WIDTH = 300;
 const MAX_WIDTH_FACTOR = 0.9;
 
-function formatTime(ms: number): string {
-  const d = new Date(ms);
-  return d.toLocaleTimeString(undefined, { hour12: false });
-}
+const SCROLL_PIN_TOLERANCE = 120;
 
 function levelColor(level: ConsoleLevel): string {
   switch (level) {
@@ -40,10 +37,11 @@ function levelTag(level: ConsoleLevel): string {
 export function LogPanel() {
   const { logPanelOpen, closeLogPanel, logPanelWidth, setLogPanelWidth } = useUI();
   const { entries, clearConsole } = useConsole();
-  const flash = useFlashProgress();
+  const flash = useFlashPhase();
   const force = useForceFastboot();
 
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const panelWidthRef = useRef(logPanelWidth);
@@ -51,12 +49,16 @@ export function LogPanel() {
   const isLive =
     flash.phase === "waiting" || flash.phase === "flashing" || force.phase === "waiting";
 
+  // Auto-scroll only while the user is already pinned near the bottom, and
+  // scroll instantly — smooth scrolling on a high-frequency live log stutters.
   useEffect(() => {
     if (!logPanelOpen) return;
-    const scrollTimeout = setTimeout(() => {
-      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-    return () => clearTimeout(scrollTimeout);
+    const container = logsContainerRef.current;
+    if (!container) return;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom > SCROLL_PIN_TOLERANCE) return;
+    logsEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [entries, logPanelOpen]);
 
   const copyLogs = useCallback(async () => {
@@ -65,7 +67,7 @@ export function LogPanel() {
       return;
     }
     const text = entries
-      .map((e) => `[${formatTime(e.timestamp)}] [${levelTag(e.level)}] ${e.text}`)
+      .map((e) => `[${e.time}] [${levelTag(e.level)}] ${e.text}`)
       .join("\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -190,14 +192,17 @@ export function LogPanel() {
 
         <ProgressWidget />
 
-        <div className="ml-2 flex-1 space-y-1 overflow-y-auto p-4 font-mono text-xs">
+        <div
+          ref={logsContainerRef}
+          className="ml-2 flex-1 space-y-1 overflow-y-auto p-4 font-mono text-xs"
+        >
           {entries.length === 0 ? (
             <div className="mt-8 text-center text-muted-foreground/60">No logs yet</div>
           ) : (
             entries.map((entry) => (
               <div key={entry.id} className="flex gap-2 leading-relaxed">
                 <span className="shrink-0 text-muted-foreground/50 tabular-nums">
-                  {formatTime(entry.timestamp)}
+                  {entry.time}
                 </span>
                 <span className={levelColor(entry.level)}>[{levelTag(entry.level)}]</span>
                 <span className="min-w-0 break-all text-foreground/90">{entry.text}</span>

@@ -80,6 +80,9 @@ pub(crate) async fn flash_sparse_image(
     // ---- flash each split (no erase — the flash command handles it) ----
     let mut last_resp = String::new();
     let mut written: u64 = 0;
+    // Running file offset; sparse chunk data is contiguous within a split, so
+    // we only need to seek when a DontCare chunk causes a jump.
+    let mut file_pos: u64 = 0;
     for (i, split) in splits.iter().enumerate() {
         debug!(%partition, part = i, "sending sparse split");
 
@@ -106,19 +109,25 @@ pub(crate) async fn flash_sparse_image(
             written += CHUNK_HEADER_BYTES_LEN as u64;
 
             if chunk.size > 0 {
-                file.seek(SeekFrom::Start(chunk.offset as u64)).await?;
+                let target = u64::try_from(chunk.offset).unwrap_or(0);
+                if target != file_pos {
+                    file.seek(SeekFrom::Start(target)).await?;
+                    file_pos = target;
+                }
 
                 let mut remaining = chunk.size;
-                let buf_slice = buf.get(1024 * 1024);
                 while remaining > 0 {
-                    let to_read = buf_slice.len().min(remaining);
-                    read_exact_padded_or_truncate(&mut file, &mut buf_slice[..to_read], chunk.size).await?;
-                    sender.extend_from_slice(&buf_slice[..to_read]).await?;
+                    let to_read = buf.get(1024 * 1024).len().min(remaining);
+                    // Read directly into the USB buffer, skipping the
+                    // intermediate transfer-buffer copy.
+                    let direct = sender.get_mut_data(to_read).await?;
+                    read_exact_padded_or_truncate(&mut file, direct, chunk.size).await?;
+                    file_pos += direct.len() as u64;
                     if let Some(rep) = reporter.as_mut() {
-                        rep.inc(to_read as u64);
+                        rep.inc(direct.len() as u64);
                     }
-                    written += to_read as u64;
-                    remaining = remaining.saturating_sub(to_read);
+                    written += direct.len() as u64;
+                    remaining = remaining.saturating_sub(direct.len());
                 }
             }
             if let Some(rep) = reporter.as_mut() {
@@ -178,6 +187,10 @@ pub(crate) async fn flash_sparse_wrapped(
     // ---- flash each split (no erase — the flash command handles it) ----
     let mut last_resp = String::new();
     let mut written: u64 = 0;
+    // Running file offset; chunk data is contiguous within a split, so only
+    // seek when a chunk target diverges (split_raw never reorders chunks, but
+    // keeping this explicit is harmless and cheap).
+    let mut file_pos: u64 = 0;
     for (i, split) in splits.iter().enumerate() {
         debug!(%partition, part = i, "sending sparse-wrapped split");
 
@@ -200,20 +213,26 @@ pub(crate) async fn flash_sparse_wrapped(
             written += CHUNK_HEADER_BYTES_LEN as u64;
 
             if chunk.size > 0 {
-                file.seek(SeekFrom::Start(chunk.offset as u64)).await?;
+                let target = u64::try_from(chunk.offset).unwrap_or(0);
+                if target != file_pos {
+                    file.seek(SeekFrom::Start(target)).await?;
+                    file_pos = target;
+                }
 
                 let mut remaining = chunk.size;
-                let chunk_buf = buf.get(1024 * 1024);
                 while remaining > 0 {
-                    let to_read = chunk_buf.len().min(remaining);
+                    let to_read = buf.get(1024 * 1024).len().min(remaining);
+                    // Read directly into the USB buffer, skipping the
+                    // intermediate transfer-buffer copy.
+                    let direct = sender.get_mut_data(to_read).await?;
                     // Use plain read_exact_padded here (not the truncation-check
                     // variant) because split_raw may create chunks that extend
                     // past the end of the file for block alignment.  Zero-filling
                     // the tail is correct.
-                    read_exact_padded(&mut file, &mut chunk_buf[..to_read]).await?;
-                    sender.extend_from_slice(&chunk_buf[..to_read]).await?;
-                    written += to_read as u64;
-                    remaining = remaining.saturating_sub(to_read);
+                    read_exact_padded(&mut file, direct).await?;
+                    file_pos += direct.len() as u64;
+                    written += direct.len() as u64;
+                    remaining = remaining.saturating_sub(direct.len());
                 }
             }
             if let Some(rep) = reporter.as_mut() {

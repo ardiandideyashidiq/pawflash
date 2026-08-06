@@ -222,6 +222,14 @@ impl NusbFastBoot {
         self.ep_out.allocate(size)
     }
 
+    /// Allocate a buffer of at most `bytes`, rounded up to the endpoint packet
+    /// size. Used for the first download buffer so tiny transfers (e.g. a
+    /// 512-byte vbmeta) do not allocate a full 1 MiB.
+    fn allocate_sized(&self, bytes: usize) -> Buffer {
+        let size = bytes.min(1024 * 1024).max(self.max_out).next_multiple_of(self.max_out);
+        self.ep_out.allocate(size)
+    }
+
     /// Get the named variable
     ///
     /// The "all" variable is special; For that [Self::get_all_vars] should be used instead
@@ -390,7 +398,7 @@ pub struct DataDownload<'s> {
 
 impl<'s> DataDownload<'s> {
     fn new(fastboot: &'s mut NusbFastBoot, size: u32) -> DataDownload<'s> {
-        let current = fastboot.allocate();
+        let current = fastboot.allocate_sized(size as usize);
         Self {
             fastboot,
             size,

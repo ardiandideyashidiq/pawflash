@@ -18,3 +18,7 @@ export function formatGiB(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 GiB";
   return `${(bytes / 1e9).toFixed(2)} GiB`;
 }
+
+export function formatClockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString(undefined, { hour12: false });
+}

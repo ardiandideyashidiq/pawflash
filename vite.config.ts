@@ -14,6 +14,19 @@ export default defineConfig(async () => ({
       "@": pathResolve(__dirname, "./src"),
     },
   },
+  build: {
+    // Split vendor libraries out of the app chunk so the webview parses less
+    // per-frame and unchanged vendor code stays cache-friendly across rebuilds.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          "base-ui": ["@base-ui/react"],
+          lucide: ["lucide-react"],
+        },
+      },
+    },
+  },
   clearScreen: false,
   server: {
     port: 1420,

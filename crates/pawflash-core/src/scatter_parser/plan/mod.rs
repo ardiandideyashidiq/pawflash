@@ -29,7 +29,7 @@ use self::slot::{
 };
 
 fn build_partition_actions<'a>(
-    selected_parts: &'a [ScatterPartition],
+    selected_parts: &'a [&'a ScatterPartition],
     options: &FlashPlanOptions,
     parts_by_name: &BTreeMap<String, &'a ScatterPartition>,
     scatter_dir: Option<&std::path::Path>,
@@ -42,30 +42,31 @@ fn build_partition_actions<'a>(
             continue;
         }
 
-        let image_source = inherited_image_source_for_slot_b(part, parts_by_name);
+        let part_ref = *part;
+        let image_source = inherited_image_source_for_slot_b(part_ref, parts_by_name);
         let (allowed, reason) = full_flash_allows_partition(
-            part,
+            part_ref,
             image_source,
             options.allowance.include_preloader,
             options.clean != CleanMode::No,
         );
         if !allowed {
-            skipped.push(skipped_partition(part, &reason));
+            skipped.push(skipped_partition(part_ref, &reason));
             continue;
         }
 
         let (image, action_warnings) =
             resolve_images_for_plan(image_source, scatter_dir, options);
         if !image_exists(&image) {
-            skipped.push(skipped_partition(part, "image not found"));
+            skipped.push(skipped_partition(part_ref, "image not found"));
             continue;
         }
         let action_reason =
-            inherited_action_reason(reason, part, image_source);
+            inherited_action_reason(reason, part_ref, image_source);
 
         actions.push(flash_action(
             "flash",
-            part,
+            part_ref,
             Some(image),
             &action_reason,
             action_warnings,
@@ -86,7 +87,7 @@ pub(crate) struct PlanFinalizationContext<'a> {
     pub warnings: Vec<String>,
     pub errors: Vec<String>,
     pub available_names: &'a BTreeSet<String>,
-    pub selected_parts: &'a [ScatterPartition],
+    pub selected_parts: &'a [&'a ScatterPartition],
 }
 
 #[must_use]
@@ -187,12 +188,9 @@ pub fn build_flash_plan(scatter: &ScatterFile, options: &FlashPlanOptions) -> Fl
     let selected_parts = selected_partitions(scatter, options.storage);
     let parts_by_name = selected_parts
         .iter()
-        .map(|part| (part.name.to_lowercase(), part))
+        .map(|part| (part.name.to_lowercase(), *part))
         .collect::<BTreeMap<_, _>>();
-    let available_names = selected_parts
-        .iter()
-        .map(|part| part.name.to_lowercase())
-        .collect::<BTreeSet<_>>();
+    let available_names = parts_by_name.keys().cloned().collect::<BTreeSet<_>>();
 
     let scatter_dir = scatter.path.parent();
     let (actions, skipped) = build_partition_actions(
@@ -241,7 +239,6 @@ mod tests {
             combo_partsize_check: None,
             safety_class: String::new(),
             raw: json!({}),
-            unknown_fields: std::collections::BTreeMap::new(),
         }
     }
 
