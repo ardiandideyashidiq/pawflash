@@ -107,16 +107,18 @@ export function LogPanel() {
   useEffect(() => {
     if (!isDragging) return;
 
+    const clampWidth = (clientX: number) => {
+      const min = MIN_WIDTH;
+      const max = Math.max(window.innerWidth * MAX_WIDTH_FACTOR, min);
+      return Math.min(Math.max(window.innerWidth - clientX, min), max);
+    };
+
     const applyWidth = (clientX: number) => {
-      const newWidth = window.innerWidth - clientX;
-      const clamped = Math.min(
-        Math.max(newWidth, MIN_WIDTH),
-        window.innerWidth * MAX_WIDTH_FACTOR,
-      );
+      const clamped = clampWidth(clientX);
       panelWidthRef.current = clamped;
-      if (panelRef.current) {
-        panelRef.current.style.width = `${clamped}px`;
-      }
+      // Live width lives in a CSS variable React does not own, so incoming
+      // log entries re-rendering this component can never overwrite it.
+      panelRef.current?.style.setProperty("--panel-width", `${clamped}px`);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
@@ -132,19 +134,35 @@ export function LogPanel() {
       });
     };
 
-    const handlePointerUp = () => {
-      setIsDragging(false);
+    const endResize = () => {
+      const container = logsContainerRef.current;
+      if (container) {
+        container.style.width = "";
+        container.style.overflowX = "";
+      }
+      panelWidthRef.current = clampWidth(dragXRef.current);
       setLogPanelWidth(panelWidthRef.current);
+      setIsDragging(false);
     };
+
+    // Freeze the log list at its starting width so text doesn't re-wrap on
+    // every frame while resizing — only the panel chrome moves.
+    const container = logsContainerRef.current;
+    if (container) {
+      container.style.width = `${container.offsetWidth}px`;
+      container.style.overflowX = "hidden";
+    }
 
     // Suppress text selection and cursor flicker while dragging.
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     document.addEventListener("pointermove", handlePointerMove);
-    document.addEventListener("pointerup", handlePointerUp);
+    document.addEventListener("pointerup", endResize);
+    document.addEventListener("pointercancel", endResize);
     return () => {
       document.removeEventListener("pointermove", handlePointerMove);
-      document.removeEventListener("pointerup", handlePointerUp);
+      document.removeEventListener("pointerup", endResize);
+      document.removeEventListener("pointercancel", endResize);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       if (resizeRafRef.current != null) {
@@ -174,17 +192,19 @@ export function LogPanel() {
           "fixed top-0 right-0 z-50 flex h-full flex-col border-l border-border bg-card shadow-2xl",
           shown ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-full opacity-0",
           !isDragging && "transition-all duration-300 ease-out",
+          isDragging && "overflow-hidden",
         )}
-        style={{ width: `${logPanelWidth}px` }}
+        style={{ width: `var(--panel-width, ${logPanelWidth}px)` }}
         role="dialog"
         aria-label="Operation logs"
       >
         <button
           type="button"
           aria-label="Resize logs panel"
-          className="absolute top-1/2 left-0 flex h-16 w-3 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-r-md bg-muted transition-colors hover:bg-trace-copper"
+          className="absolute top-1/2 left-0 flex h-16 w-3 -translate-y-1/2 touch-none cursor-col-resize items-center justify-center rounded-r-md bg-muted transition-colors hover:bg-trace-copper"
           onPointerDown={(e) => {
             e.preventDefault();
+            dragXRef.current = e.clientX;
             e.currentTarget.setPointerCapture(e.pointerId);
             setIsDragging(true);
           }}
