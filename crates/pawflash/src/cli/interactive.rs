@@ -129,7 +129,15 @@ async fn execute_interactive_plan<T: pawflash_core::flash::transport::FlashTrans
     plan: &sp::FlashPlan,
 ) -> Result<()> {
     let pb = output::spinner::multi_progress();
-    let result = executor.execute_plan(plan, false, Some(pb)).await;
+    let result = executor
+        .execute_plan(
+            plan,
+            pawflash_core::flash::progress::FlashRunOptions {
+                progress: Some(pb),
+                ..Default::default()
+            },
+        )
+        .await;
 
     output::status::blank();
     output::status::data(output::tables::flash_result(&result));

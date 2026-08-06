@@ -1,0 +1,111 @@
+//! Progress reporting and cancellation plumbing for flash transfers.
+//!
+//! The low-level transfer code used to drive only an `indicatif` CLI bar.
+//! It now drives a [`TransferReporter`] that can additionally forward
+//! byte-level updates through a callback (used by the Tauri GUI to stream
+//! `Flashing` events with bytes/total and cumulative overall progress).
+
+use std::sync::atomic::AtomicBool;
+
+use indicatif::{MultiProgress, ProgressBar};
+
+/// Throttle window for byte-progress callbacks (256 KiB).
+const REPORT_THRESHOLD: u64 = 256 * 1024;
+
+/// A single byte-level transfer update for one partition flash.
+#[derive(Debug, Clone)]
+pub struct FlashTransferEvent {
+    /// Full partition name being flashed.
+    pub partition: String,
+    /// Operation kind (always `"flash"` for plan execution).
+    pub operation: String,
+    /// Bytes transferred so far for this partition.
+    pub bytes: u64,
+    /// Total bytes for this partition.
+    pub total: u64,
+    /// Cumulative bytes across all partitions processed so far.
+    pub overall_bytes: u64,
+    /// Cumulative total across all partitions processed so far.
+    pub overall_total: u64,
+}
+
+/// Options controlling flash-plan execution.
+#[derive(Default)]
+pub struct FlashRunOptions<'a> {
+    /// Run without writing anything to the device.
+    pub dry_run: bool,
+    /// Optional shared CLI progress bars (one bar per partition).
+    pub progress: Option<&'a MultiProgress>,
+    /// When set, execution stops cooperatively before the next partition.
+    pub cancel: Option<&'a AtomicBool>,
+    /// Optional byte-level transfer callback (e.g. Tauri event streaming).
+    pub on_transfer: Option<&'a mut (dyn FnMut(FlashTransferEvent) + Send)>,
+}
+
+/// Drives both the CLI progress bar and an optional byte callback from the
+/// same low-level transfer code, so the raw/sparse paths do not care about
+/// the reporting destination.
+pub(crate) struct TransferReporter<'a> {
+    cli: Option<&'a ProgressBar>,
+    on_bytes: Option<&'a mut (dyn FnMut(u64, u64) + Send)>,
+    last_reported: u64,
+}
+
+impl<'a> TransferReporter<'a> {
+    pub(crate) fn new(
+        cli: Option<&'a ProgressBar>,
+        on_bytes: Option<&'a mut (dyn FnMut(u64, u64) + Send)>,
+    ) -> Self {
+        Self {
+            cli,
+            on_bytes,
+            last_reported: 0,
+        }
+    }
+
+    pub(crate) fn set_length(&mut self, len: u64) {
+        if let Some(pb) = self.cli {
+            pb.set_length(len);
+        }
+    }
+
+    pub(crate) fn set_prefix(&mut self, prefix: &str) {
+        if let Some(pb) = self.cli {
+            pb.set_prefix(prefix.to_string());
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.last_reported = 0;
+        if let Some(pb) = self.cli {
+            pb.reset();
+        }
+    }
+
+    pub(crate) fn set_position(&mut self, pos: u64) {
+        if let Some(pb) = self.cli {
+            pb.set_position(pos);
+        }
+    }
+
+    pub(crate) fn inc(&mut self, delta: u64) {
+        if let Some(pb) = self.cli {
+            pb.inc(delta);
+        }
+    }
+
+    /// Forward `bytes`/`total` to the callback, throttled to
+    /// `REPORT_THRESHOLD` except for the first (0) and last (>= total)
+    /// reports so the UI gets a live but not overwhelming stream.
+    pub(crate) fn report(&mut self, bytes: u64, total: u64) {
+        let reached_end = bytes >= total;
+        let advanced = bytes.saturating_sub(self.last_reported) >= REPORT_THRESHOLD;
+        if !(bytes == 0 || reached_end || advanced) {
+            return;
+        }
+        self.last_reported = bytes;
+        if let Some(cb) = self.on_bytes.as_mut() {
+            cb(bytes, total);
+        }
+    }
+}

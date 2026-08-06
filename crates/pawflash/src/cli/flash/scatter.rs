@@ -68,7 +68,7 @@ pub(super) async fn run_scatter(cfg: &ScatterConfig<'_>) -> Result<()> {
         let mut executor = FlashExecutor::new(transport, vars);
 
         debug!("executing flash plan against simulated transport");
-        let result = executor.execute_plan(&plan, false, None).await;
+        let result = executor.execute_plan(&plan, pawflash_core::flash::progress::FlashRunOptions::default()).await;
         return print_flash_result(&result, cfg.json);
     }
 
@@ -87,7 +87,9 @@ pub(super) async fn run_scatter(cfg: &ScatterConfig<'_>) -> Result<()> {
 
     debug!("connected, executing flash plan");
 
-    let result = executor.execute_plan(&plan, false, None).await;
+    let result = executor
+        .execute_plan(&plan, pawflash_core::flash::progress::FlashRunOptions::default())
+        .await;
 
     print_flash_result(&result, cfg.json)
 }

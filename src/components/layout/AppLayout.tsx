@@ -1,23 +1,23 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
-import ConsolePanel from "@/components/console/ConsolePanel";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Zap,
-  Wrench,
-  Settings,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  Sun,
-  Moon,
-  PanelBottom,
   Search,
+  Settings,
+  Sun,
+  Terminal,
+  Wrench,
+  Zap,
 } from "lucide-react";
-
-const SIDEBAR_OPEN = 224;
-const SIDEBAR_COLLAPSED = 60;
+import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { useUI } from "@/hooks/useUI";
 
 interface AppLayoutProps {
   children: (props: { tab: string }) => ReactNode;
+  sidebarStatus?: ReactNode;
   sidebarActions?:
     | ReactNode
     | ((props: { sidebarOpen: boolean }) => ReactNode);
@@ -27,26 +27,41 @@ interface AppLayoutProps {
   ) => void;
 }
 
-const navItems = [
-  { id: "flasher", label: "Flasher", icon: Zap },
-  { id: "menu", label: "Menu", icon: Wrench },
-  { id: "extras", label: "Extras", icon: Search },
-  { id: "settings", label: "Settings", icon: Settings },
+const themeOptions = [
+  { value: "light" as const, label: "Light", icon: Sun },
+  { value: "dark" as const, label: "Dark", icon: Moon },
 ];
 
 export default function AppLayout({
   children,
+  sidebarStatus,
   sidebarActions,
   theme,
   onThemeChange,
 }: AppLayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [consoleOpen, setConsoleOpen] = useState(true);
   const [tab, setTab] = useState("flasher");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const userOverride = useRef(false);
   const mainRef = useRef<HTMLDivElement>(null);
+  const { toggleLogPanel } = useUI();
+
+  const navItems = useMemo(
+    () => [
+      { id: "flasher", label: "Flasher", icon: Zap },
+      { id: "menu", label: "Menu", icon: Wrench },
+      { id: "extras", label: "Extras", icon: Search },
+      { id: "settings", label: "Settings", icon: Settings },
+    ],
+    [],
+  );
 
   useEffect(() => {
+    mainRef.current?.scrollTo(0, 0);
+  }, [tab]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
     const mq = window.matchMedia("(max-width: 1100px)");
     const handler = (e: MediaQueryListEvent | MediaQueryList) => {
       if (!userOverride.current) {
@@ -61,166 +76,155 @@ export default function AppLayout({
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  const toggleSidebar = () => {
+  const handleSidebarToggle = useCallback(() => {
     userOverride.current = true;
     setSidebarOpen((prev) => !prev);
-  };
+  }, []);
 
-  useEffect(() => {
-    mainRef.current?.scrollTo(0, 0);
-  }, [tab]);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-    localStorage.setItem("app-theme", theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    onThemeChange((current) => (current === "dark" ? "light" : "dark"));
+  const renderSidebarSlot = (
+    slot: ReactNode | ((props: { sidebarOpen: boolean }) => ReactNode) | undefined,
+  ) => {
+    if (typeof slot === "function") {
+      return slot({ sidebarOpen });
+    }
+    return slot;
   };
 
   return (
     <div
-      className="grid h-dvh w-dvw overflow-hidden transition-[grid-template-columns] duration-300 ease-out"
-      style={{
-        gridTemplateColumns: `${sidebarOpen ? SIDEBAR_OPEN : SIDEBAR_COLLAPSED}px 1fr`,
-        gridTemplateRows: "1fr auto",
-      }}
+      className="grid h-dvh w-dvw overflow-hidden bg-background text-foreground transition-[grid-template-columns] duration-200 ease-out"
+      style={{ gridTemplateColumns: sidebarOpen ? "14rem 1fr" : "4.5rem 1fr" }}
     >
-      {/* ── Sidebar (full height) ── */}
       <aside
-        className="flex flex-col border-r border-sidebar-border bg-sidebar overflow-hidden min-w-0 transition-[width] duration-300 ease-out"
-        style={{ gridRow: "1 / -1" }}
+        aria-label="Sidebar"
+        className="flex flex-col overflow-hidden border-r border-sidebar-border bg-sidebar"
       >
-        {/* Brand + collapse */}
-        <div className="flex items-center justify-between shrink-0 px-4 pt-4 pb-3 border-b border-trace-copper/15">
-          {sidebarOpen ? (
-            <span className="text-caption font-display font-medium tracking-overline text-muted-foreground/70 uppercase">
-              pawflash
+        <div
+          className={cn(
+            "flex items-center",
+            sidebarOpen ? "justify-between px-3 py-3" : "justify-center px-2 py-3",
+          )}
+        >
+          {sidebarOpen && (
+            <span className="font-display text-sm font-medium tracking-[0.2em] text-trace-copper">
+              PAWFLASH
             </span>
-          ) : null}
+          )}
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={toggleSidebar}
             aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            onClick={handleSidebarToggle}
           >
-            {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+            {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
         </div>
+        <Separator />
 
-        {/* Nav */}
-          <nav className={"flex flex-col gap-1.5 mt-2 shrink-0 " + (sidebarOpen ? "px-2" : "px-1")}>
+        <nav
+          aria-label="Main navigation"
+          className={cn("flex flex-col gap-2 p-3", !sidebarOpen && "items-center px-2")}
+        >
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = tab === item.id;
+            const active = tab === item.id;
             return (
-              <Button
+              <button
                 key={item.id}
-                variant="ghost"
-                size={sidebarOpen ? "lg" : "icon-lg"}
-                className={
-                  (sidebarOpen ? "h-12 " : "size-10 ") +
-                  "mx-1 p-0 border border-border/50 hover:border-border/80 " +
-                  (isActive
-                    ? "text-trace-copper border-trace-copper/60"
-                    : "text-muted-foreground hover:text-foreground")
-                }
                 onClick={() => setTab(item.id)}
+                aria-label={item.label}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-200 ease-out",
+                  sidebarOpen ? "w-full justify-start" : "w-11 justify-center px-0",
+                  active
+                    ? "border border-trace-copper/60 bg-trace-copper/15 text-trace-copper shadow-[var(--panel-shadow)]"
+                    : "text-muted-foreground hover:bg-accent-soft/70 hover:text-foreground",
+                )}
               >
-                <span className={
-                  "flex items-center w-full h-full rounded " +
-                  (sidebarOpen ? "gap-2 px-3 " : "justify-center ") +
-                  (isActive
-                    ? "bg-trace-copper/15"
-                    : "hover:bg-muted/40")
-                }>
-                  <Icon size={18} />
-                  {sidebarOpen && <span>{item.label}</span>}
-                </span>
-              </Button>
+                <Icon className="h-4 w-4 shrink-0" />
+                {sidebarOpen && <span className="truncate">{item.label}</span>}
+              </button>
             );
           })}
         </nav>
 
-        {/* Spacer */}
         <div className="min-h-0 flex-1" />
 
-        {/* Sidebar actions (device status, reboot) */}
+        {sidebarStatus && (
+          <div className={cn("space-y-3 p-3", !sidebarOpen && "px-2")}>{sidebarStatus}</div>
+        )}
         {sidebarActions && (
-          <div className={"mb-3 " + (sidebarOpen ? "px-4" : "px-1.5")}>
-            {typeof sidebarActions === "function"
-              ? sidebarActions({ sidebarOpen })
-              : sidebarActions}
-          </div>
+          <div className={cn("p-3", !sidebarOpen && "px-2")}>{renderSidebarSlot(sidebarActions)}</div>
         )}
 
-        {/* Log panel + theme */}
-        <div className={"shrink-0 border-t border-sidebar-border py-4 " + (sidebarOpen ? "px-4" : "px-1.5")}>
+        <Separator />
+
+        <div className={cn("space-y-2 p-3", !sidebarOpen && "px-2")}>
           {sidebarOpen ? (
-            <div className="space-y-1.5">
+            <>
               <Button
-                variant={consoleOpen ? "secondary" : "ghost"}
+                variant="outline"
                 size="sm"
-                onClick={() => setConsoleOpen((c) => !c)}
-                className="w-full"
+                className="w-full justify-start gap-2"
+                onClick={toggleLogPanel}
               >
-                <PanelBottom size={16} />
-                <span>Log</span>
+                <Terminal className="h-4 w-4" />
+                Logs
               </Button>
-              <div className="grid grid-cols-2 gap-1.5">
-                <Button
-                  variant={theme === "light" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => onThemeChange("light")}
-                  className="w-full"
-                >
-                  <Sun size={16} />
-                  <span>Light</span>
-                </Button>
-                <Button
-                  variant={theme === "dark" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => onThemeChange("dark")}
-                  className="w-full"
-                >
-                  <Moon size={16} />
-                  <span>Dark</span>
-                </Button>
+              <div className="grid grid-cols-2 gap-2">
+                {themeOptions.map((option) => {
+                  const Icon = option.icon;
+                  return (
+                    <Button
+                      key={option.value}
+                      variant={theme === option.value ? "secondary" : "ghost"}
+                      size="icon-sm"
+                      className="w-full"
+                      aria-label={`Theme ${option.label}`}
+                      title={option.label}
+                      onClick={() => onThemeChange(option.value)}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </Button>
+                  );
+                })}
               </div>
-            </div>
+            </>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => setConsoleOpen((c) => !c)}
-                aria-label="Toggle log panel"
                 className="w-full"
+                aria-label="Toggle logs"
+                title="Logs"
+                onClick={toggleLogPanel}
               >
-                <PanelBottom size={18} />
+                <Terminal className="h-4 w-4" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={toggleTheme}
-                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
                 className="w-full"
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+                onClick={() => onThemeChange((current) => (current === "light" ? "dark" : "light"))}
               >
-                {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+                {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
               </Button>
             </div>
           )}
         </div>
       </aside>
 
-      {/* ── Main content (scrolls) ── */}
-      <main ref={mainRef} className="overflow-y-auto p-5 max-sm:p-3">
-        {children({ tab })}
+      <main className="flex min-w-0 flex-1 overflow-hidden">
+        <div
+          ref={mainRef}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 lg:p-4 xl:p-5"
+        >
+          {children({ tab })}
+        </div>
       </main>
-
-      {/* ── Console panel (sticky bottom) ── */}
-      {consoleOpen && <ConsolePanel />}
     </div>
   );
 }

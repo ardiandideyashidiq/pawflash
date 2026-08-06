@@ -3,13 +3,16 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use pawflash_core::flash::executor::BootTarget;
+use pawflash_core::flash::progress::{FlashRunOptions, FlashTransferEvent};
 use pawflash_core::flash::FlashExecutor;
 use pawflash_core::scatter_parser as sp;
 use serde::Serialize;
 use tauri::ipc::Channel;
-use tauri::Emitter;
+use tauri::{Emitter, State};
 use tracing::{debug, info, trace, warn};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;
@@ -38,12 +41,22 @@ fn init_logging() {
 pub enum ProgressEvent {
   Phase { phase: String, message: String },
   FlashProgress { partition: String, percent: f64 },
+  Flashing {
+    partition: String,
+    operation: String,
+    bytes: u64,
+    total: u64,
+    overall_bytes: u64,
+    overall_total: u64,
+  },
   FlashComplete { partition: String, success: bool, response: Option<String> },
 
   DeviceAction { action: String, detail: String },
-  Overall { current: usize, total: usize },
+  Overall { bytes: u64, total: u64 },
   Warning { message: String },
   Error { message: String },
+  Cancelled { message: String },
+  ForceFastbootStage { stage: String, message: String },
   Done { ok: bool, detail: String },
 }
 
@@ -52,6 +65,14 @@ pub struct DeviceInfo {
   pub connected: bool,
   pub serial: Option<String>,
   pub vars: HashMap<String, String>,
+}
+
+/// Cooperative cancellation flags for the single in-flight flash /
+/// force-fastboot operation. The GUI guarantees only one runs at a time.
+#[derive(Default)]
+struct CancelState {
+  flash: Arc<AtomicBool>,
+  force_fastboot: Arc<AtomicBool>,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -81,31 +102,68 @@ async fn get_device_info() -> Result<DeviceInfo, String> {
   Ok(DeviceInfo { connected, serial, vars })
 }
 
-#[tracing::instrument(skip(app, on_event))]
+/// Poll the cancellation flag until it is set, so a long wait can be aborted
+/// by `cancel_force_fastboot`.
+async fn wait_for_cancel(flag: &AtomicBool) {
+  while !flag.load(Ordering::Relaxed) {
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+  }
+}
+
+#[tracing::instrument(skip(app, on_event, cancel))]
 #[tauri::command]
-async fn force_fastboot(app: tauri::AppHandle, on_event: Channel<ProgressEvent>) -> Result<(), String> {
-  send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Checking fastboot mode...".into() });
+async fn force_fastboot(
+  app: tauri::AppHandle,
+  on_event: Channel<ProgressEvent>,
+  cancel: State<'_, CancelState>,
+) -> Result<(), String> {
+  cancel.force_fastboot.store(false, Ordering::Relaxed);
 
   if pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
     info!("already in fastboot mode");
+    send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "confirmed".into(), message: "Device already in fastboot mode.".into() });
     send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Already in fastboot mode".into() });
     let _ = app.emit("fastboot-devices", ());
     return Ok(());
   }
 
-  send_progress(&on_event, ProgressEvent::Phase { phase: "waiting".into(), message: "Waiting for preloader...".into() });
-  let port = pawflash_core::force_fastboot::serial::wait_for_preloader(false)
-    .await
-    .map_err(|e| { warn!(error = %e, "wait_for_preloader failed"); e.to_string() })?
-    .ok_or_else(|| { warn!("no preloader device found"); "No preloader device found".to_string() })?;
+  send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "waiting_preloader".into(), message: "Waiting for MediaTek preloader serial port...".into() });
+
+  // Wait for the preloader, aborting early on cancel.
+  let port = tokio::select! {
+    result = pawflash_core::force_fastboot::serial::wait_for_preloader(false) => {
+      match result {
+        Ok(Some(port)) => port,
+        Ok(None) => {
+          warn!("no preloader device found");
+          return Err("No preloader device found".into());
+        }
+        Err(e) => {
+          warn!(error = %e, "wait_for_preloader failed");
+          return Err(e.to_string());
+        }
+      }
+    }
+    _ = wait_for_cancel(&cancel.force_fastboot) => {
+      info!("force fastboot cancelled while waiting for preloader");
+      send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+      return Ok(());
+    }
+  };
 
   let mut dev = pawflash_core::force_fastboot::serial::open_with_permission_recovery(&port)
     .map_err(|e| { warn!(%port, error = %e, "open_with_permission_recovery failed"); e.to_string() })?;
 
   info!(%port, "preloader found, sending FASTBOOT");
-  send_progress(&on_event, ProgressEvent::Phase { phase: "sending".into(), message: format!("Found preloader on {port}, sending FASTBOOT...") });
+  send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "sending".into(), message: format!("Found preloader on {port}, sending FASTBOOT...") });
 
   loop {
+    if cancel.force_fastboot.load(Ordering::Relaxed) {
+      info!("force fastboot cancelled during handshake");
+      send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+      return Ok(());
+    }
+
     use tokio::io::AsyncWriteExt;
     match dev.write_all(b"FASTBOOT").await {
       Ok(()) => { let _ = dev.flush().await; }
@@ -135,9 +193,18 @@ async fn force_fastboot(app: tauri::AppHandle, on_event: Channel<ProgressEvent>)
     }
   }
 
+  send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "confirmed".into(), message: "Fastboot mode confirmed.".into() });
   info!("device now in fastboot mode");
   send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Device now in fastboot mode".into() });
   let _ = app.emit("fastboot-devices", ());
+  Ok(())
+}
+
+#[tracing::instrument(skip(cancel))]
+#[tauri::command]
+async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), String> {
+  info!("cancel_force_fastboot requested");
+  cancel.force_fastboot.store(true, Ordering::Relaxed);
   Ok(())
 }
 
@@ -271,14 +338,17 @@ async fn build_plan(path: String, options: sp::FlashPlanOptions) -> Result<sp::F
   Ok(plan)
 }
 
-#[tracing::instrument(skip(app, on_event, options), fields(path))]
+#[tracing::instrument(skip(app, on_event, options, cancel), fields(path))]
 #[tauri::command]
 async fn execute_plan(
   app: tauri::AppHandle,
   path: String,
   options: sp::FlashPlanOptions,
   on_event: Channel<ProgressEvent>,
+  cancel: State<'_, CancelState>,
 ) -> Result<pawflash_core::flash::results::FlashResult, String> {
+  cancel.flash.store(false, Ordering::Relaxed);
+
   // Parse
   send_progress(&on_event, ProgressEvent::Phase { phase: "parsing".into(), message: "Parsing scatter file...".into() });
   let parsed = sp::parse_scatter(Path::new(&path)).map_err(|e| {
@@ -311,13 +381,40 @@ async fn execute_plan(
     e.to_string()
   })?;
 
-  // Execute
-  let total = plan.actions.len();
+  // Execute with live byte-level progress streaming.
+  let total = plan.actions.iter().filter(|a| a.action == "flash").count();
   info!(%total, "starting flash execution");
-  send_progress(&on_event, ProgressEvent::Overall { current: 0, total });
   send_progress(&on_event, ProgressEvent::Phase { phase: "flashing".into(), message: format!("Flashing {total} partitions...") });
 
-  let result = executor.execute_plan(&plan, false, None).await;
+  let mut on_transfer = |ev: FlashTransferEvent| {
+    let _ = on_event.send(ProgressEvent::Flashing {
+      partition: ev.partition,
+      operation: ev.operation,
+      bytes: ev.bytes,
+      total: ev.total,
+      overall_bytes: ev.overall_bytes,
+      overall_total: ev.overall_total,
+    });
+  };
+
+  let result = executor
+    .execute_plan(
+      &plan,
+      FlashRunOptions {
+        cancel: Some(&cancel.flash),
+        on_transfer: Some(&mut on_transfer),
+        ..Default::default()
+      },
+    )
+    .await;
+
+  let _ = app.emit("flash-complete", ());
+
+  if result.cancelled {
+    info!("flash plan cancelled by user");
+    send_progress(&on_event, ProgressEvent::Cancelled { message: "Flash cancelled by user".into() });
+    return Ok(result);
+  }
 
   // Report outcomes
   for (i, outcome) in result.outcomes.iter().enumerate() {
@@ -342,7 +439,6 @@ async fn execute_plan(
     }
   }
 
-  let _ = app.emit("flash-complete", ());
   info!(
     succeeded = %result.succeeded,
     failed = %result.failed,
@@ -355,6 +451,14 @@ async fn execute_plan(
   });
 
   Ok(result)
+}
+
+#[tracing::instrument(skip(cancel))]
+#[tauri::command]
+async fn cancel_flash(cancel: State<'_, CancelState>) -> Result<(), String> {
+  info!("cancel_flash requested");
+  cancel.flash.store(true, Ordering::Relaxed);
+  Ok(())
 }
 
 #[tracing::instrument(skip(app, on_event), fields(partition, image_path))]
@@ -400,9 +504,11 @@ pub fn run() {
   init_logging();
   tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
+    .manage(CancelState::default())
     .invoke_handler(tauri::generate_handler![
       get_device_info,
       force_fastboot,
+      cancel_force_fastboot,
       reboot_device,
       lock_bootloader,
       unlock_bootloader,
@@ -412,6 +518,7 @@ pub fn run() {
       parse_scatter,
       build_plan,
       execute_plan,
+      cancel_flash,
       flash_raw_image,
 
     ])

@@ -113,6 +113,7 @@ mod tests {
     use serde_json::json;
     use crate::flash::mock::MockTransport;
     use crate::flash::executor::FlashExecutor;
+    use crate::flash::progress::FlashRunOptions;
     use crate::scatter_parser::types::{FlashPlan, FlashAction};
     use crate::scatter_parser::types::FlashPlanSummary;
 
@@ -170,7 +171,10 @@ mod tests {
         let plan = make_empty_plan(vec![
             make_action("boot", img.to_str()),
         ]);
-        let result = exec.execute_plan(&plan, true, None).await;
+        let result = exec.execute_plan(
+            &plan,
+            FlashRunOptions { dry_run: true, ..Default::default() },
+        ).await;
         assert_eq!(result.total, 1);
         assert_eq!(result.succeeded, 1);
         assert_eq!(result.failed, 0);
@@ -182,7 +186,7 @@ mod tests {
         let plan = make_empty_plan(vec![
             make_action("boot", None),
         ]);
-        let result = exec.execute_plan(&plan, false, None).await;
+        let result = exec.execute_plan(&plan, FlashRunOptions::default()).await;
         assert_eq!(result.total, 1);
         assert_eq!(result.succeeded, 0);
         assert_eq!(result.failed, 1);
@@ -199,7 +203,7 @@ mod tests {
         let plan = make_empty_plan(vec![
             make_action("boot", img.to_str()),
         ]);
-        let result = exec.execute_plan(&plan, false, None).await;
+        let result = exec.execute_plan(&plan, FlashRunOptions::default()).await;
         assert_eq!(result.total, 1);
         assert_eq!(result.succeeded, 0);
         assert_eq!(result.failed, 1);
@@ -214,7 +218,10 @@ mod tests {
         let plan = make_empty_plan(vec![
             make_action("boot", img.to_str()),
         ]);
-        let result = exec.execute_plan(&plan, true, None).await;
+        let result = exec.execute_plan(
+            &plan,
+            FlashRunOptions { dry_run: true, ..Default::default() },
+        ).await;
         assert_eq!(result.total, 1);
         assert_eq!(result.succeeded, 1);
         // Only get_var for max-download-size, no download/flash commands

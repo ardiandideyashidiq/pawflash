@@ -8,6 +8,16 @@ import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
 const Select = SelectPrimitive.Root
 
+function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
+  return (
+    <SelectPrimitive.Value
+      data-slot="select-value"
+      className={cn("flex flex-1 text-left", className)}
+      {...props}
+    />
+  )
+}
+
 function SelectTrigger({
   className,
   size = "default",
@@ -146,4 +156,5 @@ export {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 }

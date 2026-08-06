@@ -1,11 +1,13 @@
 use std::path::Path;
-use std::time::Instant;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
-use indicatif::{MultiProgress, ProgressBar};
+use indicatif::ProgressBar;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, info, warn};
 
 use crate::flash::error::{FlashError, Result};
+use crate::flash::progress::{FlashRunOptions, FlashTransferEvent, TransferReporter};
 use crate::flash::results::{FlashOutcome, FlashResult};
 use crate::flash::transport::FlashTransport;
 use crate::scatter_parser::types::FlashPlan;
@@ -62,7 +64,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         partition: &str,
         path: &Path,
         max_download: u32,
-        progress_bar: Option<&ProgressBar>,
+        mut reporter: Option<&mut TransferReporter<'_>>,
     ) -> Result<String> {
         // Shared transfer buffer reused across all sparse operations.
         let mut xbuf = crate::flash::sparse::XferBuf::new();
@@ -76,7 +78,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 path,
                 file_len,
                 max_download,
-                progress_bar,
+                reporter,
                 &mut xbuf,
             )
             .await;
@@ -85,11 +87,11 @@ impl<T: FlashTransport> FlashExecutor<T> {
         let file_len = tokio::fs::metadata(path).await?.len();
         let size = u32::try_from(file_len).unwrap_or(u32::MAX);
 
-        if let Some(pb) = progress_bar {
-            pb.set_length(file_len);
-            pb.set_prefix(partition.to_string());
-            pb.reset();
-            pb.set_position(0);
+        if let Some(rep) = reporter.as_mut() {
+            rep.set_length(file_len);
+            rep.set_prefix(partition);
+            rep.reset();
+            rep.set_position(0);
         }
 
         debug!(%partition, file_size = file_len, max_download, "flashing image to partition");
@@ -107,11 +109,12 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 path,
                 file_len,
                 max_download,
+                reporter,
                 &mut xbuf,
             )
             .await
         } else {
-            self.flash_raw_partition(partition, path, size, progress_bar, &mut xbuf).await
+            self.flash_raw_partition(partition, path, size, reporter, &mut xbuf).await
         }
     }
 
@@ -120,13 +123,11 @@ impl<T: FlashTransport> FlashExecutor<T> {
     pub async fn execute_plan(
         &mut self,
         plan: &FlashPlan,
-        dry_run: bool,
-        progress: Option<&MultiProgress>,
+        mut opts: FlashRunOptions<'_>,
     ) -> FlashResult {
         let all_actions: Vec<_> = plan.actions.iter().filter(|a| a.action == "flash").collect();
         let total = all_actions.len();
-        let mut outcomes = Vec::with_capacity(total);
-        if dry_run {
+        if opts.dry_run {
             info!(total, "DRY RUN — no data will be written");
         } else {
             info!(total, "starting flash execution");
@@ -138,54 +139,83 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 256 * 1024 * 1024
             }
         };
-        if !dry_run {
+        if !opts.dry_run {
             match self.set_active_slot("a").await {
                 Ok(response) => info!(slot = "a", response, "active slot set to a"),
                 Err(e) => warn!(slot = "a", error = %e, "set_active failed; continuing"),
             }
         }
+
+        let mut outcomes = Vec::with_capacity(total);
+        let completed_bytes = AtomicU64::new(0);
+        let current_total = AtomicU64::new(0);
+        let mut cancelled = false;
+
         for action in &all_actions {
+            if opts.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                info!(partition = %action.partition, "cancellation requested before partition");
+                cancelled = true;
+                break;
+            }
+
             let partition = &action.partition;
             info!(%partition, "Writing partition");
-            let pb = progress.map(|_| crate::output::spinner::partition_progress_bar(partition));
+
+            // Per-partition byte reporter folding cumulative overall progress.
+            current_total.store(0, Ordering::Relaxed);
+            let mut on_bytes: Option<Box<dyn FnMut(u64, u64) + Send + '_>> = None;
+            if let Some(cb) = opts.on_transfer.as_mut() {
+                let callback = &mut **cb;
+                on_bytes = Some(Box::new(|bytes: u64, total: u64| {
+                    current_total.store(total, Ordering::Relaxed);
+                    let completed = completed_bytes.load(Ordering::Relaxed);
+                    callback(FlashTransferEvent {
+                        partition: partition.clone(),
+                        operation: "flash".into(),
+                        bytes,
+                        total,
+                        overall_bytes: completed + bytes,
+                        overall_total: completed + total,
+                    });
+                }));
+            }
+
+            let pb = opts
+                .progress
+                .map(|_| crate::output::spinner::partition_progress_bar(partition));
+            let mut reporter = TransferReporter::new(
+                pb.as_ref(),
+                on_bytes
+                    .as_mut()
+                    .map(|c| c.as_mut() as &mut (dyn FnMut(u64, u64) + Send)),
+            );
+
             let start = Instant::now();
             let result = self
-                .flash_partition(action, dry_run, max_download, pb.as_ref())
+                .flash_partition(action, opts.dry_run, max_download, Some(&mut reporter))
                 .await;
             let duration = start.elapsed();
-            match result {
-                Ok(response) => {
-                    info!(%partition, duration = ?duration, response, "flash successful");
-                    if let Some(pb) = &pb {
-                        pb.finish();
-                    }
-                    outcomes.push(FlashOutcome {
-                        partition: partition.clone(),
-                        success: true,
-                        response: Some(response),
-                        duration,
-                        error: None,
-                    });
-                }
-                Err(e) => {
-                    warn!(%partition, duration = ?duration, error = %e, "flash failed, skipping");
-                    if let Some(pb) = &pb {
-                        pb.abandon_with_message(format!("{partition} failed"));
-                    }
-                    outcomes.push(FlashOutcome {
-                        partition: partition.clone(),
-                        success: false,
-                        response: None,
-                        duration,
-                        error: Some(e),
-                    });
-                }
-            }
+
+            let partition_total = current_total.load(Ordering::Relaxed);
+            completed_bytes.fetch_add(partition_total, Ordering::Relaxed);
+
+            outcomes.push(record_outcome(partition, duration, result, pb.as_ref()));
         }
+
         let succeeded = outcomes.iter().filter(|o| o.success).count();
         let failed = outcomes.iter().filter(|o| !o.success).count();
-        info!(succeeded, failed, total, "flash plan execution complete");
-        FlashResult { total, succeeded, failed, outcomes }
+        if cancelled {
+            info!(succeeded, failed, total, "flash plan execution cancelled");
+        } else {
+            info!(succeeded, failed, total, "flash plan execution complete");
+        }
+        FlashResult {
+            total,
+            succeeded,
+            failed,
+            outcomes,
+            cancelled,
+        }
     }
 
     async fn flash_partition(
@@ -193,7 +223,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         action: &crate::scatter_parser::types::FlashAction,
         dry_run: bool,
         max_download: u32,
-        progress_bar: Option<&ProgressBar>,
+        reporter: Option<&mut TransferReporter<'_>>,
     ) -> Result<String> {
         let partition = &action.partition;
         let Some(image_path) = action.image_resolved_path() else {
@@ -221,7 +251,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
             return Ok(String::new());
         }
 
-        self.flash_image_to_partition(partition, path, max_download, progress_bar).await
+        self.flash_image_to_partition(partition, path, max_download, reporter).await
     }
 
     /// Flash a partition that fits in a single download.
@@ -231,7 +261,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         partition: &str,
         path: &Path,
         size: u32,
-        progress_bar: Option<&ProgressBar>,
+        mut reporter: Option<&mut TransferReporter<'_>>,
         xbuf: &mut crate::flash::sparse::XferBuf,
     ) -> Result<String> {
         debug!(%partition, file_size = size, "flashing raw partition");
@@ -247,17 +277,57 @@ impl<T: FlashTransport> FlashExecutor<T> {
             }
             sender.extend_from_slice(&buf[..n]).await?;
             written += n as u64;
-            if let Some(pb) = progress_bar {
-                pb.set_position(written);
+            if let Some(rep) = reporter.as_mut() {
+                rep.inc(n as u64);
+                rep.report(written, u64::from(size));
             }
         }
 
         sender.finish().await?;
         let resp = self.fb.flash(partition).await?;
-        if let Some(pb) = progress_bar {
-            pb.set_position(u64::from(size));
+        if let Some(rep) = reporter.as_mut() {
+            rep.set_position(u64::from(size));
+            rep.report(u64::from(size), u64::from(size));
         }
         debug!(%partition, response = resp, "raw partition flash complete");
         Ok(resp)
+    }
+}
+
+/// Convert a single partition flash result into a recorded outcome, finishing
+/// (or abandoning) the CLI progress bar for that partition.
+fn record_outcome(
+    partition: &str,
+    duration: Duration,
+    result: crate::flash::error::Result<String>,
+    pb: Option<&ProgressBar>,
+) -> FlashOutcome {
+    match result {
+        Ok(response) => {
+            info!(%partition, duration = ?duration, response, "flash successful");
+            if let Some(pb) = pb {
+                pb.finish();
+            }
+            FlashOutcome {
+                partition: partition.to_string(),
+                success: true,
+                response: Some(response),
+                duration,
+                error: None,
+            }
+        }
+        Err(e) => {
+            warn!(%partition, duration = ?duration, error = %e, "flash failed, skipping");
+            if let Some(pb) = pb {
+                pb.abandon_with_message(format!("{partition} failed"));
+            }
+            FlashOutcome {
+                partition: partition.to_string(),
+                success: false,
+                response: None,
+                duration,
+                error: Some(e),
+            }
+        }
     }
 }

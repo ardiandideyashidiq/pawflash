@@ -6,10 +6,10 @@ use android_sparse_image::{
     split::{split_image, split_raw}, ChunkHeader, FileHeader, FileHeaderBytes,
     CHUNK_HEADER_BYTES_LEN, FILE_HEADER_BYTES_LEN,
 };
-use indicatif::ProgressBar;
 use tracing::{debug, info};
 
 use crate::flash::error::{FlashError, Result};
+use crate::flash::progress::TransferReporter;
 use crate::flash::transport::FlashTransport;
 
 use super::{read_exact_padded, read_exact_padded_or_truncate, XferBuf};
@@ -26,7 +26,7 @@ pub(crate) async fn flash_sparse_image(
     path: &Path,
     file_len: u64,
     max_download: u32,
-    progress_bar: Option<&ProgressBar>,
+    mut reporter: Option<&mut TransferReporter<'_>>,
     buf: &mut XferBuf,
 ) -> Result<String> {
     debug!(%partition, file_len, max_download, "flashing sparse image");
@@ -70,15 +70,16 @@ pub(crate) async fn flash_sparse_image(
         .map(|s| u64::try_from(s.sparse_size()).unwrap_or(0))
         .sum();
 
-    if let Some(pb) = progress_bar {
-        pb.set_length(total_download);
-        pb.set_prefix(partition.to_string());
-        pb.reset();
-        pb.set_position(0);
+    if let Some(rep) = reporter.as_mut() {
+        rep.set_length(total_download);
+        rep.set_prefix(partition);
+        rep.reset();
+        rep.set_position(0);
     }
 
     // ---- flash each split (no erase — the flash command handles it) ----
     let mut last_resp = String::new();
+    let mut written: u64 = 0;
     for (i, split) in splits.iter().enumerate() {
         debug!(%partition, part = i, "sending sparse split");
 
@@ -91,16 +92,18 @@ pub(crate) async fn flash_sparse_image(
 
         // file header for this split
         sender.extend_from_slice(&split.header.to_bytes()).await?;
-        if let Some(pb) = progress_bar {
-            pb.inc(FILE_HEADER_BYTES_LEN as u64);
+        if let Some(rep) = reporter.as_mut() {
+            rep.inc(FILE_HEADER_BYTES_LEN as u64);
         }
+        written += FILE_HEADER_BYTES_LEN as u64;
 
         // chunk headers + data for each chunk in this split
         for chunk in &split.chunks {
             sender.extend_from_slice(&chunk.header.to_bytes()).await?;
-            if let Some(pb) = progress_bar {
-                pb.inc(CHUNK_HEADER_BYTES_LEN as u64);
+            if let Some(rep) = reporter.as_mut() {
+                rep.inc(CHUNK_HEADER_BYTES_LEN as u64);
             }
+            written += CHUNK_HEADER_BYTES_LEN as u64;
 
             if chunk.size > 0 {
                 file.seek(SeekFrom::Start(chunk.offset as u64)).await?;
@@ -111,11 +114,15 @@ pub(crate) async fn flash_sparse_image(
                     let to_read = buf_slice.len().min(remaining);
                     read_exact_padded_or_truncate(&mut file, &mut buf_slice[..to_read], chunk.size).await?;
                     sender.extend_from_slice(&buf_slice[..to_read]).await?;
-                    if let Some(pb) = progress_bar {
-                        pb.inc(to_read as u64);
+                    if let Some(rep) = reporter.as_mut() {
+                        rep.inc(to_read as u64);
                     }
+                    written += to_read as u64;
                     remaining = remaining.saturating_sub(to_read);
                 }
+            }
+            if let Some(rep) = reporter.as_mut() {
+                rep.report(written, total_download);
             }
         }
 
@@ -123,8 +130,9 @@ pub(crate) async fn flash_sparse_image(
         last_resp = fb.flash(partition).await?;
     }
 
-    if let Some(pb) = progress_bar {
-        pb.set_position(total_download);
+    if let Some(rep) = reporter.as_mut() {
+        rep.set_position(total_download);
+        rep.report(total_download, total_download);
     }
 
     debug!(%partition, total_download, response = last_resp, "sparse flash complete");
@@ -143,6 +151,7 @@ pub(crate) async fn flash_sparse_wrapped(
     path: &Path,
     file_len: u64,
     max_download: u32,
+    mut reporter: Option<&mut TransferReporter<'_>>,
     buf: &mut XferBuf,
 ) -> Result<String> {
     debug!(%partition, file_len, max_download, "wrapping raw image in sparse format");
@@ -159,8 +168,16 @@ pub(crate) async fn flash_sparse_wrapped(
 
     let mut file = tokio::fs::File::open(path).await?;
 
+    if let Some(rep) = reporter.as_mut() {
+        rep.set_length(file_len);
+        rep.set_prefix(partition);
+        rep.reset();
+        rep.set_position(0);
+    }
+
     // ---- flash each split (no erase — the flash command handles it) ----
     let mut last_resp = String::new();
+    let mut written: u64 = 0;
     for (i, split) in splits.iter().enumerate() {
         debug!(%partition, part = i, "sending sparse-wrapped split");
 
@@ -175,10 +192,12 @@ pub(crate) async fn flash_sparse_wrapped(
 
         // file header for this split
         sender.extend_from_slice(&split.header.to_bytes()).await?;
+        written += FILE_HEADER_BYTES_LEN as u64;
 
         // chunk headers + data for each chunk in this split
         for chunk in &split.chunks {
             sender.extend_from_slice(&chunk.header.to_bytes()).await?;
+            written += CHUNK_HEADER_BYTES_LEN as u64;
 
             if chunk.size > 0 {
                 file.seek(SeekFrom::Start(chunk.offset as u64)).await?;
@@ -193,13 +212,22 @@ pub(crate) async fn flash_sparse_wrapped(
                     // the tail is correct.
                     read_exact_padded(&mut file, &mut chunk_buf[..to_read]).await?;
                     sender.extend_from_slice(&chunk_buf[..to_read]).await?;
+                    written += to_read as u64;
                     remaining = remaining.saturating_sub(to_read);
                 }
+            }
+            if let Some(rep) = reporter.as_mut() {
+                rep.report(written, file_len);
             }
         }
 
         sender.finish().await?;
         last_resp = fb.flash(partition).await?;
+    }
+
+    if let Some(rep) = reporter.as_mut() {
+        rep.set_position(file_len);
+        rep.report(file_len, file_len);
     }
 
     debug!(%partition, splits = splits.len(), response = last_resp, "sparse-wrapped flash complete");

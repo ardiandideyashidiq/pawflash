@@ -28,6 +28,8 @@ pub struct FlashResult {
     pub succeeded: usize,
     pub failed: usize,
     pub outcomes: Vec<FlashOutcome>,
+    /// True when execution was stopped early by a cancellation request.
+    pub cancelled: bool,
 }
 
 

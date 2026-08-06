@@ -1,299 +1,164 @@
-import { useMemo, useState } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useConsole } from "@/hooks/useConsole";
-import FlasherPartitionTable from "@/components/tabs/FlasherPartitionTable";
-import { isSelectable } from "@/lib/scatter";
-import type {
-  DeviceInfo,
-  FlashPlanOptions,
-  FlashResult,
-  ScatterFile,
-  ScatterPartition,
-} from "@/types/api";
-import type { ProgressEvent } from "@/types/progress";
-import { FileText, FolderOpen, LoaderCircle, Play, RefreshCw } from "lucide-react";
+import { AlertTriangle, XCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ScatterPicker } from "@/components/main-tab/ScatterPicker";
+import { FlashOptions } from "@/components/main-tab/FlashOptions";
+import { PartitionTable } from "@/components/main-tab/PartitionTable";
+import { FlashFab } from "@/components/main-tab/FlashFab";
+import { useFlashPlan } from "@/hooks/useFlashPlan";
+import { cn } from "@/lib/utils";
+import { slotLabel } from "@/lib/slot";
+import type { ReactNode } from "react";
 
 interface FlasherTabProps {
-  device: DeviceInfo | null;
-  onRefresh: () => Promise<void>;
+  connected: boolean;
+  onStartFlash: () => void;
+  flashDisabled: boolean;
 }
 
-function preferredLayout(layouts: Record<string, ScatterPartition[]>): string {
-  const keys = Object.keys(layouts);
-  for (const wanted of ["UFS", "EMMC"]) {
-    const key = keys.find((k) => k.toUpperCase() === wanted);
-    if (key) return key;
-  }
-  return keys[0] ?? "";
-}
+function FlashTabInner({
+  connected,
+  onStartFlash,
+  flashDisabled,
+}: FlasherTabProps) {
+  const {
+    scatterPath,
+    loadScatter,
+    plan,
+    loading,
+    error,
+    options,
+    setAdvanced,
+    setIncludePreloader,
+    setSlot,
+    setRebootRecovery,
+    togglePartition,
+    toggleAllPartitions,
+    allSelected,
+    someSelected,
+    selectedFlashCount,
+  } = useFlashPlan();
 
-function partitionCounts(scatter: ScatterFile): { total: number; flashable: number } {
-  const layout = preferredLayout(scatter.layouts);
-  const parts = scatter.layouts[layout] ?? [];
-  return {
-    total: parts.length,
-    flashable: parts.filter(isSelectable).length,
-  };
-}
-
-export default function FlasherTab({ device, onRefresh }: FlasherTabProps) {
-  const { addProgressEvent } = useConsole();
-  const [scatterPath, setScatterPath] = useState("");
-  const [scatterMeta, setScatterMeta] = useState<ScatterFile | null>(null);
-  const [scatterLoading, setScatterLoading] = useState(false);
-  const [includePreloader, setIncludePreloader] = useState(false);
-  const [rebootAfter, setRebootAfter] = useState(false);
-  const [planLoading, setPlanLoading] = useState(false);
-  const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
-
-  const connected = device?.connected ?? false;
-
-  const counts = useMemo(
-    () => (scatterMeta ? partitionCounts(scatterMeta) : null),
-    [scatterMeta],
-  );
-
-  const selectedCount = useMemo(() => {
-    if (!scatterMeta) return null;
-    const layout = preferredLayout(scatterMeta.layouts);
-    const parts = scatterMeta.layouts[layout] ?? [];
-    return parts
-      .filter(isSelectable)
-      .filter((p) => !excluded.has(p.name)).length;
-  }, [scatterMeta, excluded]);
-
-  const togglePartition = (name: string) => {
-    setExcluded((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) {
-        next.delete(name);
-      } else {
-        next.add(name);
-      }
-      return next;
-    });
-  };
-
-  const toggleAll = (included: boolean) => {
-    if (!scatterMeta) return;
-    const layout = preferredLayout(scatterMeta.layouts);
-    const parts = scatterMeta.layouts[layout] ?? [];
-    setExcluded((prev) => {
-      const next = new Set(prev);
-      for (const p of parts) {
-        if (isSelectable(p)) {
-          if (included) {
-            next.delete(p.name);
-          } else {
-            next.add(p.name);
-          }
-        }
-      }
-      return next;
-    });
-  };
-
-  const parseScatter = async (path: string) => {
-    setScatterLoading(true);
-    try {
-      const meta = await invoke<ScatterFile>("parse_scatter", { path });
-      setScatterMeta(meta);
-    } catch (e) {
-      setScatterMeta(null);
-      toast.error(`Failed to parse scatter: ${e}`);
-    }
-    setScatterLoading(false);
-  };
-
-  const pickScatter = async () => {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const picked = await open({
-        multiple: false,
-        filters: [{ name: "Scatter", extensions: ["txt", "xml", "yaml"] }],
-      });
-      if (typeof picked === "string") {
-        setScatterPath(picked);
-        await parseScatter(picked);
-      }
-    } catch (e) {
-      toast.error(`File dialog error: ${e}`);
-    }
-  };
-
-  const executeFullFlash = async () => {
-    if (!scatterMeta) {
-      toast.error("Load a scatter file first");
-      return;
-    }
-    setPlanLoading(true);
-    const channel = new Channel<ProgressEvent>();
-    channel.onmessage = addProgressEvent;
-    const options: FlashPlanOptions = {
-      storage: "auto",
-      exclude: Array.from(excluded),
-      firmware_dir: null,
-      package_root: null,
-      image_verification: { check_images: false, image_search: false },
-      allowance: { include_preloader: includePreloader, allow_incomplete_slots: false },
-      clean: "no",
-    };
-    let shouldReboot = false;
-    try {
-      const result = await invoke<FlashResult>("execute_plan", {
-        path: scatterPath,
-        options,
-        onEvent: channel,
-      });
-      if (result.failed > 0) {
-        toast.error(`${result.failed}/${result.total} partitions failed`);
-      } else {
-        toast.success(`${result.succeeded} partitions flashed`);
-        shouldReboot = rebootAfter;
-      }
-    } catch (e) {
-      toast.error(`Flash plan failed: ${e}`);
-    }
-    try {
-      if (shouldReboot) {
-        toast.info("Rebooting into recovery...");
-        await invoke("reboot_device", { target: "recovery" });
-      }
-      await onRefresh();
-    } catch (e) {
-      toast.error(`Device reboot/refresh failed: ${e}`);
-    } finally {
-      setPlanLoading(false);
-    }
-  };
+  const displayRows = plan?.rows ?? [];
 
   return (
-    <div className="space-y-5">
-      {/* Scatter file */}
-      <section className="panel-shell overflow-hidden">
-        <div className="flex items-start gap-4 px-5 py-5">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-trace-copper/10 text-trace-copper">
-            <FileText size={18} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-body font-display font-medium uppercase tracking-wider text-foreground">
-              Scatter File
-            </h2>
-            <p className="mt-1 text-label leading-normal text-muted-foreground">
-              Select a MediaTek scatter file to load the partition layout, then
-              flash the safe firmware and Android partitions in full.
+    <div className="flex min-h-full min-h-0 flex-col gap-4 lg:gap-6">
+      <ScatterPicker path={scatterPath} onChange={loadScatter} />
+
+      <FlashOptions
+        advanced={options.advanced}
+        onAdvancedChange={setAdvanced}
+        includePreloader={options.includePreloader}
+        onIncludePreloaderChange={setIncludePreloader}
+        slot={options.slot}
+        onSlotChange={setSlot}
+        rebootRecovery={options.rebootRecovery}
+        onRebootRecoveryChange={setRebootRecovery}
+      />
+
+      <PartitionTable
+        className="min-h-0 flex-1"
+        partitions={displayRows}
+        loading={loading}
+        onToggle={togglePartition}
+        onToggleAll={toggleAllPartitions}
+        allSelected={allSelected}
+        someSelected={someSelected}
+      />
+
+      {error && (
+        <p className="flex items-start gap-2 rounded-md border border-error/20 bg-error/8 px-3 py-2 text-sm leading-6 text-error">
+          <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {error}
+        </p>
+      )}
+
+      {plan && (plan.warnings.length > 0 || plan.errors.length > 0) && (
+        <div className="shrink-0 space-y-2 px-2 text-sm text-muted-foreground">
+          {plan.warnings.map((warning, index) => (
+            <p key={index} className="flex items-start gap-2 leading-6 text-warning">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {warning}
             </p>
-            <div className="mt-3 flex items-center gap-2 max-sm:flex-wrap">
-              <Button variant="outline" size="sm" onClick={pickScatter}>
-                <FolderOpen size={14} className="mr-1" />
-                Select
-              </Button>
-              <div className="flex min-w-0 max-w-md flex-1 items-center gap-2">
-                <Input
-                  value={scatterPath}
-                  onChange={(e) => setScatterPath(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && scatterPath.trim()) {
-                      parseScatter(scatterPath.trim());
-                    }
-                  }}
-                  placeholder="Full path to scatter file (e.g. /path/MT6789_Android_scatter.txt)"
-                  className="font-mono text-label"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    if (scatterPath.trim()) parseScatter(scatterPath.trim());
-                  }}
-                  disabled={scatterLoading || !scatterPath.trim()}
-                  aria-label="Reload scatter file"
-                >
-                  <RefreshCw
-                    size={16}
-                    className={scatterLoading ? "animate-spin" : ""}
-                  />
-                </Button>
-              </div>
-            </div>
-            {scatterLoading && (
-              <p className="mt-2 text-label text-muted-foreground">
-                <LoaderCircle size={14} className="mr-1 inline animate-spin" />
-                Parsing...
-              </p>
-            )}
+          ))}
+          {plan.errors.map((error, index) => (
+            <p key={index} className="flex items-start gap-2 leading-6 text-error">
+              <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {error}
+            </p>
+          ))}
+        </div>
+      )}
+
+      <div className="panel-shell shrink-0 px-5 py-4 sm:px-6 sm:py-5">
+        <div className="grid grid-cols-6 items-center gap-3 lg:grid-cols-5 lg:gap-4">
+          <SummaryCard label="Chipset" value={plan?.chipset ?? "—"} className="col-span-2 lg:col-span-1" />
+          <SummaryCard label="Storage" value={plan?.storage ?? "—"} className="col-span-2 lg:col-span-1" />
+          <SummaryCard
+            label="Slot"
+            value={options.slot === "" ? (plan ? "default" : "—") : slotLabel[options.slot]}
+            className="col-span-2 lg:col-span-1"
+          />
+          <SummaryCard
+            label="Actions"
+            value={
+              plan ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Badge variant="success" className="px-2 py-0">
+                    F {selectedFlashCount}
+                  </Badge>
+                </span>
+              ) : loading ? (
+                "Parsing..."
+              ) : (
+                "—"
+              )
+            }
+            accent
+            className="col-span-3 lg:col-span-1"
+          />
+          <div className="col-span-3 flex overflow-hidden lg:col-span-1">
+            <FlashFab onClick={onStartFlash} disabled={flashDisabled} />
           </div>
         </div>
-      </section>
-
-      {scatterMeta && !scatterLoading && (
-        <>
-          {/* Options + execute */}
-          <section className="panel-shell flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
-            {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-            <label className="flex cursor-pointer items-center gap-2 text-label select-none">
-              <Checkbox
-                checked={includePreloader}
-                onCheckedChange={(c) => setIncludePreloader(c)}
-              />
-              Include preloader
-            </label>
-            {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-            <label className="flex cursor-pointer items-center gap-2 text-label select-none">
-              <Checkbox
-                checked={rebootAfter}
-                onCheckedChange={(c) => setRebootAfter(c)}
-              />
-              Reboot into recovery after flash
-            </label>
-            <div className="ml-auto flex items-center gap-3">
-              <span className="text-caption text-muted-foreground tabular-nums">
-                {counts && selectedCount !== null
-                  ? `${selectedCount} selected / ${counts.flashable} flashable / ${counts.total} partitions`
-                  : ""}
-              </span>
-              <Button
-                variant="accent"
-                size="sm"
-                onClick={executeFullFlash}
-                disabled={planLoading || !connected}
-              >
-                {planLoading ? (
-                  <>
-                    <LoaderCircle size={14} className="animate-spin" /> Flashing...
-                  </>
-                ) : (
-                  <>
-                    <Play size={14} className="mr-1" /> Flash
-                  </>
-                )}
-              </Button>
-            </div>
-          </section>
-
-          {/* Partition table */}
-          <section className="panel-shell overflow-hidden">
-            <div className="flex items-baseline justify-between gap-4 px-5 pt-4 pb-2">
-              <h3 className="text-caption font-display font-medium uppercase tracking-wider text-muted-foreground">
-                Layout — {preferredLayout(scatterMeta.layouts)}
-              </h3>
-              <p className="text-caption text-muted-foreground">
-                Uncheck a partition to exclude it from the flash.
-              </p>
-            </div>
-            <FlasherPartitionTable
-              parts={scatterMeta.layouts[preferredLayout(scatterMeta.layouts)] ?? []}
-              excluded={excluded}
-              onToggle={togglePartition}
-              onToggleAll={toggleAll}
-            />
-          </section>
-        </>
-      )}
+        {!connected && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            No fastboot device connected — flash will wait for a device.
+          </p>
+        )}
+      </div>
     </div>
   );
+}
+
+function SummaryCard({
+  label,
+  value,
+  accent = false,
+  className,
+}: {
+  label: string;
+  value: ReactNode;
+  accent?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("panel-inset flex h-12 flex-col justify-center gap-0.5 px-3", className)}>
+      <p className="text-[11px] leading-tight font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        {label}
+      </p>
+      <div
+        className={
+          accent
+            ? "text-sm leading-tight font-semibold text-trace-copper"
+            : "text-sm leading-tight font-semibold"
+        }
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+export default function FlasherTab(props: FlasherTabProps) {
+  return <FlashTabInner {...props} />;
 }

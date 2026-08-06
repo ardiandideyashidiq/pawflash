@@ -1,5 +1,6 @@
 pub mod error;
 pub mod executor;
+pub mod progress;
 pub mod results;
 pub mod simulate;
 pub mod sparse;
