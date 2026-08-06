@@ -5,13 +5,17 @@ import { useUI } from "@/hooks/useUI";
 import { useConsole } from "@/hooks/useConsole";
 import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
+import { useMountAnimation } from "@/hooks/useMountAnimation";
 import { ProgressWidget } from "@/components/console/ProgressWidget";
+import { cn } from "@/lib/utils";
 import type { ConsoleLevel } from "@/types/progress";
 
 const MIN_WIDTH = 300;
 const MAX_WIDTH_FACTOR = 0.9;
 
 const SCROLL_PIN_TOLERANCE = 120;
+
+const SLIDE_DURATION_MS = 300;
 
 function levelColor(level: ConsoleLevel): string {
   switch (level) {
@@ -45,6 +49,10 @@ export function LogPanel() {
   const panelRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const panelWidthRef = useRef(logPanelWidth);
+  // Latest pointer X + pending frame id for coalescing resize updates.
+  const dragXRef = useRef(0);
+  const resizeRafRef = useRef<number | null>(null);
+  const { mounted, shown } = useMountAnimation(logPanelOpen, SLIDE_DURATION_MS);
 
   const isLive =
     flash.phase === "waiting" || flash.phase === "flashing" || force.phase === "waiting";
@@ -99,44 +107,74 @@ export function LogPanel() {
   useEffect(() => {
     if (!isDragging) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = window.innerWidth - e.clientX;
-      const clamped = Math.min(Math.max(newWidth, MIN_WIDTH), window.innerWidth * MAX_WIDTH_FACTOR);
+    const applyWidth = (clientX: number) => {
+      const newWidth = window.innerWidth - clientX;
+      const clamped = Math.min(
+        Math.max(newWidth, MIN_WIDTH),
+        window.innerWidth * MAX_WIDTH_FACTOR,
+      );
+      panelWidthRef.current = clamped;
       if (panelRef.current) {
         panelRef.current.style.width = `${clamped}px`;
       }
-      panelWidthRef.current = clamped;
     };
 
-    const handleMouseUp = () => {
+    const handlePointerMove = (e: PointerEvent) => {
+      // Coalesce to one style write per animation frame. Every width change
+      // forces a synchronous layout of the whole panel subtree (the log
+      // list), so applying it at pointer rate (often >60Hz) causes multiple
+      // reflows per frame and feels laggy.
+      dragXRef.current = e.clientX;
+      if (resizeRafRef.current != null) return;
+      resizeRafRef.current = requestAnimationFrame(() => {
+        resizeRafRef.current = null;
+        applyWidth(dragXRef.current);
+      });
+    };
+
+    const handlePointerUp = () => {
       setIsDragging(false);
       setLogPanelWidth(panelWidthRef.current);
     };
 
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
+    // Suppress text selection and cursor flicker while dragging.
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerup", handlePointerUp);
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (resizeRafRef.current != null) {
+        cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = null;
+      }
     };
   }, [isDragging, setLogPanelWidth]);
 
-  if (!logPanelOpen) return null;
+  if (!mounted) return null;
 
   return (
     <>
       <button
         type="button"
         aria-label="Close logs"
-        className="fixed inset-0 z-40 cursor-default bg-black/50 transition-opacity duration-200"
+        className={cn(
+          "fixed inset-0 z-40 cursor-default bg-black/50 backdrop-blur-md transition-opacity duration-300",
+          shown ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
         onClick={closeLogPanel}
       />
 
       <div
         ref={panelRef}
-        className={`fixed top-0 right-0 flex h-full flex-col border-l border-border bg-card shadow-2xl z-50 ${
-          isDragging ? "" : "transition-all duration-300 ease-out"
-        }`}
+        className={cn(
+          "fixed top-0 right-0 z-50 flex h-full flex-col border-l border-border bg-card shadow-2xl",
+          shown ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-full opacity-0",
+          !isDragging && "transition-all duration-300 ease-out",
+        )}
         style={{ width: `${logPanelWidth}px` }}
         role="dialog"
         aria-label="Operation logs"
@@ -145,7 +183,11 @@ export function LogPanel() {
           type="button"
           aria-label="Resize logs panel"
           className="absolute top-1/2 left-0 flex h-16 w-3 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-r-md bg-muted transition-colors hover:bg-trace-copper"
-          onMouseDown={() => setIsDragging(true)}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setIsDragging(true);
+          }}
           title="Drag to resize"
         >
           <span className="h-8 w-0.5 rounded-full bg-muted-foreground/60" />
