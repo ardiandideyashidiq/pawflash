@@ -55,7 +55,6 @@ fn build_flash_options(
         ),
         image_verification,
         allowance,
-        clean: sp::CleanMode::No,
     }
 }
 

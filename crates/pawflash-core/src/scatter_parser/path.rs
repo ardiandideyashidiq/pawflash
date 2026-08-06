@@ -307,6 +307,10 @@ fn is_windows_absolute(value: &str) -> bool {
 fn is_within(path: &Path, root: &Path) -> bool {
     let path = absolutize(path);
     let root = absolutize(root);
+    // Resolve symlinks (when the paths exist) so a symlink living inside the
+    // package but pointing outside is not treated as contained.
+    let path = fs::canonicalize(&path).unwrap_or(path);
+    let root = fs::canonicalize(&root).unwrap_or(root);
     path.starts_with(root)
 }
 
@@ -381,5 +385,27 @@ mod tests {
             false,
         );
         assert!(result.normalized.is_some(), "normalized should be set");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_outside_package_is_blocked() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let root = dir.path().join("pkg");
+        std::fs::create_dir(&root).expect("create pkg");
+        let outside = dir.path().join("outside.img");
+        std::fs::write(&outside, b"secret").expect("write outside");
+        symlink(&outside, root.join("link.img")).expect("symlink");
+
+        let result = resolve_image_path(
+            Some("link.img"),
+            Some(&root),
+            None,
+            Some(&root),
+            false,
+        );
+        assert_eq!(result.exists, Some(false), "symlink escape must not resolve");
+        assert_eq!(result.outside_package_root, Some(true));
     }
 }

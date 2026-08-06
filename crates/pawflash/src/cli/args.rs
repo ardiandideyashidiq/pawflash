@@ -98,12 +98,12 @@ pub enum FlashAction {
 pub enum DeviceAction {
     /// Show device info (all fastboot variables)
     Info,
-    /// Reboot the device
-    Reboot {
-        /// Reboot target: system, bootloader, fastbootd, recovery, bootloader
-        #[arg(default_value = "system")]
-        target: String,
-    },
+        /// Reboot the device
+        Reboot {
+            /// Reboot target: system, bootloader, fastbootd, or recovery
+            #[arg(default_value = "system")]
+            target: String,
+        },
     /// Lock the bootloader (flashing lock)
     Lock,
     /// Unlock the bootloader (flashing unlock)

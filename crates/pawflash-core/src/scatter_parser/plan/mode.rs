@@ -18,11 +18,13 @@ pub(super) fn full_flash_allows_partition(
     part: &ScatterPartition,
     image_source: &ScatterPartition,
     include_preloader: bool,
-    clean: bool,
 ) -> (bool, String) {
     let canonical = part.canonical();
     let safety = part.safety_class();
-    let flashable = image_source.flashable_by_profile() && part.size > 0;
+    // Use the image-presence predicate (not `flashable_by_profile`) so a
+    // partition declared with `partition_size: 0` but carrying an image is
+    // still eligible; the device validates the real extent.
+    let flashable = image_source.has_image();
 
     if matches!(safety.as_str(), "identity_or_calibration" | "dangerous") {
         return (false, format!("blocked safety class: {safety}"));
@@ -37,8 +39,9 @@ pub(super) fn full_flash_allows_partition(
             "not selected by scatter profile or no image".to_string(),
         );
     }
-    if clean && canonical == "userdata" {
-        return (true, "allowed by --clean".to_string());
+    // userdata is always flashed when it carries an image.
+    if canonical == "userdata" {
+        return (true, "userdata is always flashed".to_string());
     }
     if BOOTLOADER_CANONICAL.contains(&canonical.as_str())
         || BOOT_CHAIN_CANONICAL.contains(&canonical.as_str())
@@ -83,36 +86,41 @@ mod tests {
         }
     }
 
-    fn allows(name: &str, include_preloader: bool, clean: bool) -> (bool, String) {
+    fn allows(name: &str, include_preloader: bool) -> (bool, String) {
         let p = part(name, true, true, 0x0040_0000);
-        full_flash_allows_partition(&p, &p, include_preloader, clean)
+        full_flash_allows_partition(&p, &p, include_preloader)
     }
 
     #[test]
     fn full_flash_should_allow_boot() {
-        let (allowed, reason) = allows("boot", false, false);
+        let (allowed, reason) = allows("boot", false);
         assert!(allowed, "boot should be allowed: {reason}");
     }
 
     #[test]
     fn full_flash_should_block_identity_and_dangerous() {
-        assert!(!allows("nvram", false, false).0);
-        assert!(!allows("pgpt", false, false).0);
+        assert!(!allows("nvram", false).0);
+        assert!(!allows("pgpt", false).0);
     }
 
     #[test]
     fn full_flash_should_require_include_preloader() {
-        assert!(!allows("preloader", false, false).0);
-        assert!(allows("preloader", true, false).0);
+        assert!(!allows("preloader", false).0);
+        assert!(allows("preloader", true).0);
     }
 
     #[test]
-    fn full_flash_should_allow_userdata_only_with_clean() {
+    fn full_flash_should_always_allow_userdata_with_image() {
         let p = part("userdata", true, true, 0x0040_0000);
-        let (a1, _) = full_flash_allows_partition(&p, &p, false, true);
-        assert!(a1);
-        let (a2, r2) = full_flash_allows_partition(&p, &p, false, false);
-        assert!(!a2, "userdata without clean should be blocked: {r2}");
+        let (allowed, reason) = full_flash_allows_partition(&p, &p, false);
+        assert!(allowed, "userdata with an image must always flash: {reason}");
+    }
+
+    #[test]
+    fn full_flash_should_skip_userdata_without_image() {
+        let p = part("userdata", false, false, 0x0040_0000);
+        let (allowed, _) = full_flash_allows_partition(&p, &p, false);
+        assert!(!allowed, "image-less userdata should be skipped");
     }
 
     #[test]

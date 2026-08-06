@@ -38,13 +38,13 @@ pub fn heading_colored(msg: impl AsRef<str>) -> String {
 }
 
 /// Print command data output (tables, JSON, device info) — always to stdout.
-/// When `-v` is active, also emits via `tracing::info!` (ANSI-stripped).
+///
+/// Deliberately NOT mirrored into `tracing` even at `-v`: machine-readable
+/// payloads (e.g. `--json -v`) must reach stdout exactly once without being
+/// interleaved with the stderr log stream. Status lines have their own
+/// mirrors via `emit_status`.
 pub fn data(output: impl AsRef<str>) {
-    let out = output.as_ref();
-    if output::verbosity() >= 1 {
-        tracing::info!("{}", strip(out));
-    }
-    println!("{out}");
+    println!("{}", output.as_ref());
 }
 
 /// Print a success status line (e.g., `OKAY (resp)`).

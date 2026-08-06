@@ -44,11 +44,21 @@ pub(super) fn normalize_partition(
         .unwrap_or_else(|| "UNKNOWN".to_string());
     let storage = normalize_none_string(get_first(&entry, &["storage"]));
     let ef_layout = effective_layout(&region, storage.as_deref());
+    // Prefer the layout key when it names a recognized storage family so that
+    // `ScatterFile.layouts` keys, `selected_layouts` and each partition's
+    // `layout` field all agree; fall back to the region/storage-derived
+    // family only for generic keys (e.g. "DEFAULT").
+    let layout_key = layout.trim().to_uppercase();
+    let layout = if matches!(layout_key.as_str(), "EMMC" | "UFS") {
+        layout.to_string()
+    } else {
+        ef_layout
+    };
     let safety_class = safety_class(&name);
 
     Ok(ScatterPartition {
         source: path.to_string_lossy().into_owned(),
-        layout: ef_layout,
+        layout,
         index: normalize_none_string(get_first(&entry, &["partition_index"])),
         name,
         file_name,
@@ -120,7 +130,10 @@ pub(super) fn validate_layouts(
                         part.region, part.name
                     ));
                 } else {
-                    errors.push(format!(
+                    // Same name+region but a different extent/profile is
+                    // ambiguous, not fatal — surface it as a warning so a
+                    // legitimate repeat doesn't reject the whole scatter.
+                    warnings.push(format!(
                         "{layout}/{}/{}: ambiguous duplicate partition old={:#x}+{:#x} new={:#x}+{:#x}",
                         part.region, part.name, old.linear_start, old.size,
                         part.linear_start, part.size

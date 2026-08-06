@@ -51,13 +51,26 @@ pub(crate) fn parse_xml_scatter(text: &str) -> std::result::Result<ParsedRawScat
 }
 
 fn is_checksum_scatter(root: &XmlNode) -> bool {
-    matches!(
-        root.tag.to_lowercase().as_str(),
-        "scatter" | "checksum" | "scatter_checksum"
-    ) && !root
-        .descendants()
-        .iter()
-        .any(|node| node.tag == "partition_index")
+    let tag = root.tag.to_lowercase();
+    if !matches!(tag.as_str(), "scatter" | "checksum" | "scatter_checksum") {
+        return false;
+    }
+    // Only classify as a checksum file when an explicit marker exists; a bare
+    // `<scatter>` with no partitions is a parse problem, not a checksum file.
+    let explicit_marker = root.attrs.contains_key("checksum")
+        || root
+            .attrs
+            .values()
+            .any(|v| v.as_str().is_some_and(|s| s.eq_ignore_ascii_case("checksum")))
+        || root
+            .descendants()
+            .iter()
+            .any(|node| node.tag.eq_ignore_ascii_case("checksum"));
+    explicit_marker
+        && !root
+            .descendants()
+            .iter()
+            .any(|node| node.tag == "partition_index")
 }
 
 fn parse_general_info(root: &XmlNode) -> Map<String, Value> {
@@ -197,6 +210,10 @@ fn parse_xml_node(text: &str) -> std::result::Result<XmlNode, (String, usize)> {
     reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
     let mut stack: Vec<XmlNode> = Vec::new();
+    // The most recent completed top-level element. Kept instead of returning
+    // early on the first root so trailing siblings after a self-closing root
+    // are not silently dropped.
+    let mut root: Option<XmlNode> = None;
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(start)) => {
@@ -243,7 +260,9 @@ fn parse_xml_node(text: &str) -> std::result::Result<XmlNode, (String, usize)> {
                 if let Some(parent) = stack.last_mut() {
                     parent.children.push(node);
                 } else {
-                    return Ok(node);
+                    // Self-closing top-level element: remember it and keep
+                    // parsing rather than returning early.
+                    root = Some(node);
                 }
             }
             Ok(Event::Text(event)) => {
@@ -259,7 +278,7 @@ fn parse_xml_node(text: &str) -> std::result::Result<XmlNode, (String, usize)> {
                 if let Some(parent) = stack.last_mut() {
                     parent.children.push(node);
                 } else {
-                    return Ok(node);
+                    root = Some(node);
                 }
             }
             Ok(Event::Eof) => break,
@@ -271,7 +290,9 @@ fn parse_xml_node(text: &str) -> std::result::Result<XmlNode, (String, usize)> {
             buf.shrink_to(4096);
         }
     }
-    Err(("empty XML document".to_string(), reader.buffer_position().try_into().unwrap()))
+    root.ok_or_else(|| {
+        ("empty XML document".to_string(), reader.buffer_position().try_into().unwrap())
+    })
 }
 
 fn xml_children_dict(node: &XmlNode) -> Map<String, Value> {
@@ -290,7 +311,13 @@ fn xml_children_dict(node: &XmlNode) -> Map<String, Value> {
         }
     }
     for (key, value) in &node.attrs {
-        out.entry(key.clone()).or_insert_with(|| value.clone());
+        // Never overwrite a child element that shares the attribute's name:
+        // stash the attribute under a `#`-prefixed key so no data is lost.
+        if out.contains_key(key) {
+            out.insert(format!("#{key}"), value.clone());
+        } else {
+            out.insert(key.clone(), value.clone());
+        }
     }
     out
 }
@@ -323,4 +350,37 @@ fn xml_value(node: &XmlNode) -> Value {
 
 fn strip_ns(tag: &str) -> String {
     tag.rsplit('}').next().unwrap_or(tag).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn self_closing_scatter_then_general_keeps_later_content() {
+        let root = parse_xml_node("<scatter/><general><platform>MT6789</platform></general>").unwrap();
+        assert_eq!(root.tag, "general", "last top-level element must win");
+        let general = parse_general_info(&root);
+        assert_eq!(general.get("platform").and_then(Value::as_str), Some("MT6789"));
+    }
+
+    #[test]
+    fn bare_scatter_root_is_not_checksum() {
+        let root = parse_xml_node("<scatter/>").unwrap();
+        assert!(!is_checksum_scatter(&root), "bare <scatter/> is not a checksum file");
+    }
+
+    #[test]
+    fn scatter_with_explicit_checksum_marker_is_checksum() {
+        let root = parse_xml_node(r#"<scatter checksum="true"/>"#).unwrap();
+        assert!(is_checksum_scatter(&root));
+    }
+
+    #[test]
+    fn attribute_sharing_child_name_is_preserved_under_hash() {
+        let root = parse_xml_node(r#"<part name="SYS0"><name>boot</name></part>"#).unwrap();
+        let dict = xml_children_dict(&root);
+        assert_eq!(dict.get("name").and_then(Value::as_str), Some("boot"));
+        assert_eq!(dict.get("#name").and_then(Value::as_str), Some("SYS0"));
+    }
 }

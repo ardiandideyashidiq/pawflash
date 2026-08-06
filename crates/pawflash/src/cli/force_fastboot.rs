@@ -1,4 +1,4 @@
-use miette::{Context, Result};
+use miette::Result;
 use tokio::io::AsyncWriteExt;
 use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, info, trace, warn};
@@ -30,12 +30,19 @@ pub async fn run(simulate: bool) -> Result<()> {
         return Ok(());
     }
 
-    let mut port = output::spinner::run_with_spinner(
+    let Some(mut port) = output::spinner::run_with_spinner(
         "Waiting for preloader serial port (120s timeout)...",
-        serial::wait_for_preloader(false),
+        serial::wait_for_preloader(true),
     )
     .await?
-    .context("preloader wait returned without a port")?;
+    else {
+        // wait_for_preloader returns None when it detects the device already
+        // entered fastboot mode — that is success, not an error.
+        output::status::ok("[+]", "fastboot mode detected while waiting for preloader");
+        fastboot::list_fastboot_devices().await;
+        info!(total_secs = start_all.elapsed().as_secs_f32(), sends = 0u64, "force-fastboot complete");
+        return Ok(());
+    };
 
     output::status::ok("[+]", format!("{port} appeared"));
     output::status::blank();

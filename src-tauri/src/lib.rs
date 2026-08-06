@@ -78,11 +78,20 @@ struct CancelState {
 /// In-memory cache of parsed scatter files, keyed by path and invalidated on
 /// mtime/size change. A single GUI flash session parses the scatter through
 /// three commands (validate → plan → execute); this collapses that to one
-/// parse and one disk read + hash.
+/// parse and one disk read + hash. Bounded to a small FIFO so long-lived GUI
+/// sessions don't grow without limit.
 #[derive(Default)]
 struct ScatterCache {
-  inner: Mutex<HashMap<PathBuf, CachedScatter>>,
+  inner: Mutex<ScatterCacheInner>,
 }
+
+#[derive(Default)]
+struct ScatterCacheInner {
+  entries: HashMap<PathBuf, CachedScatter>,
+  order: std::collections::VecDeque<PathBuf>,
+}
+
+const SCATTER_CACHE_MAX: usize = 8;
 
 struct CachedScatter {
   mtime: std::time::SystemTime,
@@ -97,15 +106,16 @@ impl ScatterCache {
     let size = meta.len();
 
     let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-    let cached = inner
+    if let Some(cached) = inner
+      .entries
       .get(path)
-      .filter(|c| c.mtime == mtime && c.size == size);
-    if let Some(cached) = cached {
+      .filter(|c| c.mtime == mtime && c.size == size)
+    {
       return Ok(cached.parsed.clone());
     }
 
     let parsed = Arc::new(sp::parse_scatter(path).map_err(|e| e.to_string())?);
-    inner.insert(
+    inner.entries.insert(
       path.to_path_buf(),
       CachedScatter {
         mtime,
@@ -113,6 +123,12 @@ impl ScatterCache {
         parsed: parsed.clone(),
       },
     );
+    inner.order.push_back(path.to_path_buf());
+    while inner.order.len() > SCATTER_CACHE_MAX {
+      if let Some(oldest) = inner.order.pop_front() {
+        inner.entries.remove(&oldest);
+      }
+    }
     Ok(parsed)
   }
 }
@@ -130,18 +146,28 @@ fn send_progress(ch: &Channel<ProgressEvent>, event: ProgressEvent) {
 #[tracing::instrument(skip_all)]
 #[tauri::command]
 async fn get_device_info() -> Result<DeviceInfo, String> {
-  let Ok(mut executor) = FlashExecutor::connect().await else {
-    info!("no fastboot device found");
-    return Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new() });
-  };
-  let vars = executor.get_all_vars().await.map_err(|e| {
-    warn!(error = %e, "get_all_vars failed");
-    e.to_string()
-  })?;
-  let serial = vars.get("serialno").cloned();
-  let connected = true;
-  info!(connected, serial = serial.as_deref().unwrap_or("?"), "device info retrieved");
-  Ok(DeviceInfo { connected, serial, vars })
+  match FlashExecutor::connect().await {
+    Ok(mut executor) => {
+      let vars = executor.get_all_vars().await.map_err(|e| {
+        warn!(error = %e, "get_all_vars failed");
+        e.to_string()
+      })?;
+      let serial = vars.get("serialno").cloned();
+      let connected = true;
+      info!(connected, serial = serial.as_deref().unwrap_or("?"), "device info retrieved");
+      Ok(DeviceInfo { connected, serial, vars })
+    }
+    Err(pawflash_core::flash::FlashError::NoDevice) => {
+      info!("no fastboot device found");
+      Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new() })
+    }
+    Err(e) => {
+      // Permissions, open failures, protocol errors — report them so the GUI
+      // does not silently present "not connected".
+      warn!(error = %e, "get_device_info: connect failed");
+      Err(e.to_string())
+    }
+  }
 }
 
 /// Poll the cancellation flag until it is set, so a long wait can be aborted
@@ -169,14 +195,17 @@ async fn force_fastboot(
 
   send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "waiting_preloader".into(), message: "Waiting for MediaTek preloader serial port...".into() });
 
-  // Wait for the preloader, aborting early on cancel.
+  // Wait for the preloader, aborting early on cancel. Passing `true` makes the
+  // wait also detect a device that enters fastboot before a new serial port
+  // appears, so the user is not forced to sit out the full 120s.
   let port = tokio::select! {
-    result = pawflash_core::force_fastboot::serial::wait_for_preloader(false) => {
+    result = pawflash_core::force_fastboot::serial::wait_for_preloader(true) => {
       match result {
         Ok(Some(port)) => port,
         Ok(None) => {
-          warn!("no preloader device found");
-          return Err("No preloader device found".into());
+          info!("device entered fastboot while waiting for preloader");
+          send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Device already in fastboot mode".into() });
+          return Ok(());
         }
         Err(e) => {
           warn!(error = %e, "wait_for_preloader failed");
@@ -335,6 +364,15 @@ async fn disable_vbmeta(on_event: Channel<ProgressEvent>) -> Result<(), String> 
     e.to_string()
   })?;
 
+  // vbmeta is only flashable from bootloader fastboot, not fastbootd.
+  let is_userspace = executor.get_var("is-userspace").await.unwrap_or_default();
+  if is_userspace == "yes" || is_userspace == "true" {
+    let msg = "device is in fastbootd mode; vbmeta can only be flashed in bootloader mode. Reboot to bootloader first.";
+    warn!(%msg);
+    send_progress(&on_event, ProgressEvent::Error { message: msg.into() });
+    return Err(msg.into());
+  }
+
   send_progress(&on_event, ProgressEvent::Phase { phase: "flashing".into(), message: "Flashing empty vbmeta...".into() });
   executor.flash_empty_vbmeta().await.map_err(|e| {
     warn!(error = %e, "flash_empty_vbmeta failed");
@@ -449,6 +487,7 @@ async fn execute_plan(
   }
 
   // Report outcomes
+  let processed = result.outcomes.len().max(1);
   for (i, outcome) in result.outcomes.iter().enumerate() {
     debug!(
       partition = %outcome.partition,
@@ -458,7 +497,7 @@ async fn execute_plan(
     );
     send_progress(&on_event, ProgressEvent::FlashProgress {
       partition: outcome.partition.clone(),
-      percent: ((i + 1) as f64 / total as f64) * 100.0,
+      percent: ((i + 1) as f64 / processed as f64) * 100.0,
     });
     send_progress(&on_event, ProgressEvent::FlashComplete {
       partition: outcome.partition.clone(),
@@ -512,15 +551,39 @@ async fn flash_raw_image(
     return Err(format!("image not found: {image_path}"));
   }
 
-  send_progress(&on_event, ProgressEvent::Phase { phase: "flashing".into(), message: format!("Flashing {partition}...") });
-  debug!(%partition, %image_path, "flashing raw image");
-  let resp = executor.flash_raw_image(&partition, path).await.map_err(|e| {
-    warn!(%partition, error = %e, "flash_raw_image failed");
+  // Resolve the target like the CLI: on an A/B device a bare partition name
+  // means "the current slot", so flash `{partition}_{current}`. A partition
+  // that already carries a slot suffix is used verbatim.
+  let target = if partition.ends_with("_a") || partition.ends_with("_b") {
+    partition.clone()
+  } else if let Some(slot) = executor.device_vars().get("current-slot") {
+    if slot == "a" || slot == "b" {
+      let resolved = format!("{partition}_{slot}");
+      info!(partition = %partition, target = %resolved, "resolved bare partition to current slot");
+      send_progress(
+        &on_event,
+        ProgressEvent::DeviceAction {
+          action: "resolve_target".into(),
+          detail: format!("{partition} → {resolved}"),
+        },
+      );
+      resolved
+    } else {
+      partition.clone()
+    }
+  } else {
+    partition.clone()
+  };
+
+  send_progress(&on_event, ProgressEvent::Phase { phase: "flashing".into(), message: format!("Flashing {target}...") });
+  debug!(%target, %image_path, "flashing raw image");
+  let resp = executor.flash_raw_image(&target, path).await.map_err(|e| {
+    warn!(%target, error = %e, "flash_raw_image failed");
     e.to_string()
   })?;
 
-  info!(%partition, response = %resp, "raw flash complete");
-  send_progress(&on_event, ProgressEvent::FlashComplete { partition, success: true, response: Some(resp.clone()) });
+  info!(%target, response = %resp, "raw flash complete");
+  send_progress(&on_event, ProgressEvent::FlashComplete { partition: target, success: true, response: Some(resp.clone()) });
   send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Raw flash complete".into() });
 
   Ok(resp)

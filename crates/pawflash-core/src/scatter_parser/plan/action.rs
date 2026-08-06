@@ -113,13 +113,14 @@ pub(super) fn apply_exclude_filter(
         .into_iter()
         .partition(|a| !excluded_set.contains(&a.partition.to_lowercase()));
     for action in removed {
+        let file_name = action.image_file_name();
         skipped.push(SkippedPartition {
             partition: action.partition,
             layout: action.layout,
             region: action.region,
             reason: "excluded by --exclude".into(),
             safety_class: action.safety_class,
-            file_name: action.image_type,
+            file_name,
         });
     }
     *actions = kept;

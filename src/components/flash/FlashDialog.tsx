@@ -4,7 +4,7 @@ import { Minus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { formatBytes, formatSpeed } from "@/lib/format";
+import { formatBytes, formatGiB, formatSpeed } from "@/lib/format";
 import { useFlashProgress, type FlashPhase } from "@/hooks/useFlashProgress";
 import {
   createDismissibleDialogRootHandler,
@@ -171,7 +171,7 @@ export const FlashDialog = memo(function FlashDialog({
                 <Metric label="Flashed" value={summary.flashed} />
                 <Metric label="Failed" value={summary.failed} />
                 <Metric label="Skipped" value={summary.skipped} />
-                <Metric label="Total" value={`${(overallTotal / 1e9).toFixed(2)} GiB`} />
+                <Metric label="Total" value={formatGiB(overallTotal)} />
               </div>
             )}
           </div>

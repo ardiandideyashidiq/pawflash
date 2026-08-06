@@ -14,6 +14,16 @@ export type Theme = "light" | "dark";
 const THEME_STORAGE_KEY = "app-theme";
 const PANEL_WIDTH_KEY = "log-panel-width";
 
+// Mirror the LogPanel drag constraints so a persisted width can never open
+// the panel outside the viewport.
+const PANEL_MIN_WIDTH = 300;
+const PANEL_MAX_FACTOR = 0.9;
+
+function clampPanelWidth(width: number): number {
+  const max = Math.max(window.innerWidth * PANEL_MAX_FACTOR, PANEL_MIN_WIDTH);
+  return Math.min(Math.max(width, PANEL_MIN_WIDTH), max);
+}
+
 function resolveInitialTheme(): Theme {
   if (typeof window === "undefined") return "light";
   const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -25,8 +35,8 @@ function resolveInitialTheme(): Theme {
 function resolveInitialWidth(): number {
   if (typeof window === "undefined") return 800;
   const stored = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
-  if (Number.isFinite(stored) && stored > 0) return stored;
-  return window.innerWidth * 0.4;
+  const base = Number.isFinite(stored) && stored > 0 ? stored : window.innerWidth * 0.4;
+  return clampPanelWidth(base);
 }
 
 export interface UIState {

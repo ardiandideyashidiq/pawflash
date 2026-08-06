@@ -16,7 +16,9 @@ async fn main() {
     }
 
     if let Err(err) = run(cli).await {
-        eprintln!("{err}");
+        // Route through the output helpers so the message respects the shared
+        // spinner/multi-progress stream instead of interleaving with it.
+        pawflash_core::output::status::stderr(format!("{err}"));
         process::exit(1);
     }
 }

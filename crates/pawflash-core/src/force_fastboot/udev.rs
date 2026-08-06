@@ -11,7 +11,7 @@ const RULE_PATH: &str = "/etc/udev/rules.d/99-mediatek-preloader.rules";
 
 #[cfg(target_os = "linux")]
 const MEDIATEK_UDEV_RULES: &str = r#"# MediaTek Preloader / BROM / Download Agent
-# IDs: 0e8d:2000 preloader, 0e8d:0003 DA/BROM
+# IDs: 0e8d:2000 preloader, 0e8d:0003 DA/BROM (same idVendor, covered below)
 
 SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", MODE="0666", TAG+="uaccess"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0e8d", MODE="0666", TAG+="uaccess"
@@ -65,6 +65,9 @@ mod platform {
             .status();
         let _ = Command::new("sudo")
             .args(["udevadm", "trigger"])
+            .status();
+        let _ = Command::new("sudo")
+            .args(["udevadm", "settle"])
             .status();
 
         warn!("udev rules installed. Reconnect the device if the port still has old permissions.");

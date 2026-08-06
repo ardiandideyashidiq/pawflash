@@ -125,15 +125,31 @@ fn decode_text(path: &Path) -> Result<String> {
         UTF_16BE.decode(&raw[2..]).0.into_owned()
     } else {
         // A NUL byte is essentially never present in ASCII/UTF-8 scatter
-        // text but appears in ~half of the bytes of UTF-16 ASCII text, so a
-        // majority-NUL buffer is treated as UTF-16 without a BOM.
+        // text but appears in ~half of the bytes of UTF-16 ASCII text. UTF-16
+        // ASCII is exactly 50% NULs (not a majority), so we key off a
+        // decisive byte-order signal instead.
         let nul_count = raw.iter().fold(0usize, |acc, &b| acc + usize::from(b == 0));
-        if nul_count > 0 && nul_count * 2 > raw.len() {
-            // ASCII 'a' is [0x61, 0x00] in UTF-16LE and [0x00, 0x61] in BE.
-            if matches!(raw.get(0..2), Some(&[0x00, 0x61])) {
+        if nul_count > 0 {
+            // Byte-order sniff over the first 256 bytes: in UTF-16LE ASCII,
+            // NUL bytes sit at ODD indices (a\0b\0...); in UTF-16BE they sit
+            // at EVEN indices. A 3:1 imbalance is decisive; dense but
+            // balanced NULs fall back to LE (the common case).
+            let (mut even_nul, mut odd_nul) = (0usize, 0usize);
+            for (i, &b) in raw.iter().take(256).enumerate() {
+                if b == 0 {
+                    if i % 2 == 0 {
+                        even_nul += 1;
+                    } else {
+                        odd_nul += 1;
+                    }
+                }
+            }
+            if even_nul > odd_nul * 3 {
                 UTF_16BE.decode(&raw).0.into_owned()
-            } else {
+            } else if odd_nul > even_nul * 3 || nul_count * 2 >= raw.len() {
                 UTF_16LE.decode(&raw).0.into_owned()
+            } else {
+                String::from_utf8_lossy(&raw).into_owned()
             }
         } else {
             String::from_utf8_lossy(&raw).into_owned()
@@ -168,7 +184,9 @@ fn looks_like_xml(text: &str) -> bool {
     let trimmed = text.trim_start_matches(['\u{feff}', '\n', '\r', '\t', ' ']);
     let bytes = trimmed.as_bytes();
     let len = bytes.len().min(300);
-    (len >= 7 && bytes[..7].eq_ignore_ascii_case(b"<scatter"))
+    // `<scatter` is 8 bytes — the slice must be sized to the pattern or the
+    // comparison can never match.
+    (len >= 8 && bytes[..8].eq_ignore_ascii_case(b"<scatter"))
         || (len >= 5 && (bytes[..5].eq_ignore_ascii_case(b"<?xml") || bytes[..5].eq_ignore_ascii_case(b"<root")))
         || (len >= 3 && bytes[..3].eq_ignore_ascii_case(b"<da"))
 }
@@ -211,9 +229,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn looks_like_xml_detects_scatter_root() {
+        assert!(looks_like_xml("<scatter>"));
+        assert!(looks_like_xml("<Scatter foo=\"bar\">"));
+        assert!(looks_like_xml("  <scatter>"));
+        assert!(looks_like_xml("<?xml version=\"1.0\"?><scatter>"));
+        assert!(looks_like_xml("<root>"));
+        assert!(looks_like_xml("<da>"));
+        assert!(!looks_like_xml("scatter:"));
+        assert!(!looks_like_xml("yaml content here"));
+    }
+
+    #[test]
     fn parse_scatter_rejects_non_file() {
         let result = parse_scatter("/nonexistent/scatter.txt");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not a file"));
+    }
+
+    #[test]
+    fn decode_text_should_detect_utf16be_without_bom_any_leading_char() {
+        // "<scatter>" as UTF-16BE without BOM. The first UTF-16 code unit is
+        // "<" (0x3C), which the old "first char must be 'a'" probe misread as
+        // UTF-16LE. The NUL-position heuristic must recover the text.
+        let text = "<scatter>\n</scatter>";
+        let be: Vec<u8> = text
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect();
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("scatter.txt");
+        std::fs::write(&path, &be).unwrap();
+        let decoded = decode_text(&path).expect("decodes as UTF-16BE");
+        assert_eq!(decoded, text, "BE content must round-trip");
     }
 }

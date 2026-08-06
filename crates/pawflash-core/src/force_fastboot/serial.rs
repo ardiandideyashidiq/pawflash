@@ -4,6 +4,7 @@ use super::fastboot::in_fastboot_mode;
 use super::{permissions, udev};
 use inquire::Confirm;
 use std::collections::HashSet;
+use std::io::IsTerminal;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info, trace, warn};
 
@@ -24,7 +25,7 @@ pub fn serial_ports() -> HashSet<String> {
     ports
         .into_iter()
         .filter_map(|p| {
-            if is_candidate_serial_port(&p.port_name) {
+            if is_candidate_port(&p) {
                 Some(p.port_name)
             } else {
                 trace!(port = %p.port_name, "skipping non-candidate serial port");
@@ -41,6 +42,30 @@ fn is_candidate_serial_port(name: &str) -> bool {
         name.starts_with("/dev/ttyACM") || name.starts_with("/dev/ttyUSB")
     } else {
         false
+    }
+}
+
+/// A port is a candidate if its name looks like a preloader port AND, for
+/// `ttyUSB` adapters, it reports a `MediaTek` VID when one is present. This
+/// keeps unrelated USB-serial adapters (`FTDI`, `CP210x`, `CH340`) from being
+/// hammered with FASTBOOT handshakes.
+fn is_candidate_port(info: &tokio_serial::SerialPortInfo) -> bool {
+    if !is_candidate_serial_port(&info.port_name) {
+        return false;
+    }
+    if info.port_name.starts_with("/dev/ttyACM") || cfg!(target_os = "windows") {
+        return true;
+    }
+    match &info.port_type {
+        tokio_serial::SerialPortType::UsbPort(usb) if usb.vid != 0x0e8d => {
+            trace!(
+                port = %info.port_name,
+                vid = format_args!("{:04x}", usb.vid),
+                "skipping non-MediaTek USB serial adapter",
+            );
+            false
+        }
+        _ => true,
     }
 }
 
@@ -82,6 +107,15 @@ pub fn open_with_permission_recovery(port: &str) -> Result<tokio_serial::SerialS
     }
 
     warn!(%port, "permission denied — attempting recovery");
+
+    // Interactive prompts need a controlling terminal. Outside one (e.g. the
+    // Tauri GUI, where there is no TTY) skip the recovery dialogs entirely and
+    // surface the original permission error so the caller can show it.
+    if !std::io::stdin().is_terminal() {
+        warn!("stdin is not a terminal — skipping interactive permission-recovery prompts");
+        udev::print_manual_guidance();
+        return open_serial(port);
+    }
 
     // Prompt before installing udev rules (default no — opt-in).
     if Confirm::new("Permission denied. Install udev rules for MediaTek preloader? (requires sudo)")

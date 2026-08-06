@@ -153,7 +153,9 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
                 flashed: event.data.success ? 1 : 0,
                 failed: event.data.success ? 0 : 1,
                 skipped: 0,
-                totalBytes: prev.total,
+                // Cumulative overall bytes seen so far (not just the current
+                // partition's total) — the `Done` event fixes the final value.
+                totalBytes: prev.overallTotal,
               },
         }));
         break;

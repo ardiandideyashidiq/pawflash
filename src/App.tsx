@@ -211,7 +211,11 @@ function AppRoot() {
     try {
       const result = await invoke<FlashResult>("execute_plan", {
         path: planState.scatterPath,
-        options: buildFlashPlanOptions(planState.buildExclude(), planState.options.includePreloader),
+        options: buildFlashPlanOptions(
+          planState.buildExclude(),
+          planState.options.includePreloader,
+          planState.scatterPath,
+        ),
         onEvent: channel,
       });
       if (result.cancelled) {

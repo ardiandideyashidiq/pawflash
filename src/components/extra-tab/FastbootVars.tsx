@@ -17,7 +17,7 @@ export const FastbootVars = memo(function FastbootVars({
   disabled = false,
   className,
 }: FastbootVarsProps) {
-  const { getVariable, getAllVariables } = useDevice();
+  const { getVariable, check } = useDevice();
   const { addEntry } = useConsole();
   const [variableName, setVariableName] = useState("");
   const [variableOutput, setVariableOutput] = useState("");
@@ -47,7 +47,7 @@ export const FastbootVars = memo(function FastbootVars({
     setReading(true);
     addEntry({ text: "GetvarAll Started", level: "command" });
     try {
-      const info = await getAllVariables();
+      const info = await check();
       setVariableOutput(JSON.stringify(info.vars, null, 2));
       if (!info.connected) {
         toast.error("No fastboot device connected");

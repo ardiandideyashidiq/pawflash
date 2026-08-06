@@ -131,6 +131,14 @@ impl ScatterPartition {
         self.is_download && self.file_name.is_some() && self.size > 0
     }
 
+    /// Whether the scatter gives this partition an image, ignoring the size
+    /// gate. Partitions declared with `partition_size: 0` but a real image
+    /// are still eligible to flash (the device validates the true extent).
+    #[must_use]
+    pub const fn has_image(&self) -> bool {
+        self.is_download && self.file_name.is_some()
+    }
+
     /// Safety classification for this partition.
     #[must_use]
     pub fn safety_class(&self) -> String {
@@ -175,17 +183,6 @@ impl ScatterFile {
     }
 }
 
-/// Whether to include userdata in the flash plan via --clean.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum CleanMode {
-    /// Do not include userdata in the flash plan.
-    #[default]
-    No,
-    /// Include userdata in the flash plan (erase and format).
-    Yes,
-}
-
 /// Image verification options.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ImageVerification {
@@ -219,8 +216,6 @@ pub struct FlashPlanOptions {
     pub image_verification: ImageVerification,
     /// Flash allowance settings.
     pub allowance: Allowance,
-    /// Include userdata in the flash plan.
-    pub clean: CleanMode,
 }
 
 /// Flash plan summary counts.
@@ -295,6 +290,18 @@ impl FlashAction {
     #[must_use]
     pub fn image_exists(&self) -> Option<bool> {
         self.image.as_ref()?.pointer("/path/exists")?.as_bool()
+    }
+
+    /// Return the resolved image's base file name, if available.
+    #[must_use]
+    pub fn image_file_name(&self) -> Option<String> {
+        let file = self
+            .image
+            .as_ref()?
+            .pointer("/file_name")?
+            .as_str()?;
+        let base = file.rsplit(['/', '\\']).next().unwrap_or(file);
+        (!base.is_empty()).then(|| base.to_string())
     }
 }
 

@@ -12,10 +12,6 @@ export function useDevice() {
     (name: string) => invoke<string>("get_var", { name }),
     [],
   );
-  const getAllVariables = useCallback(
-    () => invoke<DeviceInfo>("get_device_info"),
-    [],
-  );
   const setActiveSlot = useCallback(
     (slot: "a" | "b") => invoke<string>("set_active_slot", { slot }),
     [],
@@ -34,11 +30,10 @@ export function useDevice() {
       check,
       reboot,
       getVariable,
-      getAllVariables,
       setActiveSlot,
       unlockBootloader,
       lockBootloader,
     }),
-    [check, reboot, getVariable, getAllVariables, setActiveSlot, unlockBootloader, lockBootloader],
+    [check, reboot, getVariable, setActiveSlot, unlockBootloader, lockBootloader],
   );
 }

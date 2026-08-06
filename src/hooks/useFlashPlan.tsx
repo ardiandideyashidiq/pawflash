@@ -92,6 +92,9 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
 
   const requestRef = useRef(0);
   const lastScatterPathRef = useRef("");
+  // Partition names from the previously rendered plan, used to tell "still
+  // exists, preserve selection" apart from "newly added, default selected".
+  const lastRowsRef = useRef<Set<string>>(new Set());
 
   const refreshPlan = useCallback(async () => {
     if (!scatterPath) return;
@@ -101,19 +104,31 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
     try {
       const dto = await invoke<FlashPlanDto>("build_plan", {
         path: scatterPath,
-        options: buildFlashPlanOptions([], includePreloader),
+        options: buildFlashPlanOptions([], includePreloader, scatterPath),
       });
       if (requestRef.current !== requestId) return;
 
       const view = toPlanView(dto);
       const preserveSelection = lastScatterPathRef.current === scatterPath;
+      const nextRows = new Set(view.rows.map((r) => r.partition));
       setPlan(view);
       setSelected((prev) => {
-        const names = new Set(view.rows.map((r) => r.partition));
-        if (!preserveSelection) return names;
-        return new Set(view.rows.filter((r) => prev.has(r.partition)).map((r) => r.partition));
+        if (!preserveSelection) return nextRows;
+        // Preserve the user's prior selection for partitions that still exist,
+        // and default newly added rows (e.g. `preloader` after enabling the
+        // include-preloader option) to selected so the option actually takes
+        // effect when flashing.
+        const previouslyKnown = lastRowsRef.current;
+        const next = new Set<string>();
+        for (const row of view.rows) {
+          if (!previouslyKnown.has(row.partition) || prev.has(row.partition)) {
+            next.add(row.partition);
+          }
+        }
+        return next;
       });
       lastScatterPathRef.current = scatterPath;
+      lastRowsRef.current = nextRows;
     } catch (e) {
       if (requestRef.current !== requestId) return;
       setPlan(null);

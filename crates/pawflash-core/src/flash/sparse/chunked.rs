@@ -175,10 +175,18 @@ pub(crate) async fn flash_sparse_wrapped(
 
     info!(%partition, split_count = splits.len(), "raw image split into sparse chunks");
 
+    // The reporter measures the bytes actually sent over USB, which includes
+    // the sparse file/chunk headers — report against that so the bar peaks
+    // at exactly 100% instead of overshooting past the raw file length.
+    let total_sent: u64 = splits
+        .iter()
+        .map(|s| u64::try_from(s.sparse_size()).unwrap_or(0))
+        .sum();
+
     let mut file = tokio::fs::File::open(path).await?;
 
     if let Some(rep) = reporter.as_mut() {
-        rep.set_length(file_len);
+        rep.set_length(total_sent);
         rep.set_prefix(partition);
         rep.reset();
         rep.set_position(0);
@@ -236,7 +244,7 @@ pub(crate) async fn flash_sparse_wrapped(
                 }
             }
             if let Some(rep) = reporter.as_mut() {
-                rep.report(written, file_len);
+                rep.report(written, total_sent);
             }
         }
 
@@ -245,8 +253,8 @@ pub(crate) async fn flash_sparse_wrapped(
     }
 
     if let Some(rep) = reporter.as_mut() {
-        rep.set_position(file_len);
-        rep.report(file_len, file_len);
+        rep.set_position(total_sent);
+        rep.report(total_sent, total_sent);
     }
 
     debug!(%partition, splits = splits.len(), response = last_resp, "sparse-wrapped flash complete");

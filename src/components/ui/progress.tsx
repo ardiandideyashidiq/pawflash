@@ -11,9 +11,16 @@ function Progress({
   indicatorClassName,
   ...props
 }: ProgressPrimitive.Root.Props & { indicatorClassName?: string }) {
+  // base-ui renders the indicator at `width: <value>%` with no clamping; a
+  // value outside [0, 100] (e.g. from a progress report that overshoots)
+  // would overflow the track, so clamp defensively here.
+  const clamped =
+    typeof value === "number" && Number.isFinite(value)
+      ? Math.min(100, Math.max(0, value))
+      : value;
   return (
     <ProgressPrimitive.Root
-      value={value}
+      value={clamped}
       data-slot="progress"
       className={cn("flex flex-wrap gap-3", className)}
       {...props}

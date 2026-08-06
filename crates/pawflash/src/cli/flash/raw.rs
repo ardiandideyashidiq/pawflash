@@ -57,6 +57,15 @@ pub(super) async fn run_raw_image(
     do_raw_flash(&mut executor, partition, &image, slot, both).await
 }
 
+/// Strip an existing `_a`/`_b` slot suffix so `--both`/`--slot` on a
+/// suffix-carrying name does not produce `boot_a_a`.
+fn base_partition(partition: &str) -> &str {
+    partition
+        .strip_suffix("_a")
+        .or_else(|| partition.strip_suffix("_b"))
+        .unwrap_or(partition)
+}
+
 /// Shared raw flash logic used by both real and simulated paths.
 async fn do_raw_flash<T: pawflash_core::flash::transport::FlashTransport>(
     executor: &mut FlashExecutor<T>,
@@ -65,21 +74,26 @@ async fn do_raw_flash<T: pawflash_core::flash::transport::FlashTransport>(
     slot: Option<String>,
     both: bool,
 ) -> Result<()> {
+    let base = base_partition(partition);
+    let has_slot_suffix = base != partition;
     let targets: Vec<String> = if both {
-        vec![format!("{partition}_a"), format!("{partition}_b")]
+        vec![format!("{base}_a"), format!("{base}_b")]
     } else if let Some(s) = slot {
-        vec![format!("{partition}_{s}")]
+        vec![format!("{base}_{s}")]
+    } else if has_slot_suffix {
+        vec![partition.to_string()]
     } else {
         let current = executor.device_vars().get("current-slot").map(String::as_str);
         if let Some(slot) = current {
-            vec![format!("{partition}_{slot}")]
+            vec![format!("{base}_{slot}")]
         } else {
             warn!("device has no current-slot variable; flashing to bare partition name");
-            vec![partition.to_string()]
+            vec![base.to_string()]
         }
     };
 
     info!(?targets, partition, "flashing");
+    output::status::data(format!("Target: {}", targets.join(", ")));
 
     let mut succeeded = 0usize;
     let mut failed = 0usize;

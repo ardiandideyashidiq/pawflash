@@ -45,7 +45,7 @@ pub(super) async fn run_scatter(cfg: &ScatterConfig<'_>) -> Result<()> {
     if !plan.errors.is_empty() {
         output::status::stderr(output::tables::plan_errors(&plan).unwrap_or_default());
         if !is_dry_run {
-            bail!("flash plan errors prevent execution (use --dry-run to see full report)");
+            bail!("flash plan has {} error(s); refusing to flash (use --dry-run to see the full report)", plan.errors.len());
         }
     }
 
@@ -60,7 +60,10 @@ pub(super) async fn run_scatter(cfg: &ScatterConfig<'_>) -> Result<()> {
 
     // ── Mode 3: Execute (simulated) ─────────────────────────────
     if cfg.simulate {
-        output::status::heading("⚠ SIMULATED MODE — no device will be touched");
+        // Keep stdout machine-clean for `--json` consumers.
+        if !cfg.json {
+            output::status::heading("⚠ SIMULATED MODE — no device will be touched");
+        }
         info!(actions = plan.actions.len(), "connecting simulated transport");
 
         let transport = SimulatedTransport::from_scatter(&parsed);

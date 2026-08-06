@@ -24,6 +24,16 @@ impl<T: FlashTransport> FlashExecutor<T> {
     /// # Panics
     /// Panics if `EMPTY_VBMETA` exceeds 4 GiB (impossible for a 512-byte image).
     pub async fn flash_empty_vbmeta(&mut self) -> Result<String> {
+        // vbmeta is an A/B partition on virtually all devices; verify the
+        // device actually has it slotted before flashing both halves.
+        if let Ok(has_slot) = self.fb.get_var("has-slot:vbmeta").await {
+            if has_slot != "yes" {
+                return Err(FlashError::ActionFailed {
+                    partition: "vbmeta".into(),
+                    reason: format!("device has-slot:vbmeta is '{has_slot}', expected 'yes'"),
+                });
+            }
+        }
         let data = EMPTY_VBMETA;
         debug!("flashing empty vbmeta to both slots");
         let mut last_resp = String::new();
@@ -143,15 +153,20 @@ impl<T: FlashTransport> FlashExecutor<T> {
             }
         };
         if !opts.dry_run {
-            match self.set_active_slot("a").await {
-                Ok(response) => info!(slot = "a", response, "active slot set to a"),
-                Err(e) => warn!(slot = "a", error = %e, "set_active failed; continuing"),
+            // Activate the slot the plan actually targets instead of blindly
+            // forcing slot "a" — a b-only plan (or a non-A/B device) must not
+            // end up with the wrong slot active.
+            if let Some(slot) = plan.actions.iter().find_map(|a| a.slot.as_deref()) {
+                match self.set_active_slot(slot).await {
+                    Ok(response) => info!(slot, response, "active slot set"),
+                    Err(e) => warn!(slot, error = %e, "set_active failed; continuing"),
+                }
             }
         }
 
         let mut outcomes = Vec::with_capacity(total);
         let completed_bytes = AtomicU64::new(0);
-        let current_total = AtomicU64::new(0);
+        let current_bytes = AtomicU64::new(0);
         let mut cancelled = false;
 
         for action in &all_actions {
@@ -165,12 +180,12 @@ impl<T: FlashTransport> FlashExecutor<T> {
             info!(%partition, "Writing partition");
 
             // Per-partition byte reporter folding cumulative overall progress.
-            current_total.store(0, Ordering::Relaxed);
+            current_bytes.store(0, Ordering::Relaxed);
             let mut on_bytes: Option<Box<dyn FnMut(u64, u64) + Send + '_>> = None;
             if let Some(cb) = opts.on_transfer.as_mut() {
                 let callback = &mut **cb;
                 on_bytes = Some(Box::new(|bytes: u64, total: u64| {
-                    current_total.store(total, Ordering::Relaxed);
+                    current_bytes.store(bytes, Ordering::Relaxed);
                     let completed = completed_bytes.load(Ordering::Relaxed);
                     callback(FlashTransferEvent {
                         partition: partition.clone(),
@@ -199,8 +214,11 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 .await;
             let duration = start.elapsed();
 
-            let partition_total = current_total.load(Ordering::Relaxed);
-            completed_bytes.fetch_add(partition_total, Ordering::Relaxed);
+            let partition_bytes = current_bytes.load(Ordering::Relaxed);
+            // Advance the cumulative total by the bytes actually transferred
+            // (not the nominal partition total) so a partition that fails
+            // part-way does not inflate the overall byte count.
+            completed_bytes.fetch_add(partition_bytes, Ordering::Relaxed);
 
             outcomes.push(record_outcome(partition, duration, result, pb.as_ref()));
         }
@@ -213,7 +231,9 @@ impl<T: FlashTransport> FlashExecutor<T> {
             info!(succeeded, failed, total, "flash plan execution complete");
         }
         FlashResult {
-            total,
+            // On cancellation only the outcomes already processed count, so
+            // `succeeded + failed == total` always holds.
+            total: if cancelled { outcomes.len() } else { total },
             succeeded,
             failed,
             outcomes,
@@ -241,6 +261,22 @@ impl<T: FlashTransport> FlashExecutor<T> {
             return Err(FlashError::ImageNotFound(path.to_path_buf()));
         }
 
+        // Runtime oversized-image guard. The plan-level `fits_partition` check
+        // only runs when `--check-images` is on, so enforce the hard limit
+        // here for non-sparse images (sparse images carry their own extent and
+        // the device validates them).
+        let file_len = tokio::fs::metadata(path).await?.len();
+        if !crate::flash::sparse::is_sparse_image(path).await.unwrap_or(false)
+            && u64::try_from(action.size)
+                .is_ok_and(|limit| limit > 0 && file_len > limit)
+        {
+            return Err(FlashError::ImageTooLarge {
+                name: partition.clone(),
+                image_size: file_len,
+                partition_size: action.size,
+            });
+        }
+
         debug!(
             %partition,
             %image_path,
@@ -249,7 +285,6 @@ impl<T: FlashTransport> FlashExecutor<T> {
         );
 
         if dry_run {
-            let file_len = tokio::fs::metadata(path).await?.len();
             info!(%partition, %image_path, size = file_len, "dry run: would flash this image");
             return Ok(String::new());
         }

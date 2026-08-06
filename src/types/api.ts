@@ -19,7 +19,6 @@ export interface ScatterFile {
 }
 
 export type StorageSelect = "auto" | "all" | "ufs" | "emmc";
-export type CleanMode = "no" | "yes";
 
 export interface ScatterPartition {
   source: string;
@@ -51,7 +50,6 @@ export interface FlashPlanOptions {
   package_root: string | null;
   image_verification: { check_images: boolean; image_search: boolean };
   allowance: { include_preloader: boolean; allow_incomplete_slots: boolean };
-  clean: CleanMode;
 }
 
 export interface FlashOutcome {

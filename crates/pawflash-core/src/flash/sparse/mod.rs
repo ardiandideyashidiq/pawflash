@@ -36,17 +36,20 @@ impl XferBuf {
 }
 
 /// Helper: call `read_exact_padded`, then raise `SparseTruncated` if fewer
-/// bytes were read from the file than requested.
+/// bytes were read from the file than requested. The error reports the
+/// per-call figures so the numbers are always internally consistent (the old
+/// version subtracted chunk offsets across 1 MiB iterations and produced
+/// nonsense `read:` counts).
 pub(crate) async fn read_exact_padded_or_truncate(
     file: &mut tokio::fs::File,
     buf: &mut [u8],
-    chunk_expected: usize,
+    _chunk_expected: usize,
 ) -> Result<()> {
     let file_bytes = read_exact_padded(file, buf).await?;
     if file_bytes < buf.len() {
         return Err(FlashError::SparseTruncated {
-            read: chunk_expected - (buf.len() - file_bytes),
-            expected: chunk_expected,
+            read: file_bytes,
+            expected: buf.len(),
         });
     }
     Ok(())

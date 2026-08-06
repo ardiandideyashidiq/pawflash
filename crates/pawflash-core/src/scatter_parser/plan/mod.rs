@@ -12,8 +12,7 @@ use serde_json::json;
 use tracing::debug;
 
 use crate::scatter_parser::types::{
-    CleanMode, FlashAction, FlashPlan, FlashPlanOptions, ScatterFile, ScatterPartition,
-    SkippedPartition,
+    FlashAction, FlashPlan, FlashPlanOptions, ScatterFile, ScatterPartition, SkippedPartition,
 };
 
 use self::action::{
@@ -24,8 +23,8 @@ use self::image::{image_exists, resolve_images_for_plan};
 use self::layout::{selected_layout_names, selected_partitions};
 use self::mode::{full_flash_allows_partition, storage_str};
 use self::slot::{
-    check_incomplete_slots, inherited_action_reason, inherited_image_source_for_slot_b,
-    synthesize_slot_actions_if_needed,
+    check_incomplete_slots, expand_requested_names, inherited_action_reason,
+    inherited_image_source_for_slot_b, synthesize_slot_actions_if_needed,
 };
 
 fn build_partition_actions<'a>(
@@ -48,18 +47,20 @@ fn build_partition_actions<'a>(
             part_ref,
             image_source,
             options.allowance.include_preloader,
-            options.clean != CleanMode::No,
         );
         if !allowed {
             skipped.push(skipped_partition(part_ref, &reason));
             continue;
         }
 
-        let (image, action_warnings) =
+        let (image, mut action_warnings) =
             resolve_images_for_plan(image_source, scatter_dir, options);
         if !image_exists(&image) {
             skipped.push(skipped_partition(part_ref, "image not found"));
             continue;
+        }
+        if part.size == 0 {
+            action_warnings.insert(0, "partition reports zero size; flashing image anyway".to_string());
         }
         let action_reason =
             inherited_action_reason(reason, part_ref, image_source);
@@ -108,9 +109,40 @@ fn finalize_plan(
 
     apply_exclude_filter(&mut ctx.actions, &mut ctx.skipped, warnings, &options.exclude, available_names);
 
+    // Track which partition names the user excluded so the incomplete-slot
+    // check does not treat a deliberately excluded slot as a missing one.
+    let excluded_names = if options.exclude.is_empty() {
+        BTreeSet::new()
+    } else {
+        expand_requested_names(&options.exclude, available_names)
+    };
+
+    // Surface non-download slot partitions that were never synthesized into
+    // actions (their slot twin was excluded or its image is missing) instead
+    // of silently dropping them from the plan.
+    let action_names: BTreeSet<String> = ctx
+        .actions
+        .iter()
+        .map(|a| a.partition.to_lowercase())
+        .collect();
+    for part in selected_parts.iter().copied() {
+        let lowered = part.name.to_lowercase();
+        if part.slot().is_some()
+            && !part.flashable_by_profile()
+            && !action_names.contains(&lowered)
+            && !excluded_names.contains(&lowered)
+        {
+            ctx.skipped.push(skipped_partition(
+                part,
+                "non-download slot partition without a matching slot image",
+            ));
+        }
+    }
+
     let incomplete_slots = check_incomplete_slots(
         selected_parts,
         &ctx.actions,
+        &excluded_names,
         options.allowance.allow_incomplete_slots,
         warnings,
         errors,
@@ -159,7 +191,6 @@ fn finalize_plan(
             "image_search": options.image_verification.image_search,
             "include_preloader": options.allowance.include_preloader,
             "allow_incomplete_slots": options.allowance.allow_incomplete_slots,
-            "clean": options.clean != CleanMode::No,
             "exclude": options.exclude.clone(),
         }),
         summary,
@@ -339,17 +370,100 @@ mod tests {
             warnings: Vec::new(),
             errors: Vec::new(),
         };
-        let _dir = scatter_with_images(&mut scatter);
-        let options = FlashPlanOptions {
-            exclude: vec!["boot_b".to_string()],
-            ..FlashPlanOptions::default()
-        };
+        let dir = scatter_with_images(&mut scatter);
+        // Make boot_b's image unresolvable so only boot_a is planned: with no
+        // explicit exclusion this must surface as an incomplete-slot error.
+        std::fs::remove_file(dir.path().join("boot_b.img")).expect("remove boot_b image");
+        let options = FlashPlanOptions::default();
         let plan = build_flash_plan(&scatter, &options);
         assert!(!plan.errors.is_empty(), "expected incomplete slot errors");
         assert!(
             plan.errors.iter().any(|e| e.contains("boot")),
             "error should mention boot: {:?}",
             plan.errors
+        );
+    }
+
+    #[test]
+    fn build_flash_plan_should_not_flag_explicitly_excluded_slot_as_incomplete() {
+        let mut scatter = synthetic_ab_scatter();
+        let _dir = scatter_with_images(&mut scatter);
+        let options = FlashPlanOptions {
+            exclude: vec!["boot_b".to_string()],
+            ..FlashPlanOptions::default()
+        };
+        let plan = build_flash_plan(&scatter, &options);
+        assert!(plan.errors.is_empty(), "explicit exclusion must not error: {:?}", plan.errors);
+        assert!(
+            !plan.actions.iter().any(|a| a.partition == "boot_b"),
+            "boot_b must be excluded"
+        );
+        assert!(
+            plan.skipped.iter().any(|s| s.partition == "boot_b"),
+            "excluded boot_b should be reported as skipped"
+        );
+    }
+
+    #[test]
+    fn build_flash_plan_should_skip_non_download_slot_without_source() {
+        let mut layouts = std::collections::BTreeMap::new();
+        // boot_b is non-download and boot_a is not present at all.
+        layouts.insert(
+            "EMMC".to_string(),
+            vec![synthetic_part("boot_b", false, false, 0x0040_0000), userdata_part()],
+        );
+        let mut scatter = ScatterFile {
+            path: std::path::PathBuf::from("test.xml"),
+            format: "xml".to_string(),
+            text_hash: "abc".to_string(),
+            platform: Some("MT6789".to_string()),
+            project: None,
+            general: json!({}),
+            layouts,
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        };
+        let _dir = scatter_with_images(&mut scatter);
+        let options = FlashPlanOptions::default();
+        let plan = build_flash_plan(&scatter, &options);
+        assert!(
+            plan.skipped.iter().any(|s| s.partition == "boot_b"),
+            "orphan non-download slot must appear in skipped, got: {:?}",
+            plan.skipped.iter().map(|s| &s.partition).collect::<Vec<_>>()
+        );
+        assert!(!plan.actions.iter().any(|a| a.partition == "boot_b"));
+    }
+
+    #[test]
+    fn build_flash_plan_should_flash_zero_size_partition_with_image() {
+        let mut layouts = std::collections::BTreeMap::new();
+        layouts.insert(
+            "EMMC".to_string(),
+            vec![synthetic_part("boot", true, true, 0), userdata_part()],
+        );
+        let mut scatter = ScatterFile {
+            path: std::path::PathBuf::from("test.xml"),
+            format: "xml".to_string(),
+            text_hash: "abc".to_string(),
+            platform: Some("MT6789".to_string()),
+            project: None,
+            general: json!({}),
+            layouts,
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        };
+        let _dir = scatter_with_images(&mut scatter);
+        let plan = build_flash_plan(&scatter, &FlashPlanOptions::default());
+        assert!(
+            plan.actions.iter().any(|a| a.partition == "boot"),
+            "zero-size partition with an image must still be flashable: {:?}",
+            plan.actions.iter().map(|a| &a.partition).collect::<Vec<_>>()
+        );
+        let boot = plan.actions.iter().find(|a| a.partition == "boot").unwrap();
+        assert!(
+            boot.warnings.iter().any(|w| w.contains("zero size")),
+            "expected a zero-size warning: {:?}",
+            boot.warnings
         );
     }
 
@@ -373,14 +487,44 @@ mod tests {
     }
 
     #[test]
-    fn full_flash_should_skip_userdata() {
+    fn full_flash_should_include_userdata_with_image() {
+        // synthetic_ab_scatter's userdata carries no image — build a scatter
+        // whose userdata has one and assert it is now always flashed.
+        let mut layouts = std::collections::BTreeMap::new();
+        layouts.insert(
+            "EMMC".to_string(),
+            vec![
+                synthetic_part("boot", true, true, 0x0040_0000),
+                synthetic_part("userdata", true, true, 0x1000_0000),
+            ],
+        );
+        let mut scatter = ScatterFile {
+            path: std::path::PathBuf::from("test.xml"),
+            format: "xml".to_string(),
+            text_hash: "abc".to_string(),
+            platform: Some("MT6789".to_string()),
+            project: None,
+            general: json!({}),
+            layouts,
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        };
+        let _dir = scatter_with_images(&mut scatter);
+        let plan = build_flash_plan(&scatter, &FlashPlanOptions::default());
+        assert!(
+            plan.actions.iter().any(|a| a.partition == "userdata"),
+            "userdata with an image must be included by default"
+        );
+    }
+
+    #[test]
+    fn full_flash_should_skip_userdata_without_image() {
         let mut scatter = synthetic_ab_scatter();
         let _dir = scatter_with_images(&mut scatter);
-        let options = FlashPlanOptions::default();
-        let plan = build_flash_plan(&scatter, &options);
+        let plan = build_flash_plan(&scatter, &FlashPlanOptions::default());
         assert!(
             !plan.actions.iter().any(|a| a.partition == "userdata"),
-            "full flash should skip userdata"
+            "image-less userdata should be skipped"
         );
     }
 
@@ -388,12 +532,10 @@ mod tests {
     fn flash_plan_options_should_use_kebab_case_wire_contract() {
         let options = FlashPlanOptions::default();
         let json = serde_json::to_string(&options).expect("default options serialize");
-        assert!(json.contains("\"clean\":\"no\""), "json: {json}");
         assert!(json.contains("\"storage\":\"auto\""), "json: {json}");
 
         let round_tripped: FlashPlanOptions =
             serde_json::from_str(&json).expect("kebab-case json deserializes");
-        assert_eq!(round_tripped.clean, options.clean);
         assert_eq!(round_tripped.storage, options.storage);
     }
 }

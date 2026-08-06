@@ -35,6 +35,7 @@ android-sparse-image = { path = "../../vendor/fastboot-rs/android-sparse-image" 
 tempfile = "3"
 async-trait = "0.1"
 strip-ansi-escapes = "0.2"
+serde_yaml = "0.9.34"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

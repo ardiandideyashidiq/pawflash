@@ -6,7 +6,9 @@ use serde_json::Value;
 
 use crate::scatter_parser::error::{Error, Result};
 
-const NONE_TOKENS: &[&str] = &["", "NONE", "NULL", "N/A", "NA", "0"];
+// NOTE: `"0"` is intentionally absent — a partition or file genuinely named
+// "0" (seen in the wild) must not be treated as "not present".
+const NONE_TOKENS: &[&str] = &["", "NONE", "NULL", "N/A", "NA"];
 
 /// Build an `InvalidValue` error without source context.
 fn invalid(field_name: &str, value: &str) -> Error {
@@ -53,6 +55,10 @@ pub fn parse_int(value: &str, field_name: &str) -> Result<i64> {
     } else if let Some(rest) = s.strip_suffix('h').or_else(|| s.strip_suffix('H')) {
         i64::from_str_radix(rest, 16)
     } else if s.chars().all(|c| c.is_ascii_digit()) {
+        // Policy: an all-digit string is DECIMAL. MTK scatters write hex with
+        // an explicit `0x`/`h` prefix, so a bare `"1000"` must not be read as
+        // `0x1000`. Mixed digit+letter hex (e.g. `"1000A"`) is unambiguous and
+        // falls through to the hex branch below.
         s.parse::<i64>()
     } else if s.chars().all(|c| c.is_ascii_hexdigit())
         && s.chars().any(|c| c.is_ascii_hexdigit() && c.is_ascii_alphabetic())
@@ -186,7 +192,9 @@ pub(crate) fn normalize_none_string(value: Option<&Value>) -> Option<String> {
     {
         None
     } else {
-        Some(text)
+        // Return the slash-normalized form so downstream path handling never
+        // sees Windows-style backslashes.
+        Some(normalized)
     }
 }
 
@@ -239,6 +247,11 @@ mod tests {
     #[test]
     fn parse_int_should_accept_decimal() {
         assert_eq!(parse_int("1234", "test").unwrap(), 1234);
+    }
+
+    #[test]
+    fn parse_int_all_digits_are_decimal_not_hex() {
+        assert_eq!(parse_int("10000", "test").unwrap(), 10_000);
     }
 
     #[test]

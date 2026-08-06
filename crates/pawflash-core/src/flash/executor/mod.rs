@@ -106,12 +106,20 @@ impl<T: FlashTransport> FlashExecutor<T> {
 }
 
 /// Query `max-download-size` from the device and validate it is
-/// reasonable.  Returns an error if the value is present but below 1 MiB.
+/// reasonable.  Returns an error if the value is present but below 1 MiB, or
+/// if the device reports a value that cannot be parsed (a garbage string must
+/// never be silently treated as the 256 MiB default).
 pub(crate) async fn parse_max_download(fb: &mut impl FlashTransport) -> Result<u32> {
     let raw = fb.get_var("max-download-size").await.ok();
-    let val = raw.as_deref()
+    let Some(val) = raw
+        .as_deref()
         .and_then(|s| fastboot_protocol::protocol::parse_u32(s).ok())
-        .unwrap_or(256 * 1024 * 1024);
+    else {
+        return Err(FlashError::ActionFailed {
+            partition: "(global)".into(),
+            reason: "device max-download-size is not reported or unparseable".into(),
+        });
+    };
     if val < 1024 * 1024 {
         return Err(FlashError::ActionFailed {
             partition: "(global)".into(),
@@ -263,6 +271,27 @@ mod tests {
         assert!(
             cmds.iter().any(|c| c.starts_with("download:")),
             "expected a download command, got: {cmds:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_plan_fails_oversized_image() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("boot.img");
+        let payload: Vec<u8> = vec![0xAB; 2_000_000];
+        std::fs::write(&img, &payload).unwrap();
+        let mut exec = mock_executor();
+        let mut action = make_action("boot", img.to_str());
+        action.size = 4096;
+        let plan = make_empty_plan(vec![action]);
+        let result = exec.execute_plan(&plan, FlashRunOptions::default()).await;
+        assert_eq!(result.total, 1);
+        assert_eq!(result.succeeded, 0);
+        assert_eq!(result.failed, 1);
+        let err = result.outcomes[0].error.as_ref().expect("error set");
+        assert!(
+            err.to_string().contains("too large"),
+            "expected an ImageTooLarge error: {err}"
         );
     }
 }

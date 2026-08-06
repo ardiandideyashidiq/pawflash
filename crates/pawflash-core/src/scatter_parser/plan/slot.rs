@@ -148,6 +148,7 @@ fn slot_synthesized_action(
 pub(super) fn check_incomplete_slots(
     selected_parts: &[&ScatterPartition],
     actions: &[FlashAction],
+    excluded: &BTreeSet<String>,
     allow_incomplete_slots: bool,
     warnings: &mut Vec<String>,
     errors: &mut Vec<String>,
@@ -175,6 +176,11 @@ pub(super) fn check_incomplete_slots(
 
     for (base, available) in by_base_available {
         if !available.is_superset(&BTreeSet::from(["a".to_string(), "b".to_string()])) {
+            continue;
+        }
+        // A slot the user explicitly excluded is intentional, not a missing
+        // half of an incomplete pair — do not flag it.
+        if excluded.contains(&base) || ["a", "b"].iter().any(|s| excluded.contains(&format!("{base}_{s}"))) {
             continue;
         }
         let planned = by_base_planned.get(&base).cloned().unwrap_or_default();
