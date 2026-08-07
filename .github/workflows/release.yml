@@ -1,13 +1,8 @@
-name: Release CLI
+name: Release
 
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'AGENTS.md'
-      - '.gitignore'
-      - 'LICENSE-*'
   workflow_dispatch:
 
 concurrency:
@@ -18,7 +13,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-cli:
     strategy:
       matrix:
         include:
@@ -50,9 +45,36 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
+  build-gui:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+        with:
+          deps: gui
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          uploadWorkflowArtifacts: true
+
   release:
-    needs: [build]
+    needs: [build-cli, build-gui]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +83,7 @@ jobs:
 
       - name: Set timestamp tag
         id: tag
-        run: echo "TAG=release-$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+        run: echo "TAG=release-$(date -u +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
 
       - name: Generate changelog
         run: |
@@ -73,13 +95,19 @@ jobs:
           } > changelog.txt
 
       - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
 
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.tag.outputs.TAG }}
-          name: ${{ steps.tag.outputs.TAG }}
+          name: pawflash ${{ steps.tag.outputs.TAG }}
           body_path: changelog.txt
           files: |
-            pawflash/pawflash
-            pawflash.exe/pawflash.exe
-          fail_on_unmatched_files: true
+            artifacts/pawflash
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.msi
+            artifacts/**/*.exe
+          fail_on_unmatched_files: false
