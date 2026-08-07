@@ -45,6 +45,9 @@ pub struct FlashRunOptions<'a> {
     pub cancel: Option<&'a AtomicBool>,
     /// Optional byte-level transfer callback (e.g. Tauri event streaming).
     pub on_transfer: Option<&'a mut (dyn FnMut(FlashTransferEvent) + Send)>,
+    /// Per-transfer-step timeout. `None` uses the default (300s); tests set a
+    /// short value so the hang path can be exercised without waiting.
+    pub transfer_timeout: Option<Duration>,
 }
 
 /// Drives both the CLI progress bar and an optional byte callback from the
@@ -53,6 +56,7 @@ pub struct FlashRunOptions<'a> {
 pub(crate) struct TransferReporter<'a> {
     cli: Option<&'a ProgressBar>,
     on_bytes: Option<&'a mut (dyn FnMut(u64, u64) + Send)>,
+    cancel: Option<&'a AtomicBool>,
     last_reported: u64,
     last_emit_at: Instant,
 }
@@ -65,9 +69,22 @@ impl<'a> TransferReporter<'a> {
         Self {
             cli,
             on_bytes,
+            cancel: None,
             last_reported: 0,
             last_emit_at: Instant::now(),
         }
+    }
+
+    /// Attach the cancellation flag so the transfer loops can abort
+    /// mid-partition when the user cancels.
+    pub(crate) const fn with_cancel(mut self, cancel: Option<&'a AtomicBool>) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
+    /// Whether the user has requested cancellation.
+    pub(crate) fn cancelled(&self) -> bool {
+        self.cancel.is_some_and(|f| f.load(std::sync::atomic::Ordering::Relaxed))
     }
 
     pub(crate) fn set_length(&mut self, len: u64) {

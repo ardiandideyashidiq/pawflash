@@ -43,6 +43,9 @@ pub(crate) struct MockTransport {
     get_var_responses: HashMap<String, Result<String>>,
     pub(crate) commands: Vec<String>,
     pub(crate) fail_download: bool,
+    /// When set, `download` blocks forever so tests can exercise the
+    /// transfer timeout path.
+    pub(crate) block_download: bool,
     flash_response: Option<String>,
 }
 
@@ -51,7 +54,7 @@ impl MockTransport {
     pub fn new() -> Self {
         let mut get_var_responses: HashMap<String, Result<String>> = HashMap::new();
         get_var_responses.insert("max-download-size".to_string(), Ok("0x10000000".to_string()));
-        Self { get_var_responses, commands: Vec::new(), fail_download: false, flash_response: None }
+        Self { get_var_responses, commands: Vec::new(), fail_download: false, block_download: false, flash_response: None }
     }
 
     pub fn commands(&self) -> &[String] { &self.commands }
@@ -107,6 +110,12 @@ impl FlashTransport for MockTransport {
                 partition: "(download)".into(),
                 reason: "mock download failure".into(),
             });
+        }
+        if self.block_download {
+            // Block forever so the caller's timeout path fires. The executor
+            // wraps this call in `tokio::time::timeout`, so the test must
+            // also run `execute_plan` under a short timeout to stay bounded.
+            std::future::pending::<()>().await;
         }
         Ok(DownloadSender::Mock(MockDownloadSink::new()))
     }

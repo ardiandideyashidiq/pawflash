@@ -15,6 +15,14 @@ pub(crate) mod chunked;
 
 pub(crate) use chunked::{flash_sparse_image, flash_sparse_wrapped};
 
+/// Per-flash transfer limits threaded through the sparse split paths.
+pub(crate) struct TransferLimits {
+    /// Device `max-download-size`, bounding each split.
+    pub max_download: u32,
+    /// Per-transfer-step timeout; `None` uses the module default.
+    pub transfer_timeout: Option<std::time::Duration>,
+}
+
 /// Reusable 1 MiB transfer buffer to avoid per-chunk allocation.
 pub(crate) struct XferBuf {
     buf: Vec<u8>,

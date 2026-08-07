@@ -1,5 +1,6 @@
 use std::io::SeekFrom;
 use std::path::Path;
+use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use android_sparse_image::{
@@ -14,6 +15,9 @@ use crate::flash::transport::FlashTransport;
 
 use super::{read_exact_padded, read_exact_padded_or_truncate, XferBuf};
 
+/// Generous per-transfer-step timeout, mirroring the executor's constant.
+const TRANSFER_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// Flash a sparse image to a partition.
 ///
 /// Parse the sparse file header + chunk headers, split into parts that each
@@ -25,11 +29,11 @@ pub(crate) async fn flash_sparse_image(
     partition: &str,
     path: &Path,
     file_len: u64,
-    max_download: u32,
+    limits: &crate::flash::sparse::TransferLimits,
     mut reporter: Option<&mut TransferReporter<'_>>,
     buf: &mut XferBuf,
 ) -> Result<String> {
-    debug!(%partition, file_len, max_download, "flashing sparse image");
+    debug!(%partition, file_len, max_download = limits.max_download, "flashing sparse image");
 
     let mut file = tokio::fs::File::open(path).await?;
 
@@ -61,7 +65,7 @@ pub(crate) async fn flash_sparse_image(
     info!(%partition, chunk_count = chunks.len(), "parsed sparse image header");
 
     // ---- split into max_download-sized pieces ----
-    let splits = split_image(&header, &chunks, max_download)
+    let splits = split_image(&header, &chunks, limits.max_download)
         .map_err(|_| FlashError::SparseSplitFailed)?;
 
     info!(%partition, split_count = splits.len(), "sparse image split for download");
@@ -84,6 +88,9 @@ pub(crate) async fn flash_sparse_image(
     // we only need to seek when a DontCare chunk causes a jump.
     let mut file_pos: u64 = 0;
     for (i, split) in splits.iter().enumerate() {
+        if reporter.as_ref().is_some_and(|r| r.cancelled()) {
+            return Err(FlashError::Cancelled);
+        }
         debug!(%partition, part = i, "sending sparse split");
 
         let sparse_size = u32::try_from(split.sparse_size())
@@ -91,7 +98,10 @@ pub(crate) async fn flash_sparse_image(
                 std::io::ErrorKind::InvalidData,
                 "sparse split size exceeds u32 range",
             )))?;
-        let mut sender = fb.download(sparse_size).await?;
+        let timeout = limits.transfer_timeout.unwrap_or(TRANSFER_TIMEOUT);
+        let mut sender = tokio::time::timeout(timeout, fb.download(sparse_size))
+            .await
+            .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "download".into() })??;
 
         // file header for this split
         sender.extend_from_slice(&split.header.to_bytes()).await?;
@@ -159,18 +169,18 @@ pub(crate) async fn flash_sparse_wrapped(
     partition: &str,
     path: &Path,
     file_len: u64,
-    max_download: u32,
+    limits: &crate::flash::sparse::TransferLimits,
     mut reporter: Option<&mut TransferReporter<'_>>,
     buf: &mut XferBuf,
 ) -> Result<String> {
-    debug!(%partition, file_len, max_download, "wrapping raw image in sparse format");
+    debug!(%partition, file_len, max_download = limits.max_download, "wrapping raw image in sparse format");
 
     let raw_size = usize::try_from(file_len)
         .map_err(|_| FlashError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "file too large for split_raw",
         )))?;
-    let splits = split_raw(raw_size, max_download)
+    let splits = split_raw(raw_size, limits.max_download)
         .map_err(|_| FlashError::SparseSplitFailed)?;
 
     info!(%partition, split_count = splits.len(), "raw image split into sparse chunks");
@@ -200,6 +210,9 @@ pub(crate) async fn flash_sparse_wrapped(
     // keeping this explicit is harmless and cheap).
     let mut file_pos: u64 = 0;
     for (i, split) in splits.iter().enumerate() {
+        if reporter.as_ref().is_some_and(|r| r.cancelled()) {
+            return Err(FlashError::Cancelled);
+        }
         debug!(%partition, part = i, "sending sparse-wrapped split");
 
         let sparse_size = u32::try_from(split.sparse_size())
@@ -207,8 +220,11 @@ pub(crate) async fn flash_sparse_wrapped(
                 std::io::ErrorKind::InvalidData,
                 "sparse split size exceeds u32 range",
             )))?;
-        info!(%partition, part = i, sparse_size, max_download, "downloading split via fb.download");
-        let mut sender = fb.download(sparse_size).await?;
+        info!(%partition, part = i, sparse_size, max_download = limits.max_download, "downloading split via fb.download");
+        let timeout = limits.transfer_timeout.unwrap_or(TRANSFER_TIMEOUT);
+        let mut sender = tokio::time::timeout(timeout, fb.download(sparse_size))
+            .await
+            .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "download".into() })??;
         info!(%partition, part = i, "fb.download returned successfully");
 
         // file header for this split
@@ -229,6 +245,9 @@ pub(crate) async fn flash_sparse_wrapped(
 
                 let mut remaining = chunk.size;
                 while remaining > 0 {
+                    if reporter.as_ref().is_some_and(|r| r.cancelled()) {
+                        return Err(FlashError::Cancelled);
+                    }
                     let to_read = buf.get(1024 * 1024).len().min(remaining);
                     // Read directly into the USB buffer, skipping the
                     // intermediate transfer-buffer copy.

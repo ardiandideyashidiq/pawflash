@@ -17,6 +17,10 @@ use super::EMPTY_VBMETA;
 /// Transfer chunk size used when streaming files into the USB buffer.
 const TRANSFER_CHUNK: u64 = 1024 * 1024;
 
+/// Generous per-transfer-step timeout. USB devices can pause; this bounds
+/// only the pathological case where the device stops responding entirely.
+const TRANSFER_TIMEOUT: Duration = Duration::from_secs(300);
+
 impl<T: FlashTransport> FlashExecutor<T> {
     /// # Errors
     /// Returns an error if the download or flash command fails.
@@ -40,13 +44,18 @@ impl<T: FlashTransport> FlashExecutor<T> {
         for slot in &["a", "b"] {
             let partition = format!("vbmeta_{slot}");
             info!(%partition, "flashing empty vbmeta");
-            let mut sender = self.fb.download(
-                u32::try_from(data.len())
-                    .expect("EMPTY_VBMETA is 512 bytes, always fits in u32"),
-            ).await?;
+            let size = u32::try_from(data.len())
+                .expect("EMPTY_VBMETA is 512 bytes, always fits in u32");
+            let mut sender = tokio::time::timeout(TRANSFER_TIMEOUT, self.fb.download(size))
+                .await
+                .map_err(|_| FlashError::Timeout { partition: partition.clone(), step: "download".into() })??;
             sender.extend_from_slice(data).await?;
-            sender.finish().await?;
-            last_resp = self.fb.flash(&partition).await?;
+            tokio::time::timeout(TRANSFER_TIMEOUT, sender.finish())
+                .await
+                .map_err(|_| FlashError::Timeout { partition: partition.clone(), step: "finish".into() })??;
+            last_resp = tokio::time::timeout(TRANSFER_TIMEOUT, self.fb.flash(&partition))
+                .await
+                .map_err(|_| FlashError::Timeout { partition, step: "flash".into() })??;
         }
         Ok(last_resp)
     }
@@ -66,7 +75,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         debug!(%partition, image_path = %image_path.display(), "flash_raw_image entry");
         let max_download = self.max_download().await?;
 
-        self.flash_image_to_partition(partition, image_path, max_download, None).await
+        self.flash_image_to_partition(partition, image_path, max_download, None, None).await
     }
 
     /// Shared helper: erase partition, then download+flash (single or chunked).
@@ -77,10 +86,15 @@ impl<T: FlashTransport> FlashExecutor<T> {
         partition: &str,
         path: &Path,
         max_download: u32,
+        transfer_timeout: Option<Duration>,
         mut reporter: Option<&mut TransferReporter<'_>>,
     ) -> Result<String> {
         // Shared transfer buffer reused across all sparse operations.
         let mut xbuf = crate::flash::sparse::XferBuf::new();
+        let limits = crate::flash::sparse::TransferLimits {
+            max_download,
+            transfer_timeout,
+        };
 
         // Route Android sparse images through the sparse-aware handler.
         if crate::flash::sparse::is_sparse_image(path).await.unwrap_or(false) {
@@ -90,7 +104,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 partition,
                 path,
                 file_len,
-                max_download,
+                &limits,
                 reporter,
                 &mut xbuf,
             )
@@ -121,13 +135,13 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 partition,
                 path,
                 file_len,
-                max_download,
+                &limits,
                 reporter,
                 &mut xbuf,
             )
             .await
         } else {
-            self.flash_raw_partition(partition, path, size, reporter, &mut xbuf).await
+            self.flash_raw_partition(partition, path, size, transfer_timeout, reporter, &mut xbuf).await
         }
     }
 
@@ -213,13 +227,20 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 on_bytes
                     .as_mut()
                     .map(|c| c.as_mut() as &mut (dyn FnMut(u64, u64) + Send)),
-            );
+            )
+            .with_cancel(opts.cancel);
 
             let start = Instant::now();
             let result = self
-                .flash_partition(action, opts.dry_run, max_download, Some(&mut reporter))
+                .flash_partition(action, opts.dry_run, max_download, opts.transfer_timeout, Some(&mut reporter))
                 .await;
             let duration = start.elapsed();
+
+            // A mid-transfer cancellation must stop the remaining partitions
+            // and be reported as `cancelled`, not as a per-partition failure.
+            if matches!(result, Err(FlashError::Cancelled)) {
+                cancelled = true;
+            }
 
             let partition_bytes = current_bytes.load(Ordering::Relaxed);
             // Advance the cumulative total by the bytes actually transferred
@@ -228,6 +249,10 @@ impl<T: FlashTransport> FlashExecutor<T> {
             completed_bytes.fetch_add(partition_bytes, Ordering::Relaxed);
 
             outcomes.push(record_outcome(partition, duration, result, pb.as_ref()));
+            if cancelled {
+                info!(partition = %action.partition, "cancellation requested mid-transfer");
+                break;
+            }
         }
 
         let succeeded = outcomes.iter().filter(|o| o.success).count();
@@ -253,6 +278,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         action: &crate::scatter_parser::types::FlashAction,
         dry_run: bool,
         max_download: u32,
+        transfer_timeout: Option<Duration>,
         reporter: Option<&mut TransferReporter<'_>>,
     ) -> Result<String> {
         let partition = &action.partition;
@@ -296,7 +322,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
             return Ok(String::new());
         }
 
-        self.flash_image_to_partition(partition, path, max_download, reporter).await
+        self.flash_image_to_partition(partition, path, max_download, transfer_timeout, reporter).await
     }
 
     /// Flash a partition that fits in a single download.
@@ -306,12 +332,17 @@ impl<T: FlashTransport> FlashExecutor<T> {
         partition: &str,
         path: &Path,
         size: u32,
+        transfer_timeout: Option<Duration>,
         mut reporter: Option<&mut TransferReporter<'_>>,
         _xbuf: &mut crate::flash::sparse::XferBuf,
     ) -> Result<String> {
         debug!(%partition, file_size = size, "flashing raw partition");
+        let timeout = transfer_timeout.unwrap_or(TRANSFER_TIMEOUT);
         let mut file = tokio::fs::File::open(path).await?;
-        let mut sender = self.fb.download(size).await?;
+        let sender = tokio::time::timeout(timeout, self.fb.download(size))
+            .await
+            .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "download".into() })??;
+        let mut sender = sender;
 
         // Read the file directly into the USB transfer buffer, avoiding the
         // intermediate copy of `extend_from_slice`. `get_mut_data` reserves
@@ -320,6 +351,9 @@ impl<T: FlashTransport> FlashExecutor<T> {
         // than the file holds.
         let mut written = 0u64;
         while written < u64::from(size) {
+            if reporter.as_ref().is_some_and(|r| r.cancelled()) {
+                return Err(FlashError::Cancelled);
+            }
             let remaining = u64::from(size) - written;
             let want = usize::try_from(remaining.min(TRANSFER_CHUNK)).unwrap_or(usize::MAX);
             let buf = sender.get_mut_data(want).await?;
@@ -332,8 +366,12 @@ impl<T: FlashTransport> FlashExecutor<T> {
             }
         }
 
-        sender.finish().await?;
-        let resp = self.fb.flash(partition).await?;
+        tokio::time::timeout(timeout, sender.finish())
+            .await
+            .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "finish".into() })??;
+        let resp = tokio::time::timeout(timeout, self.fb.flash(partition))
+            .await
+            .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "flash".into() })??;
         if let Some(rep) = reporter.as_mut() {
             rep.set_position(u64::from(size));
             rep.report(u64::from(size), u64::from(size));

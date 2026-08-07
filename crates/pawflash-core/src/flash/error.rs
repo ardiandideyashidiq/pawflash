@@ -47,6 +47,13 @@ pub enum FlashError {
 
     #[error("sparse image truncated: read {read} of {expected} bytes")]
     SparseTruncated { read: usize, expected: usize },
+
+    #[error("flash transfer timed out: {partition}: {step}")]
+    #[diagnostic(help("check the USB connection; the device may have stopped responding"))]
+    Timeout { partition: String, step: String },
+
+    #[error("flash cancelled by user")]
+    Cancelled,
 }
 
 impl serde::Serialize for FlashError {

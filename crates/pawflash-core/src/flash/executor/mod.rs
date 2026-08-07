@@ -525,4 +525,92 @@ mod tests {
             "expected SIM flash:boot, got: {cmds:?}"
         );
     }
+
+    #[tokio::test]
+    async fn execute_plan_times_out_when_download_never_returns() {
+        // Regression for the no-timeout defect: a transport whose download
+        // never completes must surface a Timeout error, not hang forever.
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("boot.img");
+        std::fs::write(&img, b"fake image data").unwrap();
+
+        let mut fb = MockTransport::new();
+        fb.block_download = true;
+        let mut exec = FlashExecutor::new(fb, HashMap::new());
+        let plan = make_empty_plan(vec![make_action("boot", img.to_str())]);
+
+        let result = exec
+            .execute_plan(
+                &plan,
+                FlashRunOptions {
+                    transfer_timeout: Some(std::time::Duration::from_millis(100)),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert_eq!(result.total, 1);
+        assert_eq!(result.succeeded, 0);
+        assert_eq!(result.failed, 1);
+        let err = result.outcomes[0].error.as_ref().expect("error set");
+        assert!(
+            err.to_string().contains("timed out"),
+            "expected a Timeout error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_plan_mid_transfer_cancel_sets_cancelled() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        // Flip the cancel flag after the first partition succeeds; the second
+        // partition must stop and the result must report `cancelled`, not a
+        // per-partition failure.
+        let dir = tempfile::TempDir::new().unwrap();
+        let img_a = dir.path().join("boot_a.img");
+        let img_b = dir.path().join("boot_b.img");
+        std::fs::write(&img_a, b"image a payload").unwrap();
+        std::fs::write(&img_b, b"image b payload").unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let mut exec = mock_executor();
+        let plan = make_empty_plan(vec![
+            make_action("boot_a", img_a.to_str()),
+            make_action("boot_b", img_b.to_str()),
+        ]);
+
+        // Interleave a cancel between partitions by flipping the flag after
+        // the first partition's flash. Use a capture of command count.
+        let mut on_transfer = {
+            let flag = &cancel;
+            let mut flipped = false;
+            move |ev: crate::flash::progress::FlashTransferEvent| {
+                if !flipped && ev.partition == "boot_a" && ev.bytes == ev.total {
+                    flipped = true;
+                    flag.store(true, Ordering::Relaxed);
+                }
+            }
+        };
+
+        let result = exec
+            .execute_plan(
+                &plan,
+                FlashRunOptions {
+                    cancel: Some(&cancel),
+                    on_transfer: Some(&mut on_transfer),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(result.cancelled, "expected cancelled result");
+        // First partition processed (succeeded), second not reached.
+        assert_eq!(result.succeeded, 1);
+        assert_eq!(result.failed, 0);
+        let cmds = exec.fb.commands();
+        let flashes: Vec<&String> = cmds.iter().filter(|c| c.starts_with("flash:")).collect();
+        assert_eq!(
+            flashes.len(),
+            1,
+            "only the first partition should flash: {cmds:?}"
+        );
+    }
 }
