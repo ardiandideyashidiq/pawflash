@@ -17,14 +17,20 @@
 
 /// Error types for the penumbra integration.
 pub mod error;
+/// DA download, cache, and persisted selection.
+pub mod da;
 /// DA manifest fetch and device-name resolution.
 pub mod manifest;
 /// Platform data-dir resolution shared with the mtk module.
 pub mod platform;
+/// Persisted last-used DA selection.
+pub mod state;
 /// Serde event types consumed by the CLI and GUI.
 pub mod types;
 
+pub use da::{da_cache_path, download_da, remove_cached_da, verify_da};
 pub use error::{PenumbraError, Result};
 pub use manifest::{fetch_da_manifest, list_dais, resolve_by_brand_chipset, resolve_by_device, DAEntry, DAManifest, DA_MANIFEST_URL};
 pub use platform::{base_data_dir, penumbra_dir};
+pub use state::{clear_selection, load_selection, save_selection, DaSelection};
 pub use types::PenumbraEvent;
