@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
@@ -7,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use pawflash_core::flash::executor::FlashExecutor;
-use pawflash_core::flash::simulate::SimulatedTransport;
+use pawflash_core::flash::simulate::{simulated_vars, SimulatedTransport};
 use pawflash_core::output;
 use pawflash_core::scatter_parser::safety::requires_raw_flash_ack;
 
@@ -37,14 +36,7 @@ pub(super) async fn run_raw_image(
 
     if simulate {
         output::status::heading("⚠ SIMULATED MODE — no device will be touched");
-        let vars = HashMap::from([
-            ("max-download-size".into(), "0x10000000".into()),
-            ("current-slot".into(), "a".into()),
-            ("product".into(), "SIM_DEVICE".into()),
-            ("serialno".into(), "SIM000001".into()),
-            ("version".into(), "0.5".into()),
-            ("is-userspace".into(), "yes".into()),
-        ]);
+        let vars = simulated_vars();
         let transport = SimulatedTransport::new(vars.clone());
         let mut executor = FlashExecutor::new(transport, vars);
         return do_raw_flash(&mut executor, partition, &image, slot, both, force).await;

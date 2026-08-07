@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
 use pawflash_core::flash::executor::FlashExecutor;
-use pawflash_core::flash::simulate::SimulatedTransport;
+use pawflash_core::flash::simulate::{simulated_vars, SimulatedTransport};
 use pawflash_core::output;
 
 /// Flash the vendored empty vbmeta image to both slots with AVB flags=3.
@@ -23,14 +23,7 @@ pub async fn run(simulate: bool) -> Result<()> {
 
     if simulate {
         output::status::heading("⚠ SIMULATED MODE — no device will be touched");
-        let vars = HashMap::from([
-            ("max-download-size".into(), "0x10000000".into()),
-            ("product".into(), "SIM_DEVICE".into()),
-            ("serialno".into(), "SIM000001".into()),
-            ("version".into(), "0.5".into()),
-            ("current-slot".into(), "a".into()),
-            ("is-userspace".into(), "no".into()),
-        ]);
+        let vars = simulated_vars();
         let transport = SimulatedTransport::new(vars);
         let mut executor = FlashExecutor::new(transport, HashMap::new());
         let resp = executor.flash_empty_vbmeta().await

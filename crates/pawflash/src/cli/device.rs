@@ -8,7 +8,7 @@ use tracing::{debug, info};
 use crate::cli::args::DeviceAction;
 use pawflash_core::flash::executor::BootTarget;
 use pawflash_core::flash::executor::FlashExecutor;
-use pawflash_core::flash::simulate::SimulatedTransport;
+use pawflash_core::flash::simulate::{simulated_vars, SimulatedTransport};
 use pawflash_core::output;
 
 /// Run a fastboot device operation.
@@ -24,16 +24,10 @@ pub async fn run(action: DeviceAction, simulate: bool) -> Result<()> {
 
     if simulate {
         output::status::heading("⚠ SIMULATED MODE — no device will be touched");
-        let vars = HashMap::from([
-            ("version".into(), "0.5".into()),
-            ("product".into(), "SIM_DEVICE".into()),
-            ("serialno".into(), "SIM000001".into()),
-            ("current-slot".into(), "a".into()),
-            ("max-download-size".into(), "0x10000000".into()),
-            ("is-userspace".into(), "no".into()),
+        let mut vars = simulated_vars();
+        vars.extend([
             ("battery-voltage".into(), "4300mV".into()),
             ("battery-soc-ok".into(), "yes".into()),
-            ("slot-count".into(), "2".into()),
             ("slot-successful:_a".into(), "yes".into()),
             ("slot-successful:_b".into(), "no".into()),
             ("slot-unbootable:_a".into(), "no".into()),

@@ -69,6 +69,22 @@ impl SimulatedDownloadSink {
 
 // ── Simulated transport ────────────────────────────────────────────
 
+/// Base variable set reported by a simulated device. Single source of truth
+/// for the CLI and GUI simulation paths; `is-userspace` is `no` (bootloader
+/// mode) so the vbmeta fastbootd guard is never tripped by a simulation.
+#[must_use]
+pub fn simulated_vars() -> HashMap<String, String> {
+    HashMap::from([
+        ("version".to_string(), "0.5".to_string()),
+        ("product".to_string(), "SIM_DEVICE".to_string()),
+        ("serialno".to_string(), "SIM000001".to_string()),
+        ("current-slot".to_string(), "a".to_string()),
+        ("max-download-size".to_string(), "0x10000000".to_string()),
+        ("is-userspace".to_string(), "no".to_string()),
+        ("slot-count".to_string(), "2".to_string()),
+    ])
+}
+
 /// Fastboot transport backed by simulation — no real device required.
 ///
 /// Behaves like a real fastboot device but routes all I/O through a

@@ -11,23 +11,8 @@ use std::path::Path;
 use pawflash_core::flash::executor::{BootTarget, FlashExecutor};
 use pawflash_core::flash::progress::FlashRunOptions;
 use pawflash_core::flash::results::FlashResult;
-use pawflash_core::flash::simulate::SimulatedTransport;
+use pawflash_core::flash::simulate::{simulated_vars, SimulatedTransport};
 use pawflash_core::scatter_parser::types::ScatterFile;
-
-/// Device variables reported by a simulated device (mirrors the CLI's fixed
-/// set in `crates/pawflash/src/cli/device.rs`).
-#[must_use]
-pub fn simulated_vars() -> HashMap<String, String> {
-  HashMap::from([
-    ("version".to_string(), "0.5".to_string()),
-    ("product".to_string(), "SIM_DEVICE".to_string()),
-    ("serialno".to_string(), "SIM000001".to_string()),
-    ("current-slot".to_string(), "a".to_string()),
-    ("max-download-size".to_string(), "0x10000000".to_string()),
-    ("is-userspace".to_string(), "no".to_string()),
-    ("slot-count".to_string(), "2".to_string()),
-  ])
-}
 
 /// A flash executor backed by either a real USB device or a simulation.
 ///
