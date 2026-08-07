@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Cpu,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -47,6 +48,7 @@ export default function AppLayout({
     () => [
       { id: "flasher", label: "Flasher", icon: Zap },
       { id: "menu", label: "Menu", icon: Wrench },
+      { id: "mtk", label: "MTK", icon: Cpu },
       { id: "extras", label: "Extras", icon: Search },
       { id: "about", label: "About", icon: Info },
     ],

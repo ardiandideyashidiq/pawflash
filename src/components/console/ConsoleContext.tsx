@@ -106,6 +106,27 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
         case "ForceFastbootStage":
           addEntry({ text: event.data.message, level: "info" });
           break;
+        case "MtkPhase":
+          addEntry({ text: event.data.message, level: "info" });
+          break;
+        case "MtkProgress":
+          // Throttle byte-level mtk progress to one log line per 5% step.
+          {
+            const pct = Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100);
+            const last = lastOverallPct.current;
+            if (pct - last.pct < 5 && last.pct >= 0) {
+              return;
+            }
+            lastOverallPct.current = { pct, at: Date.now() };
+            addEntry({ text: `MTK ${pct}%`, level: "info" });
+          }
+          break;
+        case "MtkDone":
+          addEntry({
+            text: event.data.detail,
+            level: event.data.ok ? "success" : "error",
+          });
+          break;
         case "Warning":
           addEntry({ text: event.data.message, level: "warning" });
           break;
