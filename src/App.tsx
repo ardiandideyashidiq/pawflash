@@ -493,6 +493,7 @@ function AppRoot() {
         onConfirm={startFlash}
         selectedPartitions={planState.selectedRows}
         rebootRecoveryAfter={planState.options.rebootRecovery}
+        skippedCount={planState.plan?.skippedCount ?? 0}
         isPending={isStartingFlash || planState.loading || activeFlashSession || activeForceSession}
       />
       <FlashDialog

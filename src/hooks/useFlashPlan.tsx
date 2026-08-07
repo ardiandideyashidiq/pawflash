@@ -20,7 +20,6 @@ import { buildFlashPlanOptions } from "@/lib/plan";
 const SCATTER_STORAGE_KEY = "last-scatter-path";
 
 interface PlanOptions {
-  advanced: boolean;
   includePreloader: boolean;
   rebootRecovery: boolean;
 }
@@ -32,7 +31,6 @@ export interface FlashPlanState {
   error: string | null;
   options: PlanOptions;
   loadScatter: (path: string) => void;
-  setAdvanced: (v: boolean) => void;
   setIncludePreloader: (v: boolean) => void;
   setRebootRecovery: (v: boolean) => void;
   togglePartition: (name: string) => void;
@@ -85,7 +83,6 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [advanced, setAdvanced] = useState(false);
   const [includePreloader, setIncludePreloader] = useState(false);
   const [rebootRecovery, setRebootRecovery] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -193,10 +190,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
     () => rows.filter((r) => selected.has(r.partition)),
     [rows, selected],
   );
-  const selectedFlashCount = useMemo(
-    () => selectedRows.filter((r) => r.action === "flash").length,
-    [selectedRows],
-  );
+  const selectedFlashCount = useMemo(() => selectedRows.length, [selectedRows]);
 
   const buildExclude = useCallback(() => {
     const planRows = plan?.rows ?? [];
@@ -209,9 +203,8 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       plan,
       loading,
       error,
-      options: { advanced, includePreloader, rebootRecovery },
+      options: { includePreloader, rebootRecovery },
       loadScatter,
-      setAdvanced,
       setIncludePreloader,
       setRebootRecovery,
       togglePartition,
@@ -228,7 +221,6 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       plan,
       loading,
       error,
-      advanced,
       includePreloader,
       rebootRecovery,
       loadScatter,

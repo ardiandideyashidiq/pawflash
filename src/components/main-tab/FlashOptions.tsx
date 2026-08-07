@@ -12,8 +12,6 @@ import {
 import { cn } from "@/lib/utils";
 
 interface FlashOptionsProps {
-  advanced: boolean;
-  onAdvancedChange: (v: boolean) => void;
   includePreloader: boolean;
   onIncludePreloaderChange: (v: boolean) => void;
   rebootRecovery: boolean;
@@ -21,8 +19,6 @@ interface FlashOptionsProps {
 }
 
 export const FlashOptions = memo(function FlashOptions({
-  advanced,
-  onAdvancedChange,
   includePreloader,
   onIncludePreloaderChange,
   rebootRecovery,
@@ -43,12 +39,9 @@ export const FlashOptions = memo(function FlashOptions({
 
       <Button
         type="button"
-        variant={advanced ? "secondary" : "outline"}
+        variant={includePreloader ? "secondary" : "outline"}
         className={cn("gap-2", includePreloader && "animate-pulse")}
-        onClick={() => {
-          onAdvancedChange(true);
-          setAdvancedOpen(true);
-        }}
+        onClick={() => setAdvancedOpen(true)}
       >
         Advanced
       </Button>
@@ -63,10 +56,7 @@ export const FlashOptions = memo(function FlashOptions({
             <Checkbox
               id="advanced-include-preloader"
               checked={includePreloader}
-              onCheckedChange={(v) => {
-                onAdvancedChange(true);
-                onIncludePreloaderChange(!!v);
-              }}
+              onCheckedChange={(v) => onIncludePreloaderChange(!!v)}
             />
             <Label htmlFor="advanced-include-preloader">Include preloader</Label>
           </div>
@@ -76,7 +66,6 @@ export const FlashOptions = memo(function FlashOptions({
               type="button"
               variant="outline"
               onClick={() => {
-                onAdvancedChange(false);
                 onIncludePreloaderChange(false);
                 setAdvancedOpen(false);
               }}

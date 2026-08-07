@@ -26,7 +26,6 @@ function FlashTabInner({
     loading,
     error,
     options,
-    setAdvanced,
     setIncludePreloader,
     setRebootRecovery,
     togglePartition,
@@ -42,8 +41,6 @@ function FlashTabInner({
       <ScatterPicker path={scatterPath} onChange={loadScatter} />
 
       <FlashOptions
-        advanced={options.advanced}
-        onAdvancedChange={setAdvanced}
         includePreloader={options.includePreloader}
         onIncludePreloaderChange={setIncludePreloader}
         rebootRecovery={options.rebootRecovery}
@@ -95,6 +92,9 @@ function FlashTabInner({
                 <span className="inline-flex items-center gap-1.5">
                   <Badge variant="success" className="px-2 py-0">
                     F {selectedFlashCount}
+                  </Badge>
+                  <Badge variant="warning" className="px-2 py-0">
+                    Skip {plan.skippedCount}
                   </Badge>
                 </span>
               ) : loading ? (

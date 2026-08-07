@@ -9,6 +9,7 @@ interface FlashPlanConfirmDialogProps {
   onConfirm: () => void | Promise<void>;
   selectedPartitions: PartitionRow[];
   rebootRecoveryAfter: boolean;
+  skippedCount?: number;
   isPending?: boolean;
 }
 
@@ -18,12 +19,13 @@ export const FlashPlanConfirmDialog = memo(function FlashPlanConfirmDialog({
   onConfirm,
   selectedPartitions,
   rebootRecoveryAfter,
+  skippedCount = 0,
   isPending = false,
 }: FlashPlanConfirmDialogProps) {
   const rebootNotice = rebootRecoveryAfter
     ? "The device will reboot into recovery after flashing completes."
     : "";
-  const flashCount = selectedPartitions.filter((partition) => partition.action === "flash").length;
+  const selectedCount = selectedPartitions.length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -38,11 +40,11 @@ export const FlashPlanConfirmDialog = memo(function FlashPlanConfirmDialog({
         <div className="grid grid-cols-2 gap-2">
           <SummaryCard
             label="Selected"
-            value={`${selectedPartitions.length} partition${selectedPartitions.length === 1 ? "" : "s"}`}
+            value={`${selectedCount} partition${selectedCount === 1 ? "" : "s"}`}
           />
           <SummaryCard
-            label="Flash"
-            value={`${flashCount} partition${flashCount === 1 ? "" : "s"}`}
+            label="Skipped"
+            value={`${skippedCount} partition${skippedCount === 1 ? "" : "s"}`}
           />
         </div>
 
