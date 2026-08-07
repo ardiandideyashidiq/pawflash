@@ -12,6 +12,10 @@ pub enum FlashError {
     #[diagnostic(help("use --serial SERIAL to target the correct device"))]
     DeviceMismatch { expected: String, actual: String },
 
+    #[error("multiple fastboot devices found ({serials:?}); refusing to guess which to target")]
+    #[diagnostic(help("disconnect extra devices or use --serial SERIAL to target the correct device"))]
+    MultipleDevices { serials: Vec<String> },
+
     #[error("fastboot protocol: {0}")]
     Protocol(#[from] fastboot_protocol::nusb::NusbFastBootError),
 

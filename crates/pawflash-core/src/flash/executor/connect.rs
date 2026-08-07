@@ -10,7 +10,8 @@ use super::{BootTarget, expected_serial, FlashExecutor};
 
 impl FlashExecutor<NusbFastBoot> {
     /// # Errors
-    /// Returns `NoDevice` if no fastboot device is found, or
+    /// Returns `NoDevice` if no fastboot device is found,
+    /// `MultipleDevices` if several devices match and no serial pins one, or
     /// `DeviceMismatch` if the device serial does not match the expected value.
     pub async fn connect() -> Result<Self> {
         let expected = expected_serial();
@@ -20,11 +21,11 @@ impl FlashExecutor<NusbFastBoot> {
             .filter(|info| expected.is_none_or(|exp| info.serial_number() == Some(exp)))
             .collect();
         if all.len() > 1 {
-            warn!(
-                count = all.len(),
-                "multiple fastboot devices found – using the first one; \
-                 disconnect extras to avoid targeting the wrong device"
-            );
+            let serials: Vec<String> = all
+                .iter()
+                .filter_map(|info| info.serial_number().map(str::to_owned))
+                .collect();
+            return Err(FlashError::MultipleDevices { serials });
         }
         let info = all.into_iter().next().ok_or(FlashError::NoDevice)?;
         debug!(
