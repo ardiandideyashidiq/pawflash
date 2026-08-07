@@ -19,6 +19,7 @@ function FlashTabInner({
   onStartFlash,
   flashDisabled,
 }: FlasherTabProps) {
+  void connected;
   const {
     scatterPath,
     loadScatter,
@@ -88,35 +89,45 @@ function FlashTabInner({
         <div className="grid grid-cols-2 items-stretch gap-3 lg:grid-cols-4 lg:gap-4">
           <SummaryCard label="Chipset" value={plan?.chipset ?? "—"} />
           <SummaryCard label="Project" value={plan?.project ?? "—"} />
-          <SummaryCard
-            label="Actions"
-            value={
-              plan ? (
-                <span className="inline-flex items-center gap-1.5">
+          <div className="panel-inset flex h-12 items-center justify-around px-3">
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[10px] leading-tight font-medium uppercase tracking-wider text-muted-foreground">
+                Flash
+              </span>
+              <div className="text-sm leading-tight font-semibold">
+                {plan ? (
                   <Badge variant="success" className="px-2 py-0">
-                    F {selectedFlashCount}
+                    {selectedFlashCount}
                   </Badge>
+                ) : loading ? (
+                  "..."
+                ) : (
+                  "—"
+                )}
+              </div>
+            </div>
+            <div className="h-6 w-px bg-border/60" />
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[10px] leading-tight font-medium uppercase tracking-wider text-muted-foreground">
+                Skip
+              </span>
+              <div className="text-sm leading-tight font-semibold">
+                {plan ? (
                   <Badge variant="warning" className="px-2 py-0">
-                    Skip {plan.skippedCount}
+                    {plan.skippedCount}
                   </Badge>
-                </span>
-              ) : loading ? (
-                "Parsing..."
-              ) : (
-                "—"
-              )
-            }
-            accent
-          />
+                ) : loading ? (
+                  "..."
+                ) : (
+                  "—"
+                )}
+              </div>
+            </div>
+          </div>
           <div className="flex overflow-hidden">
             <FlashFab onClick={onStartFlash} disabled={flashDisabled} />
           </div>
         </div>
-        {!connected && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            No fastboot device connected — flash will wait for a device.
-          </p>
-        )}
       </div>
     </div>
   );
