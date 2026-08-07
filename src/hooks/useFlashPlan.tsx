@@ -31,6 +31,7 @@ export interface FlashPlanState {
   error: string | null;
   options: PlanOptions;
   loadScatter: (path: string) => void;
+  clearScatter: () => void;
   setIncludePreloader: (v: boolean) => void;
   setRebootRecovery: (v: boolean) => void;
   togglePartition: (name: string) => void;
@@ -156,6 +157,20 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(SCATTER_STORAGE_KEY, path);
   }, []);
 
+  const clearScatter = useCallback(() => {
+    requestRef.current += 1;
+    setPlan(null);
+    setSelected(new Set());
+    setError(null);
+    setLoading(false);
+    setScatterPath("");
+    setIncludePreloader(false);
+    setRebootRecovery(false);
+    lastScatterPathRef.current = "";
+    lastRowsRef.current = new Set();
+    window.localStorage.removeItem(SCATTER_STORAGE_KEY);
+  }, []);
+
   const togglePartition = useCallback((name: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -205,6 +220,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       error,
       options: { includePreloader, rebootRecovery },
       loadScatter,
+      clearScatter,
       setIncludePreloader,
       setRebootRecovery,
       togglePartition,
@@ -224,6 +240,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       includePreloader,
       rebootRecovery,
       loadScatter,
+      clearScatter,
       togglePartition,
       toggleAllPartitions,
       allSelected,

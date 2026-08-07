@@ -22,6 +22,7 @@ function FlashTabInner({
   const {
     scatterPath,
     loadScatter,
+    clearScatter,
     plan,
     loading,
     error,
@@ -45,6 +46,8 @@ function FlashTabInner({
         onIncludePreloaderChange={setIncludePreloader}
         rebootRecovery={options.rebootRecovery}
         onRebootRecoveryChange={setRebootRecovery}
+        onClear={clearScatter}
+        clearDisabled={!scatterPath}
       />
 
       <PartitionTable
