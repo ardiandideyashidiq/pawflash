@@ -178,12 +178,18 @@ export default function AppLayout({
               <div className="grid grid-cols-2 gap-2">
                 {themeOptions.map((option) => {
                   const Icon = option.icon;
+                  const active = theme === option.value;
                   return (
                     <Button
                       key={option.value}
-                      variant={theme === option.value ? "secondary" : "ghost"}
+                      variant={active ? "secondary" : "outline"}
                       size="icon-sm"
-                      className="w-full"
+                      className={cn(
+                        "w-full border transition-colors",
+                        active
+                          ? "border-primary/60 bg-primary/10 text-primary font-semibold"
+                          : "border-border/60 hover:border-border hover:bg-accent-soft/50",
+                      )}
                       aria-label={`Theme ${option.label}`}
                       title={option.label}
                       onClick={() => onThemeChange(option.value)}
@@ -207,9 +213,9 @@ export default function AppLayout({
                 <Terminal className="h-4 w-4" />
               </Button>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="icon-sm"
-                className="w-full"
+                className="w-full border border-border/60 hover:border-border hover:bg-accent-soft/50"
                 aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
                 onClick={() => onThemeChange((current) => (current === "light" ? "dark" : "light"))}
               >
