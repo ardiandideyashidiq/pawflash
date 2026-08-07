@@ -75,12 +75,11 @@ Affected commands: `force_fastboot`, `disable_vbmeta`, `execute_plan`, `flash_ra
 
 ## CI & release
 
-Two 2-phase workflows (matrix build → single release):
+Single 2-phase workflow (matrix build → one combined release):
 
 | Workflow | Trigger | Build targets | Release tag |
 |----------|---------|---------------|-------------|
-| `release.yml` | push to main | `pawflash` linux + windows | `release-YYYYMMDD-HHMMSS` |
-| `release-gui.yml` | changes to `src/`, `src-tauri/`, `package.json`, `pnpm-lock.yaml` | Tauri bundles linux + windows | `gui-release-YYYYMMDD-HHMMSS` |
+| `release.yml` | push to main | CLI `pawflash` linux + windows, Tauri bundles linux + windows | `release-YYYYMMDD-HHMMSS` |
 
 Shared setup: `.github/actions/setup/`. Linux build deps: `libudev-dev` (CLI), `libwebkit2gtk-4.1-dev` + `patchelf` (GUI).
 
