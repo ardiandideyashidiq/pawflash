@@ -61,6 +61,9 @@ pub enum ProgressEvent {
   Error { message: String },
   Cancelled { message: String },
   ForceFastbootStage { stage: String, message: String },
+  MtkPhase { phase: String, message: String },
+  MtkProgress { bytes: u64, total: u64 },
+  MtkDone { ok: bool, detail: String },
   Done { ok: bool, detail: String },
 }
 
@@ -525,6 +528,243 @@ async fn disable_vbmeta(on_event: Channel<ProgressEvent>, cancel: State<'_, Canc
   Ok(())
 }
 
+// ── MTK DA commands ─────────────────────────────────────────────────
+
+/// Status payload for the mtk bridge, returned by `mtk_status`.
+#[derive(Debug, Clone, Serialize)]
+pub struct MtkStatusPayload {
+  pub version: Option<String>,
+  pub path: Option<String>,
+  pub installed: bool,
+  pub device_visible: bool,
+  pub platform: String,
+}
+
+/// Map a core `MtkError` to a GUI-friendly string.
+fn mtk_err_string(e: &pawflash_core::mtk::MtkError) -> String {
+  match e {
+    pawflash_core::mtk::MtkError::DeviceBusy => {
+      "another pawflash process is using the device".to_string()
+    }
+    pawflash_core::mtk::MtkError::HashMismatch { .. } => {
+      "bridge download failed verification; try Download again".to_string()
+    }
+    pawflash_core::mtk::MtkError::MissingAsset { platform } => {
+      format!("no bridge asset for platform {platform}")
+    }
+    other => other.to_string(),
+  }
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn mtk_status(simulate: bool) -> Result<MtkStatusPayload, AppError> {
+  let platform = match pawflash_core::mtk::current_platform() {
+    Ok(p) => p,
+    Err(e) => return Err(AppError::Other { message: e.to_string() }),
+  };
+  let device_visible = if simulate {
+    false
+  } else {
+    pawflash_core::udev::device_visible().await
+  };
+  let version = if simulate { None } else { pawflash_core::mtk::current_version() };
+  let installed = version.is_some();
+  let path = version.as_ref().map(|_| {
+    let exe = if cfg!(target_os = "windows") { "bridge.exe" } else { "bridge" };
+    pawflash_core::mtk::install_root().join("bridge").join(exe).display().to_string()
+  });
+  Ok(MtkStatusPayload {
+    version,
+    path,
+    installed,
+    device_visible,
+    platform,
+  })
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn mtk_download(on_event: Channel<ProgressEvent>) -> Result<(), AppError> {
+  send_progress(&on_event, ProgressEvent::MtkPhase { phase: "manifest".into(), message: "Fetching bridge manifest...".into() });
+  let manifest = pawflash_core::mtk::fetch_manifest().map_err(|e| AppError::Other { message: mtk_err_string(&e) })?;
+  send_progress(&on_event, ProgressEvent::MtkPhase { phase: "download".into(), message: format!("Downloading {}...", manifest.version) });
+  let bin = tokio::task::spawn_blocking(move || pawflash_core::mtk::ensure_installed(&manifest))
+    .await
+    .map_err(|e| AppError::Other { message: e.to_string() })?
+    .map_err(|e| AppError::Other { message: mtk_err_string(&e) })?;
+  send_progress(&on_event, ProgressEvent::MtkDone { ok: true, detail: format!("installed at {}", bin.display()) });
+  Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn mtk_remove(on_event: Channel<ProgressEvent>) -> Result<(), AppError> {
+  let root = pawflash_core::mtk::install_root();
+  if !root.exists() {
+    send_progress(&on_event, ProgressEvent::MtkDone { ok: true, detail: "mtk bridge not installed".into() });
+    return Ok(());
+  }
+  std::fs::remove_dir_all(&root).map_err(|e| AppError::Other { message: e.to_string() })?;
+  send_progress(&on_event, ProgressEvent::MtkDone { ok: true, detail: "mtk bridge removed".into() });
+  Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn mtk_doctor(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<(), AppError> {
+  match pawflash_core::mtk::current_platform() {
+    Ok(p) => send_progress(&on_event, ProgressEvent::MtkPhase { phase: "platform".into(), message: format!("platform: {p}") }),
+    Err(e) => send_progress(&on_event, ProgressEvent::Error { message: e.to_string() }),
+  }
+  match pawflash_core::mtk::current_version() {
+    Some(v) => send_progress(&on_event, ProgressEvent::MtkPhase { phase: "bridge".into(), message: format!("bridge installed ({v})") }),
+    None => send_progress(&on_event, ProgressEvent::MtkPhase { phase: "bridge".into(), message: "bridge not installed".into() }),
+  }
+  #[cfg(target_os = "linux")]
+  {
+    if pawflash_core::udev::ensure_udev_rules() {
+      send_progress(&on_event, ProgressEvent::MtkPhase { phase: "udev".into(), message: "udev rules installed".into() });
+    } else {
+      send_progress(&on_event, ProgressEvent::Error { message: "udev rules not installed".into() });
+    }
+  }
+  #[cfg(target_os = "windows")]
+  {
+    match pawflash_core::mtk::ensure_usbdk() {
+      Ok(()) => send_progress(&on_event, ProgressEvent::MtkPhase { phase: "usbdk".into(), message: "usbdk present".into() }),
+      Err(e) => send_progress(&on_event, ProgressEvent::Error { message: e.to_string() }),
+    }
+  }
+  if !simulate {
+    let visible = pawflash_core::udev::device_visible().await;
+    send_progress(&on_event, ProgressEvent::MtkPhase { phase: "device".into(), message: if visible { "DA-capable device visible".into() } else { "no DA-capable device visible".into() } });
+  }
+  send_progress(&on_event, ProgressEvent::MtkDone { ok: true, detail: "doctor complete".into() });
+  Ok(())
+}
+
+/// Run a blocking core mtk op, translating events into `ProgressEvent`s.
+async fn run_mtk_op<F, T>(
+  on_event: &Channel<ProgressEvent>,
+  _simulate: bool,
+  op: F,
+) -> Result<T, AppError>
+where
+  F: FnOnce(&mut dyn FnMut(&pawflash_core::mtk::MtkEvent)) -> Result<T, pawflash_core::mtk::MtkError>
+    + Send
+    + 'static,
+  T: Send + 'static,
+{
+  let channel = on_event.clone();
+  tokio::task::spawn_blocking(move || {
+    let mut emit = |ev: &pawflash_core::mtk::MtkEvent| {
+      let _ = channel.send(match ev {
+        pawflash_core::mtk::MtkEvent::Phase { phase, message } => {
+          ProgressEvent::MtkPhase { phase: phase.clone(), message: message.clone() }
+        }
+        pawflash_core::mtk::MtkEvent::Start { total, partition } => {
+          ProgressEvent::MtkPhase { phase: "start".into(), message: format!("{partition}: {total} bytes") }
+        }
+        pawflash_core::mtk::MtkEvent::Progress { bytes } => {
+          ProgressEvent::MtkProgress { bytes: *bytes, total: 0 }
+        }
+        pawflash_core::mtk::MtkEvent::Log { level, message } => {
+          ProgressEvent::MtkPhase { phase: "log".into(), message: format!("[{level}] {message}") }
+        }
+        pawflash_core::mtk::MtkEvent::Result { ok, detail, .. } => {
+          ProgressEvent::MtkDone { ok: *ok, detail: detail.clone().unwrap_or_default() }
+        }
+        pawflash_core::mtk::MtkEvent::Error { message } => {
+          ProgressEvent::Error { message: message.clone() }
+        }
+      });
+    };
+    op(&mut emit)
+  })
+  .await
+  .map_err(|e| AppError::Other { message: e.to_string() })?
+  .map_err(|e| AppError::Other { message: mtk_err_string(&e) })
+}
+
+/// Resolve the manifest for a GUI mtk op (dummy when simulating).
+fn gui_manifest(simulate: bool) -> Result<pawflash_core::mtk::Manifest, AppError> {
+  if simulate {
+    return Ok(pawflash_core::mtk::Manifest {
+      version: "simulated".into(),
+      commit: String::new(),
+      platforms: HashMap::new(),
+    });
+  }
+  pawflash_core::mtk::fetch_manifest().map_err(|e| AppError::Other { message: mtk_err_string(&e) })
+}
+
+#[tracing::instrument(skip_all, fields(partition, simulate))]
+#[tauri::command]
+async fn mtk_read(
+  partition: String,
+  file: String,
+  parttype: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<u64, AppError> {
+  let parttype = parttype_from_str(&parttype)?;
+  let manifest = gui_manifest(simulate)?;
+  send_progress(&on_event, ProgressEvent::MtkPhase { phase: "read".into(), message: format!("Reading {partition} → {file}") });
+  run_mtk_op(&on_event, simulate, move |emit| {
+    pawflash_core::mtk::read_partition(&manifest, &partition, Path::new(&file), parttype, simulate, emit)
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(partition, simulate))]
+#[tauri::command]
+async fn mtk_write(
+  partition: String,
+  file: String,
+  parttype: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<u64, AppError> {
+  let parttype = parttype_from_str(&parttype)?;
+  let manifest = gui_manifest(simulate)?;
+  if !simulate && !Path::new(&file).exists() {
+    return Err(AppError::Other { message: format!("file not found: {file}") });
+  }
+  send_progress(&on_event, ProgressEvent::MtkPhase { phase: "write".into(), message: format!("Writing {file} → {partition}") });
+  run_mtk_op(&on_event, simulate, move |emit| {
+    pawflash_core::mtk::write_partition(&manifest, &partition, Path::new(&file), parttype, simulate, emit)
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(partition, simulate))]
+#[tauri::command]
+async fn mtk_erase(
+  partition: String,
+  parttype: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<(), AppError> {
+  let parttype = parttype_from_str(&parttype)?;
+  let manifest = gui_manifest(simulate)?;
+  send_progress(&on_event, ProgressEvent::MtkPhase { phase: "erase".into(), message: format!("Erasing {partition}") });
+  run_mtk_op(&on_event, simulate, move |emit| {
+    pawflash_core::mtk::erase_partition(&manifest, &partition, parttype, simulate, emit)
+  })
+  .await
+}
+
+fn parttype_from_str(s: &str) -> Result<pawflash_core::mtk::PartType, AppError> {
+  match s {
+    "user" => Ok(pawflash_core::mtk::PartType::User),
+    "boot1" => Ok(pawflash_core::mtk::PartType::Boot1),
+    "boot2" => Ok(pawflash_core::mtk::PartType::Boot2),
+    "rpmb" => Ok(pawflash_core::mtk::PartType::Rpmb),
+    other => Err(AppError::Other { message: format!("invalid parttype '{other}'") }),
+  }
+}
+
 // ── Scatter commands ──────────────────────────────────────────────────
 
 #[tracing::instrument(skip(cache), fields(path))]
@@ -804,7 +1044,13 @@ pub fn run() {
       cancel_flash,
       flash_raw_image,
       classify_partition,
-
+      mtk_status,
+      mtk_download,
+      mtk_remove,
+      mtk_doctor,
+      mtk_read,
+      mtk_write,
+      mtk_erase,
     ])
     .run(tauri::generate_context!())
     .expect("error while running pawflash");
@@ -854,5 +1100,22 @@ mod tests {
             serde_json::to_value(AppError::NoDevice { message: "nope".into() }).expect("serializes");
         assert_eq!(no_device["kind"], "NoDevice");
         assert_eq!(no_device["detail"]["message"], "nope");
+    }
+
+    #[test]
+    fn parttype_from_str_maps_valid_values() {
+        assert_eq!(parttype_from_str("user").unwrap(), pawflash_core::mtk::PartType::User);
+        assert_eq!(parttype_from_str("boot1").unwrap(), pawflash_core::mtk::PartType::Boot1);
+        assert_eq!(parttype_from_str("boot2").unwrap(), pawflash_core::mtk::PartType::Boot2);
+        assert_eq!(parttype_from_str("rpmb").unwrap(), pawflash_core::mtk::PartType::Rpmb);
+        assert!(parttype_from_str("bogus").is_err());
+    }
+
+    #[test]
+    fn mtk_progress_events_serialize_with_tag() {
+        let ev = ProgressEvent::MtkProgress { bytes: 1024, total: 4096 };
+        let v = serde_json::to_value(ev).unwrap();
+        assert_eq!(v["event"], "MtkProgress");
+        assert_eq!(v["data"]["bytes"], 1024);
     }
 }

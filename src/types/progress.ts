@@ -19,6 +19,9 @@ export type ProgressEvent =
   | { event: "Error"; data: { message: string } }
   | { event: "Cancelled"; data: { message: string } }
   | { event: "ForceFastbootStage"; data: { stage: string; message: string } }
+  | { event: "MtkPhase"; data: { phase: string; message: string } }
+  | { event: "MtkProgress"; data: { bytes: number; total: number } }
+  | { event: "MtkDone"; data: { ok: boolean; detail: string } }
   | { event: "Done"; data: { ok: boolean; detail: string } };
 
 export type ConsoleLevel = "info" | "success" | "error" | "warning" | "command" | "response";
