@@ -1118,4 +1118,37 @@ mod tests {
         assert_eq!(v["event"], "MtkProgress");
         assert_eq!(v["data"]["bytes"], 1024);
     }
+
+    #[test]
+    fn mtk_simulate_read_uses_simulated_runner() {
+        // Simulate mode must not require a manifest with real assets or an
+        // installed bridge: the dummy-manifest path resolves and the
+        // simulated runner emits a complete event stream.
+        let manifest = pawflash_core::mtk::Manifest {
+            version: "simulated".into(),
+            commit: String::new(),
+            platforms: HashMap::new(),
+        };
+        let mut events = Vec::new();
+        let bytes = pawflash_core::mtk::read_partition(
+            &manifest,
+            "boot",
+            Path::new("/tmp/boot.img"),
+            pawflash_core::mtk::PartType::User,
+            true, // simulate
+            &mut |e| events.push(e.clone()),
+        )
+        .expect("simulated read succeeds");
+        assert_eq!(bytes, 128 * 1024 * 1024);
+        assert!(
+            matches!(events.first(), Some(pawflash_core::mtk::MtkEvent::Phase { phase, .. })
+                if phase == "connect")
+        );
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                pawflash_core::mtk::MtkEvent::Result { ok: true, .. }
+            ))
+        );
+    }
 }
