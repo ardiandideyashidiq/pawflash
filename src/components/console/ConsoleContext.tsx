@@ -17,27 +17,31 @@ export const ConsoleContext = createContext<ConsoleContextType | null>(null);
 export function ConsoleProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<ConsoleEntry[]>([]);
   const nextId = useRef(0);
+  const lastEntryRef = useRef<ConsoleEntry | null>(null);
   const lastFlashPct = useRef<{ partition: string; pct: number }>({ partition: "", pct: -1 });
   const lastOverallPct = useRef<{ pct: number; at: number }>({ pct: -1, at: 0 });
 
   const addEntry = useCallback((entry: { text: string; level: ConsoleLevel }) => {
+    // Dedup and id allocation live outside the updater: React runs updaters
+    // twice in dev StrictMode, so mutating refs inside them would double-run.
+    const last = lastEntryRef.current;
+    if (
+      last &&
+      last.text === entry.text &&
+      Math.abs(Date.now() - last.timestamp) < 500
+    ) {
+      return;
+    }
+    const next: ConsoleEntry = {
+      id: nextId.current,
+      timestamp: Date.now(),
+      time: formatClockTime(Date.now()),
+      text: entry.text,
+      level: entry.level,
+    };
+    nextId.current += 1;
+    lastEntryRef.current = next;
     setEntries((prev) => {
-      const last = prev[prev.length - 1];
-      if (
-        last &&
-        last.text === entry.text &&
-        Math.abs(Date.now() - last.timestamp) < 500
-      ) {
-        return prev;
-      }
-      const next: ConsoleEntry = {
-        id: nextId.current,
-        timestamp: Date.now(),
-        time: formatClockTime(Date.now()),
-        text: entry.text,
-        level: entry.level,
-      };
-      nextId.current += 1;
       const all = [...prev, next];
       return all.length > MAX_ENTRIES ? all.slice(all.length - MAX_ENTRIES) : all;
     });
@@ -125,6 +129,7 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
   const clearConsole = useCallback(() => {
     setEntries([]);
     nextId.current = 0;
+    lastEntryRef.current = null;
     lastFlashPct.current = { partition: "", pct: -1 };
     lastOverallPct.current = { pct: -1, at: 0 };
   }, []);

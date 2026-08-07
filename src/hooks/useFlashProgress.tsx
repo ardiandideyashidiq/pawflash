@@ -110,32 +110,35 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
           statusText: event.data.message,
         }));
         break;
-      case "Flashing":
-        setState((prev) => {
-          const now = performance.now();
-          const prevSample = lastSampleRef.current;
-          let speedBps = 0;
-          if (prevSample && event.data.bytes >= prevSample.bytes) {
-            const dt = (now - prevSample.at) / 1000;
-            if (dt > 0) {
-              speedBps = (event.data.bytes - prevSample.bytes) / dt;
-            }
+      case "Flashing": {
+        // Compute the sample outside the updater: React runs updaters twice
+        // in dev StrictMode and commits the second result, so mutating the
+        // ref inside the updater would zero out the speed (prevSample would
+        // equal the current event). Event handlers are never double-invoked.
+        const now = performance.now();
+        const prevSample = lastSampleRef.current;
+        let speedBps = 0;
+        if (prevSample && event.data.bytes >= prevSample.bytes) {
+          const dt = (now - prevSample.at) / 1000;
+          if (dt > 0) {
+            speedBps = (event.data.bytes - prevSample.bytes) / dt;
           }
-          lastSampleRef.current = { bytes: event.data.bytes, at: now };
-          return {
-            ...prev,
-            phase: "flashing",
-            operation: event.data.operation === "erase" ? "erase" : "flash",
-            partition: event.data.partition,
-            bytes: event.data.bytes,
-            total: event.data.total,
-            speedBps,
-            overallBytes: event.data.overall_bytes,
-            overallTotal: event.data.overall_total,
-            statusText: "",
-          };
-        });
+        }
+        lastSampleRef.current = { bytes: event.data.bytes, at: now };
+        setState((prev) => ({
+          ...prev,
+          phase: "flashing",
+          operation: event.data.operation === "erase" ? "erase" : "flash",
+          partition: event.data.partition,
+          bytes: event.data.bytes,
+          total: event.data.total,
+          speedBps,
+          overallBytes: event.data.overall_bytes,
+          overallTotal: event.data.overall_total,
+          statusText: "",
+        }));
         break;
+      }
       case "FlashProgress":
         setState((prev) => ({ ...prev, partition: event.data.partition }));
         break;
