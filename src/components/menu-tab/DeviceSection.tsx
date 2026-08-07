@@ -7,6 +7,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { SectionCard } from "@/components/menu-tab/SectionCard";
 import { useConsole } from "@/hooks/useConsole";
 import { useFlashPhase } from "@/hooks/useFlashProgress";
+import { useSimulation } from "@/hooks/useSimulation";
 import type { ProgressEvent } from "@/types/progress";
 
 interface DeviceSectionProps {
@@ -26,13 +27,14 @@ export const DeviceSection = memo(function DeviceSection({
   const [busy, setBusy] = useState(false);
   const { addProgressEvent } = useConsole();
   const { reset } = useFlashPhase();
+  const { simulate } = useSimulation();
 
   const disableVbmeta = async () => {
     setBusy(true);
     try {
       const channel = new Channel<ProgressEvent>();
       channel.onmessage = addProgressEvent;
-      await invoke("disable_vbmeta", { onEvent: channel });
+      await invoke("disable_vbmeta", { simulate, onEvent: channel });
       reset();
       toast.success("Vbmeta disabled");
     } catch (error) {

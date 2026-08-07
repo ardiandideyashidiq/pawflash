@@ -284,4 +284,7 @@
   .dot-cancelled {
     background-color: var(--warning);
   }
+  .dot-simulated {
+    background-color: var(--color-trace-gold);
+  }
 }

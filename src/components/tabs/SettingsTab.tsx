@@ -1,4 +1,21 @@
+import { AlertTriangle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { useConsole } from "@/hooks/useConsole";
+import { useSimulation } from "@/hooks/useSimulation";
+
 export default function SettingsTab() {
+  const { simulate, setSimulate } = useSimulation();
+  const { addEntry } = useConsole();
+
+  const toggleSimulation = (v: boolean) => {
+    setSimulate(v);
+    addEntry({
+      text: v ? "SimulationMode Enabled" : "SimulationMode Disabled",
+      level: v ? "warning" : "info",
+    });
+  };
+
   return (
     <div className="max-w-sm max-sm:max-w-full space-y-3">
       <div className="panel-shell px-5 py-4 space-y-2">
@@ -7,6 +24,23 @@ export default function SettingsTab() {
         <InfoRow label="Stack" value="Tauri v2 + React 19 + Rust" />
         <InfoRow label="License" value="GPL-3.0-or-later" />
       </div>
+
+      <div className="panel-shell px-5 py-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <Checkbox
+            id="simulation-mode"
+            checked={simulate}
+            onCheckedChange={(v) => toggleSimulation(!!v)}
+          />
+          <Label htmlFor="simulation-mode">Simulation mode</Label>
+        </div>
+        <p className="flex items-start gap-2 text-caption leading-5 text-muted-foreground/80">
+          {simulate && <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />}
+          Run all device operations against a simulated device with realistic
+          USB and flash timing. No hardware is touched.
+        </p>
+      </div>
+
       <p className="text-caption text-muted-foreground/60 px-1 font-mono">
         · mtk device flashing toolkit
       </p>

@@ -1,6 +1,8 @@
 //! Tauri v2 desktop app for pawflash — exposes core flashing operations as
 //! IPC commands with progress reporting via `Channel<ProgressEvent>`.
 
+mod sim;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,6 +13,7 @@ use pawflash_core::flash::progress::{FlashRunOptions, FlashTransferEvent};
 use pawflash_core::flash::FlashExecutor;
 use pawflash_core::scatter_parser as sp;
 use serde::Serialize;
+use sim::{simulated_vars, AnyExecutor};
 use tauri::ipc::Channel;
 use tauri::State;
 use tracing::{debug, info, trace, warn};
@@ -143,9 +146,15 @@ fn send_progress(ch: &Channel<ProgressEvent>, event: ProgressEvent) {
 
 // ── Commands ──────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
-async fn get_device_info() -> Result<DeviceInfo, String> {
+async fn get_device_info(simulate: bool) -> Result<DeviceInfo, String> {
+  if simulate {
+    info!("simulated device info requested");
+    let vars = simulated_vars();
+    return Ok(DeviceInfo { connected: true, serial: Some("SIM000001".into()), vars });
+  }
+
   match FlashExecutor::connect().await {
     Ok(mut executor) => {
       let vars = executor.get_all_vars().await.map_err(|e| {
@@ -178,13 +187,20 @@ async fn wait_for_cancel(flag: &AtomicBool) {
   }
 }
 
-#[tracing::instrument(skip(on_event, cancel))]
+#[tracing::instrument(skip(on_event, cancel), fields(simulate))]
 #[tauri::command]
 async fn force_fastboot(
   on_event: Channel<ProgressEvent>,
   cancel: State<'_, CancelState>,
+  simulate: bool,
 ) -> Result<(), String> {
   cancel.force_fastboot.store(false, Ordering::Relaxed);
+
+  if simulate {
+    info!("simulated force fastboot");
+    send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
+    return run_simulated_force_fastboot(&on_event, &cancel).await;
+  }
 
   if pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
     info!("already in fastboot mode");
@@ -268,6 +284,53 @@ async fn force_fastboot(
   Ok(())
 }
 
+/// Simulated force-fastboot handshake: staged progress events with realistic
+/// timing, abortable via the cancellation flag.
+async fn run_simulated_force_fastboot(
+  on_event: &Channel<ProgressEvent>,
+  cancel: &CancelState,
+) -> Result<(), String> {
+  send_progress(
+    on_event,
+    ProgressEvent::ForceFastbootStage {
+      stage: "waiting_preloader".into(),
+      message: "Simulated: scanning for MediaTek preloader serial port...".into(),
+    },
+  );
+
+  tokio::select! {
+    () = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+    () = wait_for_cancel(&cancel.force_fastboot) => {
+      info!("simulated force fastboot cancelled while waiting for preloader");
+      send_progress(on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+      return Ok(());
+    }
+  }
+
+  send_progress(
+    on_event,
+    ProgressEvent::ForceFastbootStage {
+      stage: "sending".into(),
+      message: "Simulated: preloader found, sending FASTBOOT...".into(),
+    },
+  );
+  tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+  send_progress(
+    on_event,
+    ProgressEvent::ForceFastbootStage {
+      stage: "confirmed".into(),
+      message: "Fastboot mode confirmed (simulated).".into(),
+    },
+  );
+  info!("simulated force-fastboot handshake complete");
+  send_progress(
+    on_event,
+    ProgressEvent::Done { ok: true, detail: "Device now in fastboot mode (simulated)".into() },
+  );
+  Ok(())
+}
+
 #[tracing::instrument(skip(cancel))]
 #[tauri::command]
 async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), String> {
@@ -276,92 +339,80 @@ async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), Str
   Ok(())
 }
 
-#[tracing::instrument(skip_all, fields(target))]
+#[tracing::instrument(skip_all, fields(target, simulate))]
 #[tauri::command]
-async fn reboot_device(target: String) -> Result<(), String> {
-  let mut executor = FlashExecutor::connect().await.map_err(|e| {
-    warn!(error = %e, "connect failed");
-    e.to_string()
-  })?;
+async fn reboot_device(target: String, simulate: bool) -> Result<(), String> {
   let boot_target: BootTarget = target.parse().map_err(|e: String| e)?;
-  info!(?boot_target, "rebooting");
+  let mut executor = AnyExecutor::connect(simulate, None).await?;
+  info!(?boot_target, %simulate, "rebooting");
   executor.reboot_to(boot_target).await.map_err(|e| {
     warn!(?boot_target, error = %e, "reboot failed");
-    e.to_string()
+    e
   })
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
-async fn lock_bootloader() -> Result<String, String> {
-  let mut executor = FlashExecutor::connect().await.map_err(|e| {
-    warn!(error = %e, "connect failed");
-    e.to_string()
-  })?;
+async fn lock_bootloader(simulate: bool) -> Result<String, String> {
+  let mut executor = AnyExecutor::connect(simulate, None).await?;
   let resp = executor.flashing_lock().await.map_err(|e| {
     warn!(error = %e, "flashing lock failed");
-    e.to_string()
+    e
   })?;
-  info!(response = %resp, "bootloader locked");
+  info!(response = %resp, %simulate, "bootloader locked");
   Ok(resp)
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
-async fn unlock_bootloader() -> Result<String, String> {
-  let mut executor = FlashExecutor::connect().await.map_err(|e| {
-    warn!(error = %e, "connect failed");
-    e.to_string()
-  })?;
+async fn unlock_bootloader(simulate: bool) -> Result<String, String> {
+  let mut executor = AnyExecutor::connect(simulate, None).await?;
   let resp = executor.flashing_unlock().await.map_err(|e| {
     warn!(error = %e, "flashing unlock failed");
-    e.to_string()
+    e
   })?;
-  info!(response = %resp, "bootloader unlocked");
+  info!(response = %resp, %simulate, "bootloader unlocked");
   Ok(resp)
 }
 
-#[tracing::instrument(skip_all, fields(slot))]
+#[tracing::instrument(skip_all, fields(slot, simulate))]
 #[tauri::command]
-async fn set_active_slot(slot: String) -> Result<String, String> {
+async fn set_active_slot(slot: String, simulate: bool) -> Result<String, String> {
   if slot != "a" && slot != "b" {
     warn!(%slot, "invalid slot");
     return Err("slot must be 'a' or 'b'".into());
   }
-  let mut executor = FlashExecutor::connect().await.map_err(|e| {
-    warn!(error = %e, "connect failed");
-    e.to_string()
-  })?;
+  let mut executor = AnyExecutor::connect(simulate, None).await?;
   let resp = executor.set_active_slot(&slot).await.map_err(|e| {
     warn!(%slot, error = %e, "set_active_slot failed");
-    e.to_string()
+    e
   })?;
-  info!(%slot, response = %resp, "active slot set");
+  info!(%slot, response = %resp, %simulate, "active slot set");
   Ok(resp)
 }
 
-#[tracing::instrument(skip_all, fields(name))]
+#[tracing::instrument(skip_all, fields(name, simulate))]
 #[tauri::command]
-async fn get_var(name: String) -> Result<String, String> {
-  let mut executor = FlashExecutor::connect().await.map_err(|e| {
-    warn!(error = %e, "connect failed");
-    e.to_string()
-  })?;
+async fn get_var(name: String, simulate: bool) -> Result<String, String> {
+  let mut executor = AnyExecutor::connect(simulate, None).await?;
   let value = executor.get_var(&name).await.map_err(|e| {
     warn!(%name, error = %e, "get_var failed");
-    e.to_string()
+    e
   })?;
-  info!(%name, %value, "variable retrieved");
+  info!(%name, %value, %simulate, "variable retrieved");
   Ok(value)
 }
 
-#[tracing::instrument(skip(on_event))]
+#[tracing::instrument(skip(on_event), fields(simulate))]
 #[tauri::command]
-async fn disable_vbmeta(on_event: Channel<ProgressEvent>) -> Result<(), String> {
+async fn disable_vbmeta(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<(), String> {
   send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to device...".into() });
-  let mut executor = FlashExecutor::connect().await.map_err(|e| {
+  if simulate {
+    send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
+  }
+  let mut executor = AnyExecutor::connect(simulate, None).await.map_err(|e| {
     warn!(error = %e, "connect failed");
-    e.to_string()
+    e
   })?;
 
   // vbmeta is only flashable from bootloader fastboot, not fastbootd.
@@ -413,7 +464,7 @@ async fn build_plan(
   Ok(plan)
 }
 
-#[tracing::instrument(skip(on_event, options, cancel, cache), fields(path))]
+#[tracing::instrument(skip(on_event, options, cancel, cache), fields(path, simulate))]
 #[tauri::command]
 async fn execute_plan(
   path: String,
@@ -421,6 +472,7 @@ async fn execute_plan(
   on_event: Channel<ProgressEvent>,
   cancel: State<'_, CancelState>,
   cache: State<'_, ScatterCache>,
+  simulate: bool,
 ) -> Result<pawflash_core::flash::results::FlashResult, String> {
   cancel.flash.store(false, Ordering::Relaxed);
 
@@ -447,10 +499,15 @@ async fn execute_plan(
   }
 
   // Connect
-  send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to fastboot device...".into() });
-  let mut executor = FlashExecutor::connect().await.map_err(|e| {
+  if simulate {
+    send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
+    send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to simulated device...".into() });
+  } else {
+    send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to fastboot device...".into() });
+  }
+  let mut executor = AnyExecutor::connect(simulate, Some(parsed.as_ref())).await.map_err(|e| {
     warn!(error = %e, "execute_plan: connect failed");
-    e.to_string()
+    e
   })?;
 
   // Execute with live byte-level progress streaming.
@@ -532,17 +589,21 @@ async fn cancel_flash(cancel: State<'_, CancelState>) -> Result<(), String> {
   Ok(())
 }
 
-#[tracing::instrument(skip(on_event), fields(partition, image_path))]
+#[tracing::instrument(skip(on_event), fields(partition, image_path, simulate))]
 #[tauri::command]
 async fn flash_raw_image(
   partition: String,
   image_path: String,
   on_event: Channel<ProgressEvent>,
+  simulate: bool,
 ) -> Result<String, String> {
   send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to device...".into() });
-  let mut executor = FlashExecutor::connect().await.map_err(|e| {
+  if simulate {
+    send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
+  }
+  let mut executor = AnyExecutor::connect(simulate, None).await.map_err(|e| {
     warn!(error = %e, "connect failed");
-    e.to_string()
+    e
   })?;
 
   let path = Path::new(&image_path);

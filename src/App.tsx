@@ -12,6 +12,7 @@ import { FlashDialog } from "@/components/flash/FlashDialog";
 import { ForceFastbootDialog } from "@/components/flash/ForceFastbootDialog";
 import { RebootMenu, type RebootTarget } from "@/components/sidebar/RebootMenu";
 import { UIProvider, useUI } from "@/hooks/useUI";
+import { SimulationProvider, useSimulation } from "@/hooks/useSimulation";
 import { ConsoleProvider } from "@/components/console/ConsoleContext";
 import { useConsole } from "@/hooks/useConsole";
 import {
@@ -51,6 +52,7 @@ function buildDeviceSummary(info: DeviceInfo) {
 
 function AppRoot() {
   const { theme, setTheme } = useUI();
+  const { simulate } = useSimulation();
   const { addProgressEvent, addEntry } = useConsole();
   const flash = useFlashPhase();
   const force = useForceFastboot();
@@ -216,6 +218,7 @@ function AppRoot() {
           planState.options.includePreloader,
           planState.scatterPath,
         ),
+        simulate,
         onEvent: channel,
       });
       if (result.cancelled) {
@@ -224,7 +227,7 @@ function AppRoot() {
         addEntry({ text: "Rebooting into recovery after flash", level: "info" });
         toast.info("Rebooting into recovery...");
         try {
-          await invoke("reboot_device", { target: "recovery" });
+          await invoke("reboot_device", { target: "recovery", simulate });
         } catch (error) {
           toast.error(`Reboot failed: ${String(error)}`);
         }
@@ -240,6 +243,7 @@ function AppRoot() {
     flash,
     isStartingFlash,
     planState,
+    simulate,
   ]);
 
   const startForceFastboot = useCallback(async () => {
@@ -260,7 +264,7 @@ function AppRoot() {
     };
 
     try {
-      await invoke("force_fastboot", { onEvent: channel });
+      await invoke("force_fastboot", { simulate, onEvent: channel });
     } catch (error) {
       const message = String(error);
       addEntry({ text: `ForceFastboot StartError ${message}`, level: "error" });
@@ -268,7 +272,7 @@ function AppRoot() {
       force.reset();
       setForceOpen(false);
     }
-  }, [addEntry, addProgressEvent, force]);
+  }, [addEntry, addProgressEvent, force, simulate]);
 
   const startManualFlash = useCallback(
     async (partition: string, image: string) => {
@@ -292,6 +296,7 @@ function AppRoot() {
         await invoke("flash_raw_image", {
           partition,
           imagePath: image,
+          simulate,
           onEvent: channel,
         });
       } catch (error) {
@@ -301,7 +306,7 @@ function AppRoot() {
         setIsStartingFlash(false);
       }
     },
-    [addProgressEvent, flash, isStartingFlash],
+    [addProgressEvent, flash, isStartingFlash, simulate],
   );
 
   const cancelFlash = useCallback(async () => {
@@ -356,6 +361,20 @@ function AppRoot() {
 
   const sidebarStatus = (
     <div className="space-y-3">
+      {simulate && (
+        <div className="status-shell min-w-0 space-y-2 px-3 py-3">
+          <div className="flex min-w-0 items-center gap-2 text-sm">
+            <span className="dot-simulated inline-block h-2.5 w-2.5 shrink-0 rounded-full" />
+            <span className="truncate font-semibold uppercase tracking-wider text-trace-copper">
+              Simulated
+            </span>
+          </div>
+          <p className="text-xs leading-5 text-muted-foreground/80">
+            All operations run against a simulated device — no hardware is touched.
+          </p>
+        </div>
+      )}
+
       {activeFlashSession && (
         <div className="status-shell min-w-0 space-y-2 px-3 py-3">
           <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -517,16 +536,18 @@ function phaseLabel(phase: "idle" | "waiting" | "flashing" | "complete" | "cance
 
 export default function App() {
   return (
-    <UIProvider>
-      <ConsoleProvider>
-        <FlashProgressProvider>
-          <ForceFastbootProvider>
-            <FlashPlanProvider>
-              <AppRoot />
-            </FlashPlanProvider>
-          </ForceFastbootProvider>
-        </FlashProgressProvider>
-      </ConsoleProvider>
-    </UIProvider>
+    <SimulationProvider>
+      <UIProvider>
+        <ConsoleProvider>
+          <FlashProgressProvider>
+            <ForceFastbootProvider>
+              <FlashPlanProvider>
+                <AppRoot />
+              </FlashPlanProvider>
+            </ForceFastbootProvider>
+          </FlashProgressProvider>
+        </ConsoleProvider>
+      </UIProvider>
+    </SimulationProvider>
   );
 }
