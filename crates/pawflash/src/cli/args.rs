@@ -53,6 +53,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: crate::cli::mtk::MtkAction,
     },
+    /// Native DA-mode partition ops via the penumbra library
+    Penumbra {
+        #[command(subcommand)]
+        action: crate::cli::penumbra::PenumbraAction,
+    },
     /// Fastboot device operations
     Device {
         #[command(subcommand)]

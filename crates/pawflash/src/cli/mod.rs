@@ -10,6 +10,8 @@ pub mod device;
 pub mod disable_vbmeta;
 /// mtkclient DA-mode bridge CLI handler.
 pub mod mtk;
+/// penumbra native DA-mode CLI handler.
+pub mod penumbra;
 
 /// Interactive flash prompt flow.
 pub mod interactive;
