@@ -48,7 +48,7 @@ export default function AppLayout({
     () => [
       { id: "flasher", label: "Flasher", icon: Zap },
       { id: "menu", label: "Menu", icon: Wrench },
-      { id: "mtk", label: "MTK", icon: Cpu },
+      { id: "mtk", label: "mtkclient", icon: Cpu },
       { id: "extras", label: "Extras", icon: Search },
       { id: "about", label: "About", icon: Info },
     ],
