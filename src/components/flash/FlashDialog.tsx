@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { formatBytes, formatGiB, formatSpeed } from "@/lib/format";
+import { formatBytes, formatSpeed } from "@/lib/format";
 import { useFlashProgress, type FlashPhase } from "@/hooks/useFlashProgress";
 import {
   createDismissibleDialogRootHandler,
@@ -51,10 +51,7 @@ export const FlashDialog = memo(function FlashDialog({
         <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-stone-950/18 backdrop-blur-sm transition-opacity duration-150 data-closed:opacity-0 data-open:opacity-100" />
         <DialogPrimitive.Popup
           data-slot="flash-dialog"
-          className={cn(
-            "fixed top-1/2 left-1/2 z-50 flex w-[min(48rem,calc(100vw-1rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-md border border-border bg-background shadow-[var(--overlay-shadow)] pointer-events-auto outline-none transition-all duration-150 data-closed:scale-[0.99] data-closed:opacity-0 data-open:scale-100 data-open:opacity-100",
-            !isFinished && "min-h-[15rem]",
-          )}
+          className="fixed top-1/2 left-1/2 z-50 flex w-[min(38rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-md border border-border bg-background shadow-[var(--overlay-shadow)] pointer-events-auto outline-none transition-[height,opacity,transform] duration-200 ease-out data-closed:scale-[0.99] data-closed:opacity-0 data-open:scale-100 data-open:opacity-100"
         >
           <div className="grid gap-3 border-b border-border px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
             <div className="min-w-0">
@@ -88,11 +85,11 @@ export const FlashDialog = memo(function FlashDialog({
             </div>
           </div>
 
-          <div className="space-y-4 px-4 py-4">
+          <div className="space-y-3 px-4 py-3">
             {errorMessage && (phase === "error" || phase === "cancelled") && (
               <p
                 className={cn(
-                  "rounded-sm border px-3 py-2 text-sm break-words leading-6",
+                  "rounded-sm border px-3 py-2 text-xs break-words leading-5",
                   phase === "cancelled"
                     ? "border-warning/20 bg-warning/8 text-warning"
                     : "border-error/20 bg-error/8 text-error",
@@ -108,33 +105,24 @@ export const FlashDialog = memo(function FlashDialog({
               </p>
             )}
 
-            <div
-              className={cn(
-                "grid gap-3",
-                phase !== "complete"
-                  ? "lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)]"
-                  : "grid-cols-1",
-              )}
-            >
-              {phase !== "complete" && (
-                <section className="status-shell grid gap-4 px-4 py-4">
-                  <ProgressBlock
-                    label={currentProgressLabel(phase)}
-                    value={phase === "waiting" ? 0 : imagePct}
-                    toneClass={tone.bar}
-                    caption={currentProgressCaption(phase, partition, statusText)}
-                    amount={phase === "waiting" ? "" : formatBytesProgress(bytes, total)}
-                  />
-                  <div className="flex w-fit items-center justify-self-end text-right">
-                    <Metric
-                      label="Transfer speed"
-                      value={phase === "flashing" && speedBps > 0 ? formatSpeed(speedBps) : "—"}
-                    />
-                  </div>
-                </section>
-              )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <section className="status-shell space-y-3 px-3 py-3">
+                <ProgressBlock
+                  label={currentProgressLabel(phase)}
+                  value={phase === "complete" ? 100 : phase === "waiting" ? 0 : imagePct}
+                  toneClass={tone.bar}
+                  caption={currentProgressCaption(phase, partition, statusText)}
+                  amount={phase === "complete" ? "Finished" : phase === "waiting" ? "" : formatBytesProgress(bytes, total)}
+                />
+                <div className="flex items-center justify-between border-t border-border/50 pt-2 text-xs">
+                  <span className="text-muted-foreground">Speed</span>
+                  <span className="font-semibold tabular-nums">
+                    {phase === "flashing" && speedBps > 0 ? formatSpeed(speedBps) : "—"}
+                  </span>
+                </div>
+              </section>
 
-              <section className="status-shell space-y-4 px-4 py-4">
+              <section className="status-shell space-y-3 px-3 py-3">
                 <ProgressBlock
                   label="Overall progress"
                   value={overallPct}
@@ -142,17 +130,28 @@ export const FlashDialog = memo(function FlashDialog({
                   caption={overallCaption(phase, overallBytes, overallTotal)}
                   amount={overallTotal > 0 ? formatBytesProgress(overallBytes, overallTotal) : ""}
                 />
+                {summary ? (
+                  <div className="flex items-center justify-around border-t border-border/50 pt-2 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Done: </span>
+                      <span className="font-semibold text-success">{summary.flashed}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Skip: </span>
+                      <span className="font-semibold text-warning">{summary.skipped}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Fail: </span>
+                      <span className="font-semibold text-error">{summary.failed}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border-t border-border/50 pt-2 text-xs text-transparent select-none">
+                    —
+                  </div>
+                )}
               </section>
             </div>
-
-            {summary && (
-              <div className="grid grid-cols-2 gap-2">
-                <Metric label="Flashed" value={summary.flashed} />
-                <Metric label="Failed" value={summary.failed} />
-                <Metric label="Skipped" value={summary.skipped} />
-                <Metric label="Total" value={formatGiB(overallTotal)} />
-              </div>
-            )}
           </div>
         </DialogPrimitive.Popup>
       </DialogPrimitive.Portal>
@@ -190,14 +189,7 @@ function ProgressBlock({
   );
 }
 
-function Metric({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="status-shell px-3 py-2">
-      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-semibold tabular-nums">{value}</p>
-    </div>
-  );
-}
+
 
 function phaseTone(phase: FlashPhase) {
   switch (phase) {
