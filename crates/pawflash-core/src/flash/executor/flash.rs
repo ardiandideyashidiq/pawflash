@@ -10,7 +10,7 @@ use crate::flash::error::{FlashError, Result};
 use crate::flash::progress::{FlashRunOptions, FlashTransferEvent, TransferReporter};
 use crate::flash::results::{FlashOutcome, FlashResult};
 use crate::flash::transport::FlashTransport;
-use crate::scatter_parser::types::FlashPlan;
+use crate::scatter_parser::types::{FlashAction, FlashPlan};
 use super::FlashExecutor;
 use super::EMPTY_VBMETA;
 
@@ -145,6 +145,24 @@ impl<T: FlashTransport> FlashExecutor<T> {
         }
     }
 
+    /// Total bytes that will actually be transferred across the given actions:
+    /// the on-disk size of each image, not the scatter partition capacity.
+    /// Falls back to the partition size when an image cannot be statted, so the
+    /// overall denominator stays plan-wide constant and the bar is monotonic.
+    async fn overall_transfer_total(all_actions: &[&FlashAction]) -> u64 {
+        let mut total = 0;
+        for action in all_actions {
+            total += match action.image_resolved_path() {
+                Some(path) => match tokio::fs::metadata(path).await {
+                    Ok(meta) => meta.len(),
+                    Err(_) => u64::try_from(action.size).unwrap_or(0),
+                },
+                None => u64::try_from(action.size).unwrap_or(0),
+            };
+        }
+        total
+    }
+
     /// # Errors
     /// Returns an error if the fastboot query fails.
     pub async fn execute_plan(
@@ -183,12 +201,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         let current_bytes = AtomicU64::new(0);
         let mut cancelled = false;
 
-        // Nominal byte total across all plan actions. Used as the overall
-        // progress denominator so the bar is monotonic across partitions.
-        let plan_total: u64 = all_actions
-            .iter()
-            .filter_map(|a| u64::try_from(a.size).ok())
-            .sum();
+        let plan_total = Self::overall_transfer_total(&all_actions).await;
 
         for action in &all_actions {
             if opts.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {

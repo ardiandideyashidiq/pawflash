@@ -299,7 +299,8 @@ mod tests {
     async fn execute_plan_overall_progress_is_monotonic() {
         // The overall denominator must be a plan-wide constant (not
         // completed + current partition total), so the bar never regresses
-        // at a partition boundary.
+        // at a partition boundary. It is the sum of the on-disk image sizes
+        // actually transferred, not the scatter partition sizes.
         let dir = tempfile::TempDir::new().unwrap();
         let img_a = dir.path().join("boot_a.img");
         let img_b = dir.path().join("boot_b.img");
@@ -339,7 +340,7 @@ mod tests {
             1,
             "overall_total must be constant across partitions: {events:?}"
         );
-        assert_eq!(*totals.first().unwrap(), 12 * 1024 * 1024);
+        assert_eq!(*totals.first().unwrap(), 30);
         let mut prev = 0;
         for (bytes, _) in &events {
             assert!(*bytes >= prev, "overall_bytes must be non-decreasing: {events:?}");
