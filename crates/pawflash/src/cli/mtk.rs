@@ -177,6 +177,15 @@ fn run_doctor(simulate: bool) -> Result<()> {
         Err(e) => output::status::fail("manifest", format!("{e}")),
     }
 
+    #[cfg(target_os = "linux")]
+    {
+        if pawflash_core::udev::ensure_udev_rules() {
+            output::status::ok("udev", "rules installed");
+        } else {
+            output::status::fail("udev", "rules not installed (run as root or install manually)");
+        }
+    }
+
     output::status::ok("doctor", "checks complete");
     Ok(())
 }
