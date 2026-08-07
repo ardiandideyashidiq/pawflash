@@ -38,7 +38,7 @@ function FlashTabInner({
   } = useFlashPlan();
 
   return (
-    <div className="flex min-h-full min-h-0 flex-col gap-4 lg:gap-6">
+    <div className="flex h-full min-h-0 flex-col gap-4 lg:gap-6">
       <ScatterPicker path={scatterPath} onChange={loadScatter} />
 
       <FlashOptions
@@ -61,7 +61,7 @@ function FlashTabInner({
       />
 
       {error && (
-        <p className="flex items-start gap-2 rounded-md border border-error/20 bg-error/8 px-3 py-2 text-sm leading-6 text-error">
+        <p className="flex shrink-0 items-start gap-2 rounded-md border border-error/20 bg-error/8 px-3 py-2 text-sm leading-6 text-error">
           <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {error}
         </p>
