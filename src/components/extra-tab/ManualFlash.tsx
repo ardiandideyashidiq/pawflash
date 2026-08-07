@@ -1,6 +1,7 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, Send } from "lucide-react";
+import { AlertTriangle, FolderOpen, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,8 @@ interface ManualFlashProps {
   onManualFlash: (partition: string, imagePath: string) => Promise<void>;
 }
 
+const ACK_ROLES = new Set(["identity_or_calibration", "dangerous"]);
+
 export const ManualFlash = memo(function ManualFlash({
   disabled = false,
   flashing = false,
@@ -21,7 +24,29 @@ export const ManualFlash = memo(function ManualFlash({
   const [manualPartition, setManualPartition] = useState("");
   const [manualImage, setManualImage] = useState("");
   const [pickingImage, setPickingImage] = useState(false);
+  const [partitionRole, setPartitionRole] = useState<string | null>(null);
   const { addEntry } = useConsole();
+
+  useEffect(() => {
+    const name = manualPartition.trim();
+    if (!name) {
+      setPartitionRole(null);
+      return;
+    }
+    let cancelled = false;
+    invoke<string>("classify_partition", { name })
+      .then((role) => {
+        if (!cancelled) setPartitionRole(role);
+      })
+      .catch(() => {
+        if (!cancelled) setPartitionRole(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [manualPartition]);
+
+  const needsAck = partitionRole !== null && ACK_ROLES.has(partitionRole);
 
   const manualDisabled = disabled || flashing || !manualPartition.trim() || !manualImage;
 
@@ -73,6 +98,13 @@ export const ManualFlash = memo(function ManualFlash({
         aria-label="Manual flash partition"
         disabled={disabled || flashing}
       />
+      {needsAck && (
+        <p className="flex items-start gap-2 leading-6 text-warning">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {manualPartition.trim()} is a {partitionRole} partition; raw-flashing it can
+          brick or wipe the device.
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
         <Button
           variant="outline"

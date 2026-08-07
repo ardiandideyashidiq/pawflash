@@ -83,6 +83,7 @@ pub async fn run(
     image: Option<PathBuf>,
     slot: Option<String>,
     both: bool,
+    force: bool,
     simulate: bool,
 ) -> Result<()> {
     match action {
@@ -158,7 +159,7 @@ pub async fn run(
                 print_flash_help()?;
                 return Ok(());
             };
-            raw::run_raw_image(&partition, &image, slot, both, simulate).await?;
+            raw::run_raw_image(&partition, &image, slot, both, force, simulate).await?;
         }
     }
 

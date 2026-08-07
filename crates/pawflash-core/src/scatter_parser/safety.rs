@@ -175,6 +175,16 @@ pub fn role_for_name(name: &str) -> String {
     .to_string()
 }
 
+/// True when raw-flashing `name` requires explicit acknowledgement because the
+/// partition is identity/calibration or dangerous to overwrite.
+#[must_use]
+pub fn requires_raw_flash_ack(name: &str) -> bool {
+    matches!(
+        role_for_name(name).as_str(),
+        "identity_or_calibration" | "dangerous"
+    )
+}
+
 fn matches_numbered(value: &str, prefix: &str) -> bool {
     value.len() == prefix.len() + 1
         && value.starts_with(prefix)
@@ -315,5 +325,30 @@ mod tests {
     #[test]
     fn role_for_name_should_classify_cust_as_regional() {
         assert_eq!(role_for_name("cust"), "regional_or_branding");
+    }
+
+    #[test]
+    fn requires_raw_flash_ack_should_flag_nvram() {
+        assert!(requires_raw_flash_ack("nvram"));
+    }
+
+    #[test]
+    fn requires_raw_flash_ack_should_flag_gpt() {
+        assert!(requires_raw_flash_ack("gpt"));
+    }
+
+    #[test]
+    fn requires_raw_flash_ack_should_flag_frp() {
+        assert!(requires_raw_flash_ack("frp"));
+    }
+
+    #[test]
+    fn requires_raw_flash_ack_should_allow_userdata() {
+        assert!(!requires_raw_flash_ack("userdata"));
+    }
+
+    #[test]
+    fn requires_raw_flash_ack_should_allow_boot() {
+        assert!(!requires_raw_flash_ack("boot"));
     }
 }

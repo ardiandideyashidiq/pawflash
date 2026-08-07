@@ -638,6 +638,14 @@ async fn flash_raw_image(
 
   send_progress(&on_event, ProgressEvent::Phase { phase: "flashing".into(), message: format!("Flashing {target}...") });
   debug!(%target, %image_path, "flashing raw image");
+  if pawflash_core::scatter_parser::safety::requires_raw_flash_ack(&target) {
+    let role = pawflash_core::scatter_parser::safety::role_for_name(&target);
+    warn!(%target, %role, "refusing raw flash of safety-critical partition without confirmation");
+    send_progress(&on_event, ProgressEvent::Error {
+      message: format!("{target} is a {role} partition; raw-flashing it can brick or wipe the device."),
+    });
+    return Err(format!("{target} is a {role} partition; refusing without explicit confirmation"));
+  }
   let resp = executor.flash_raw_image(&target, path).await.map_err(|e| {
     warn!(%target, error = %e, "flash_raw_image failed");
     e.to_string()
@@ -650,6 +658,12 @@ async fn flash_raw_image(
   Ok(resp)
 }
 
+/// Role label for a partition name, surfaced in the ManualFlash UI so the
+/// operator sees the risk before pressing the flash button.
+#[tauri::command]
+fn classify_partition(name: String) -> String {
+  pawflash_core::scatter_parser::safety::role_for_name(&name)
+}
 
 // ── App entry ─────────────────────────────────────────────────────────
 
@@ -675,6 +689,7 @@ pub fn run() {
       execute_plan,
       cancel_flash,
       flash_raw_image,
+      classify_partition,
 
     ])
     .run(tauri::generate_context!())

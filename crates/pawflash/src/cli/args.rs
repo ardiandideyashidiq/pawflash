@@ -40,6 +40,10 @@ pub enum Commands {
         /// Flash to both a and b slots (raw mode only, mutually exclusive with --slot)
         #[arg(long)]
         both: bool,
+        /// Bypass the raw-flash safety guard for identity/calibration or
+        /// dangerous partitions (raw mode only)
+        #[arg(long)]
+        force: bool,
     },
     /// Flash empty vbmeta to both slots, disabling dm-verity and AVB verification
     #[command(name = "disable-vbmeta")]

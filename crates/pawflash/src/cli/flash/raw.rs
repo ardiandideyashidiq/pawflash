@@ -9,12 +9,14 @@ use tracing::{debug, info, warn};
 use pawflash_core::flash::executor::FlashExecutor;
 use pawflash_core::flash::simulate::SimulatedTransport;
 use pawflash_core::output;
+use pawflash_core::scatter_parser::safety::requires_raw_flash_ack;
 
 pub(super) async fn run_raw_image(
     partition: &str,
     image: &Path,
     slot: Option<String>,
     both: bool,
+    force: bool,
     simulate: bool,
 ) -> Result<()> {
     if both && slot.is_some() {
@@ -45,7 +47,7 @@ pub(super) async fn run_raw_image(
         ]);
         let transport = SimulatedTransport::new(vars.clone());
         let mut executor = FlashExecutor::new(transport, vars);
-        return do_raw_flash(&mut executor, partition, &image, slot, both).await;
+        return do_raw_flash(&mut executor, partition, &image, slot, both, force).await;
     }
 
     let mut executor = output::spinner::run_with_spinner(
@@ -54,7 +56,7 @@ pub(super) async fn run_raw_image(
     )
     .await?;
 
-    do_raw_flash(&mut executor, partition, &image, slot, both).await
+    do_raw_flash(&mut executor, partition, &image, slot, both, force).await
 }
 
 /// Strip an existing `_a`/`_b` slot suffix so `--both`/`--slot` on a
@@ -73,8 +75,16 @@ async fn do_raw_flash<T: pawflash_core::flash::transport::FlashTransport>(
     image: &Path,
     slot: Option<String>,
     both: bool,
+    force: bool,
 ) -> Result<()> {
     let base = base_partition(partition);
+    if requires_raw_flash_ack(base) && !force {
+        bail!(
+            "{base} is a {role} partition; raw-flashing it can brick or wipe the device. \
+             Re-run with --force to proceed.",
+            role = pawflash_core::scatter_parser::safety::role_for_name(base),
+        );
+    }
     let has_slot_suffix = base != partition;
     let targets: Vec<String> = if both {
         vec![format!("{base}_a"), format!("{base}_b")]

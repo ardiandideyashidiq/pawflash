@@ -34,8 +34,8 @@ async fn run(cli: Cli) -> miette::Result<()> {
         Some(Commands::ForceFastboot) => {
             pawflash::cli::force_fastboot::run(simulate).await?;
         }
-        Some(Commands::Flash { action, partition, image, slot, both }) => {
-            pawflash::cli::flash::run(action, partition, image, slot, both, simulate).await?;
+        Some(Commands::Flash { action, partition, image, slot, both, force }) => {
+            pawflash::cli::flash::run(action, partition, image, slot, both, force, simulate).await?;
         }
         Some(Commands::DisableVbmeta) => {
             pawflash::cli::disable_vbmeta::run(simulate).await?;
