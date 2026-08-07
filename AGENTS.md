@@ -23,13 +23,18 @@ pnpm tauri dev                           # Tauri dev server
 
 `--serial <sn>` verifies the connected device matches; `--simulate` runs every command against a mock device (real disk I/O, realistic timing) — use it for safe end-to-end runs without hardware (see `crates/pawflash/src/cli/simulate.rs`).
 
+## DA-mode subcommands
+
+- `pawflash mtkclient` — DA ops via the frozen Python bridge sidecar (`crates/pawflash-core/src/mtk/`).
+- `pawflash penumbra` — native DA ops via the in-process `penumbra` crate (fork `ardiandideyashidiq/penumbra`, git dep pinned by `rev`). DA files (`DA/<brand>/<chipset>.bin`) are resolved from the fork's `DA/manifest.json` by device name; the last selection is persisted in `pawflash/penumbra/state.json`. Core: `crates/pawflash-core/src/penumbra/`; CLI: `crates/pawflash/src/cli/penumbra.rs`; GUI: `PenumbraTab.tsx` + `penumbra_*` commands. Shared `base_data_dir()` in `penumbra/platform.rs`; mtk and penumbra share the device lock.
+
 ## Project structure
 
 ```
 pawflash/
 ├── Cargo.toml                        → workspace: core, pawflash, src-tauri
 ├── crates/pawflash-core/             → domain: flash/, force_fastboot/,
-│                                        scatter_parser/, output/
+│                                        scatter_parser/, output/, mtk/, penumbra/
 ├── src-tauri/                        → Tauri v2 backend (lib.rs has commands, ProgressEvent)
 ├── src/                              → React 19 + Tailwind v4 frontend
 │   ├── components/{console,layout,tabs,ui}/
@@ -49,7 +54,7 @@ channel.onmessage = (event) => addProgressEvent(event);
 await invoke("force_fastboot", { onEvent: channel });
 ```
 
-Affected commands: `force_fastboot`, `disable_vbmeta`, `execute_plan`, `flash_raw_image`. Omitting `on_event` causes silent runtime errors.
+Affected commands: `force_fastboot`, `disable_vbmeta`, `execute_plan`, `flash_raw_image`, `mtk_*`, `penumbra_*`. Omitting `on_event` causes silent runtime errors.
 
 `ProgressEvent` uses `#[serde(tag = "event", content = "data")]` — TS discriminated union mirrored in `src/types/progress.ts`.
 
