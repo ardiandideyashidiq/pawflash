@@ -13,7 +13,33 @@ permissions:
   contents: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+        with:
+          deps: all
+
+      - name: Test core and CLI crates
+        run: cargo test -p pawflash-core -p pawflash
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint frontend
+        run: pnpm lint
+
+      - name: Typecheck frontend
+        run: pnpm lint:tsc
+
   build:
+    needs: [check]
     strategy:
       matrix:
         include:
@@ -35,8 +61,8 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
-      - name: Build CLI and GUI binaries
-        run: cargo build --release -p pawflash -p pawflash-gui
+      - name: Build CLI
+        run: cargo build --release -p pawflash
 
       - name: Bundle GUI
         run: pnpm tauri build
