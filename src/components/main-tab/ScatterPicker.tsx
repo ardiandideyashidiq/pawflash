@@ -44,7 +44,7 @@ export const ScatterPicker = memo(function ScatterPicker({
       onChange(selected);
       toast.success(`Scatter loaded: ${name}`);
     } catch (error) {
-      toast.error(String(error));
+      toast.error(errorMessage(error));
     } finally {
       setPicking(false);
     }

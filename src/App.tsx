@@ -225,11 +225,11 @@ function AppRoot() {
         try {
           await invoke("reboot_device", { target: "recovery", simulate });
         } catch (error) {
-          toast.error(`Reboot failed: ${String(error)}`);
+          toast.error(`Reboot failed: ${errorMessage(error)}`);
         }
       }
     } catch (error) {
-      flash.fail(String(error));
+      flash.fail(errorMessage(error));
     } finally {
       setIsStartingFlash(false);
     }
@@ -261,7 +261,7 @@ function AppRoot() {
     try {
       await invoke("force_fastboot", { simulate, onEvent: channel });
     } catch (error) {
-      const message = String(error);
+      const message = errorMessage(error);
       addEntry({ text: `ForceFastboot StartError ${message}`, level: "error" });
       toast.error(message);
       force.reset();
@@ -294,7 +294,7 @@ function AppRoot() {
           onEvent: channel,
         });
       } catch (error) {
-        flash.fail(String(error));
+        flash.fail(errorMessage(error));
         throw error;
       } finally {
         setIsStartingFlash(false);
@@ -313,7 +313,7 @@ function AppRoot() {
       await invoke("cancel_flash");
     } catch (error) {
       setIsCancellingFlash(false);
-      flash.fail(String(error));
+      flash.fail(errorMessage(error));
     }
   }, [addEntry, flash, isCancellingFlash]);
 
@@ -326,7 +326,7 @@ function AppRoot() {
       await invoke("cancel_force_fastboot");
     } catch (error) {
       setIsCancellingForceFastboot(false);
-      toast.error(String(error));
+      toast.error(errorMessage(error));
     }
   }, [addEntry, isCancellingForceFastboot]);
 

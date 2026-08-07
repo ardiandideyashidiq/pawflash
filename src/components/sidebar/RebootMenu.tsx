@@ -6,6 +6,7 @@ import { useDevice } from "@/hooks/useDevice";
 import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
 import { cn } from "@/lib/utils";
+import { errorMessage } from "@/types/api";
 
 export type RebootTarget = "system" | "bootloader" | "fastbootd" | "recovery";
 
@@ -57,7 +58,7 @@ export const RebootMenu = memo(function RebootMenu({
       await reboot(nextTarget);
       toast.success(successLabels[nextTarget]);
     } catch (error) {
-      toast.error(String(error));
+      toast.error(errorMessage(error));
     } finally {
       setBusy(false);
     }

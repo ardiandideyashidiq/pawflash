@@ -9,6 +9,7 @@ import { useConsole } from "@/hooks/useConsole";
 import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useSimulation } from "@/hooks/useSimulation";
 import type { ProgressEvent } from "@/types/progress";
+import { errorMessage } from "@/types/api";
 
 interface DeviceSectionProps {
   onForceFastboot: () => void;
@@ -38,7 +39,7 @@ export const DeviceSection = memo(function DeviceSection({
       reset();
       toast.success("Vbmeta disabled");
     } catch (error) {
-      toast.error(String(error));
+      toast.error(errorMessage(error));
     } finally {
       setBusy(false);
       setOpen(false);

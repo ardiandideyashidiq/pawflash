@@ -13,12 +13,23 @@ export type AppError =
 /** Extract a readable message from a thrown value that may be an `AppError`
  * DTO, an `Error`, or a plain string. */
 export function errorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "kind" in error) {
-    const detail = (error as { detail?: { message?: string } }).detail;
-    if (detail?.message) return detail.message;
-    return String((error as { kind?: string }).kind);
-  }
   if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    if ("kind" in error) {
+      const detail = (error as { detail?: { message?: string } }).detail;
+      if (detail?.message) return detail.message;
+      const kind = (error as { kind?: unknown }).kind;
+      if (typeof kind === "string" && kind) return kind;
+    }
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+    try {
+      const json = JSON.stringify(error);
+      if (json && json !== "{}") return json;
+    } catch {
+      return String(error);
+    }
+  }
   return String(error);
 }
 

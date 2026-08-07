@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { SectionCard } from "@/components/menu-tab/SectionCard";
 import { useDevice } from "@/hooks/useDevice";
 import { useConsole } from "@/hooks/useConsole";
+import { errorMessage } from "@/types/api";
 
 export function BootloaderSection({ disabled = false }: { disabled?: boolean }) {
   const { unlockBootloader, lockBootloader } = useDevice();
@@ -22,8 +23,8 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
       addEntry({ text: `${action} Complete`, level: "success" });
       toast.success(successMsg);
     } catch (e) {
-      addEntry({ text: `${action} Error ${e}`, level: "error" });
-      toast.error(String(e));
+      addEntry({ text: `${action} Error ${errorMessage(e)}`, level: "error" });
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }

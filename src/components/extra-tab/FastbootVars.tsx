@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/menu-tab/SectionCard";
 import { useDevice } from "@/hooks/useDevice";
 import { useConsole } from "@/hooks/useConsole";
+import { errorMessage } from "@/types/api";
 
 interface FastbootVarsProps {
   disabled?: boolean;
@@ -36,8 +37,8 @@ export const FastbootVars = memo(function FastbootVars({
       setVariableOutput(value);
       addEntry({ text: `Getvar Complete ${trimmed}`, level: "success" });
     } catch (error) {
-      addEntry({ text: `Getvar Error ${trimmed} ${error}`, level: "error" });
-      toast.error(String(error));
+      addEntry({ text: `Getvar Error ${trimmed} ${errorMessage(error)}`, level: "error" });
+      toast.error(errorMessage(error));
     } finally {
       setReading(false);
     }
@@ -55,8 +56,8 @@ export const FastbootVars = memo(function FastbootVars({
         addEntry({ text: "GetvarAll Complete", level: "success" });
       }
     } catch (error) {
-      addEntry({ text: `GetvarAll Error ${error}`, level: "error" });
-      toast.error(String(error));
+      addEntry({ text: `GetvarAll Error ${errorMessage(error)}`, level: "error" });
+      toast.error(errorMessage(error));
     } finally {
       setReading(false);
     }

@@ -16,6 +16,7 @@ import type {
   PartitionRow,
 } from "@/types/api";
 import { buildFlashPlanOptions } from "@/lib/plan";
+import { errorMessage } from "@/types/api";
 
 const SCATTER_STORAGE_KEY = "last-scatter-path";
 
@@ -131,7 +132,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       if (requestRef.current !== requestId) return;
       setPlan(null);
       setSelected(new Set());
-      setError(String(e));
+      setError(errorMessage(e));
       // Reset the selection-tracking refs so the next successful refresh
       // defaults to all-selected instead of treating the cleared `selected`
       // as a deliberate user choice and leaving every known row unselected.

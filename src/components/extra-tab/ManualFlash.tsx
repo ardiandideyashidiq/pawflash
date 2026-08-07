@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SectionCard } from "@/components/menu-tab/SectionCard";
 import { useConsole } from "@/hooks/useConsole";
+import { errorMessage } from "@/types/api";
 
 interface ManualFlashProps {
   disabled?: boolean;
@@ -66,7 +67,7 @@ export const ManualFlash = memo(function ManualFlash({
         });
       }
     } catch (error) {
-      toast.error(String(error));
+      toast.error(errorMessage(error));
     } finally {
       setPickingImage(false);
     }
@@ -85,7 +86,7 @@ export const ManualFlash = memo(function ManualFlash({
     try {
       await onManualFlash(partition, manualImage);
     } catch (error) {
-      toast.error(String(error));
+      toast.error(errorMessage(error));
     }
   };
 

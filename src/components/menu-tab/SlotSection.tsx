@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { SectionCard } from "@/components/menu-tab/SectionCard";
 import { useDevice } from "@/hooks/useDevice";
 import { useConsole } from "@/hooks/useConsole";
+import { errorMessage } from "@/types/api";
 
 export function SlotSection({ disabled = false }: { disabled?: boolean }) {
   const { setActiveSlot } = useDevice();
@@ -19,8 +20,8 @@ export function SlotSection({ disabled = false }: { disabled?: boolean }) {
       addEntry({ text: `SetActiveSlot ${slot.toUpperCase()} Complete`, level: "success" });
       toast.success(`Active slot set to ${slot.toUpperCase()}`);
     } catch (error) {
-      addEntry({ text: `SetActiveSlot ${slot.toUpperCase()} Error ${error}`, level: "error" });
-      toast.error(String(error));
+      addEntry({ text: `SetActiveSlot ${slot.toUpperCase()} Error ${errorMessage(error)}`, level: "error" });
+      toast.error(errorMessage(error));
     } finally {
       setBusySlot(null);
     }
