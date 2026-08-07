@@ -1,22 +1,36 @@
-import { AlertTriangle, Code2, ExternalLink, Terminal } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
+import { AlertTriangle, Code2, Cpu, ExternalLink, ShieldCheck, Terminal, Zap } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useConsole } from "@/hooks/useConsole";
 import { useSimulation } from "@/hooks/useSimulation";
 
 const CREDITS = [
   {
+    name: "pawflash",
+    author: "ardiandideyashidiq",
+    url: "https://github.com/ardiandideyashidiq/pawflash",
+    description: "Official pawflash repository.",
+    icon: Zap,
+  },
+  {
+    name: "fastboot-rs",
+    author: "boardswarm",
+    url: "https://github.com/boardswarm/fastboot-rs",
+    description: "Rust fastboot protocol library and utilities. Powers pawflash's fastboot engine.",
+    icon: Cpu,
+  },
+  {
     name: "penumbra",
     author: "shomykohai",
     url: "https://github.com/shomykohai/penumbra/",
-    description: "MTK flash tool written in Rust. Native in-process DA driver for MediaTek chipset flashing.",
+    description: "MTK flash tool written in Rust. Native in-process DA driver for MediaTek devices.",
     icon: Code2,
   },
   {
     name: "mtkclient",
     author: "bkerler",
     url: "https://github.com/bkerler/mtkclient",
-    description: "MediaTek Flash and Repair Utility. Exploitation, low-level BROM/DA mode flashing, and repair tool.",
+    description: "MediaTek Flash and Repair Utility. Exploitation, low-level BROM/DA mode tool.",
     icon: Terminal,
   },
 ];
@@ -38,21 +52,13 @@ export default function AboutTab() {
   };
 
   return (
-    <div className="max-w-md max-sm:max-w-full space-y-4">
-      {/* App Info Panel */}
-      <div className="panel-shell px-5 py-4 space-y-2">
-        <InfoRow label="Name" value="pawflash" />
-        <InfoRow label="Version" value="0.1.0" />
-        <InfoRow label="Stack" value="Tauri v2 + React 19 + Rust" />
-        <InfoRow label="License" value="GPL-3.0-or-later" />
-      </div>
-
-      {/* Credits Section */}
+    <div className="relative min-h-full flex flex-col gap-4 w-full">
+      {/* OPEN SOURCE CREDITS 2x2 GRID */}
       <div className="space-y-2">
         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80 px-1">
           Powered By Open Source
         </h4>
-        <div className="grid gap-2.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {CREDITS.map((credit) => {
             const Icon = credit.icon;
             return (
@@ -93,39 +99,37 @@ export default function AboutTab() {
         </div>
       </div>
 
-      {/* Simulation Mode Toggle */}
+      {/* SIMULATION MODE TOGGLE CARD (BELOW CREDITS GRID) */}
       {available && (
-        <div className="panel-shell px-5 py-4 space-y-3">
-          <div className="flex items-center gap-3">
-            <Checkbox
+        <div className="panel-shell p-4 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="h-4.5 w-4.5 text-primary" />
+              <div>
+                <Label htmlFor="simulation-mode" className="text-xs font-semibold cursor-pointer">
+                  Simulation Mode
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Simulate device hardware I/O operations safely
+                </p>
+              </div>
+            </div>
+            <Switch
               id="simulation-mode"
               checked={simulate}
-              onCheckedChange={(v) => toggleSimulation(!!v)}
+              onCheckedChange={(v) => toggleSimulation(v)}
             />
-            <Label htmlFor="simulation-mode">Simulation mode</Label>
           </div>
-          <p className="flex items-start gap-2 text-caption leading-5 text-muted-foreground/80">
-            {simulate && <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />}
-            Run all device operations against a simulated device with realistic
-            USB and flash timing. No hardware is touched.
-          </p>
+          {simulate && (
+            <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>SIMULATED MODE ACTIVE — real device I/O is bypassed.</span>
+            </div>
+          )}
         </div>
       )}
-
-      <p className="text-caption text-muted-foreground/60 px-1 font-mono">
-        · mtk device flashing toolkit
-      </p>
     </div>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="text-caption font-display font-medium uppercase tracking-wider text-muted-foreground/70">
-        {label}
-      </span>
-      <span className="text-body text-foreground/90 text-right">{value}</span>
-    </div>
-  );
-}
+
