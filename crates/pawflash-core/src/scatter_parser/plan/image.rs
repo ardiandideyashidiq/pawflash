@@ -71,9 +71,9 @@ pub(super) fn checked_image_status(
                 if let Ok(size) = i64::try_from(meta.len()) {
                     status["size_bytes"] = json!(size);
                     status["size_human"] = json!(human_size(size));
-                    status["fits_partition"] = json!(size <= target_size);
+                    status["fits_partition"] = json!(target_size == 0 || size <= target_size);
                     status["magic"] = json!(image_magic(std::path::Path::new(path)));
-                    if size > target_size {
+                    if target_size > 0 && size > target_size {
                         warnings.push(format!(
                             "image is larger than partition: {size} > {target_size}"
                         ));
@@ -116,4 +116,45 @@ pub(super) fn recheck_synthesized_image(
     warnings.append(&mut status_warnings);
     image["status"] = status;
     (Some(image), warnings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_images_should_treat_zero_size_partition_as_unbounded() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let image_path = dir.path().join("boot.img");
+        std::fs::write(&image_path, b"some non-empty image").expect("write image");
+
+        let (status, warnings) = checked_image_status(image_path.to_str(), Some(true), true, 0);
+        assert_eq!(
+            status["fits_partition"],
+            json!(true),
+            "zero-size partition with an image must fit: {status}"
+        );
+        assert!(
+            !warnings.iter().any(|w| w.contains("larger than partition")),
+            "no oversized warning expected for zero-size partition: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn check_images_should_still_flag_genuinely_oversized_image() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let image_path = dir.path().join("boot.img");
+        std::fs::write(&image_path, b"some non-empty image").expect("write image");
+
+        let (status, warnings) = checked_image_status(image_path.to_str(), Some(true), true, 4);
+        assert_eq!(
+            status["fits_partition"],
+            json!(false),
+            "oversized image must not fit: {status}"
+        );
+        assert!(
+            warnings.iter().any(|w| w.contains("larger than partition")),
+            "expected oversized warning: {warnings:?}"
+        );
+    }
 }
