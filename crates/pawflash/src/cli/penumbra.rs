@@ -310,7 +310,7 @@ pub fn run(action: PenumbraAction, simulate: bool) -> Result<()> {
         PenumbraAction::WriteAll { dir, skip, ignore_missing } => {
             run_write_all(&dir, &skip, ignore_missing, simulate)
         }
-        PenumbraAction::Pgpt => run_pgpt(),
+        PenumbraAction::Pgpt => run_pgpt(simulate),
         PenumbraAction::Seccfg { action } => run_seccfg(&action, simulate),
         PenumbraAction::Peek { address, length, file } => {
             run_peek(&address, &length, &file, simulate)
@@ -318,9 +318,9 @@ pub fn run(action: PenumbraAction, simulate: bool) -> Result<()> {
         PenumbraAction::Poke { address, file } => run_poke(&address, &file, simulate),
         PenumbraAction::Rpmb { command } => run_rpmb(command, simulate),
         PenumbraAction::Reboot { mode } => run_reboot(&mode, simulate),
-        PenumbraAction::Shutdown => run_shutdown(),
+        PenumbraAction::Shutdown => run_shutdown(simulate),
         PenumbraAction::SetSlot { slot } => run_set_slot(&slot, simulate),
-        PenumbraAction::Crash => run_crash(),
+        PenumbraAction::Crash => run_crash(simulate),
     }
 }
 
@@ -429,10 +429,11 @@ fn run_write_all(dir: &Path, skip: &[String], ignore_missing: bool, simulate: bo
     Ok(())
 }
 
-fn run_pgpt() -> Result<()> {
-    let da = resolve_da(false)?;
+fn run_pgpt(simulate: bool) -> Result<()> {
+    let da = resolve_da(simulate)?;
     let mut ev = |e: &PenumbraEvent| forward_event(e);
-    let entries = pawflash_core::penumbra::pgpt(&da, &mut ev).context("penumbra pgpt failed")?;
+    let entries = pawflash_core::penumbra::pgpt(&da, simulate, &mut ev)
+        .context("penumbra pgpt failed")?;
     for p in &entries {
         output::status::data(format!(
             "{:<24} 0x{addr:016X} 0x{size:016X}  {section}",
@@ -514,10 +515,10 @@ fn run_reboot(mode: &str, simulate: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_shutdown() -> Result<()> {
-    let da = resolve_da(false)?;
+fn run_shutdown(simulate: bool) -> Result<()> {
+    let da = resolve_da(simulate)?;
     let mut ev = |e: &PenumbraEvent| forward_event(e);
-    pawflash_core::penumbra::shutdown(&da, &mut ev).context("penumbra shutdown failed")?;
+    pawflash_core::penumbra::shutdown(&da, simulate, &mut ev).context("penumbra shutdown failed")?;
     output::status::ok("shutdown", "command sent");
     Ok(())
 }
@@ -532,10 +533,10 @@ fn run_set_slot(slot: &str, simulate: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_crash() -> Result<()> {
-    let da = resolve_da(false)?;
+fn run_crash(simulate: bool) -> Result<()> {
+    let da = resolve_da(simulate)?;
     let mut ev = |e: &PenumbraEvent| forward_event(e);
-    pawflash_core::penumbra::crash(&da, &mut ev).context("penumbra crash failed")?;
+    pawflash_core::penumbra::crash(&da, simulate, &mut ev).context("penumbra crash failed")?;
     output::status::ok("crash", "device should be in bootrom");
     Ok(())
 }

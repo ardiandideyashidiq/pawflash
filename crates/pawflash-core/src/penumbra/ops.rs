@@ -489,11 +489,13 @@ pub fn write_all(
 
 /// List the partition table.
 ///
+/// `da_bytes` is ignored in simulate mode.
+///
 /// # Errors
 ///
 /// Returns any [`crate::penumbra::PenumbraError`] from device open or the run.
-pub fn pgpt(da_bytes: &[u8], on_event: EventCb<'_>) -> Result<Vec<PartitionEntry>> {
-    run_with(false, da_bytes, |r| r.pgpt(on_event))
+pub fn pgpt(da_bytes: &[u8], simulate: bool, on_event: EventCb<'_>) -> Result<Vec<PartitionEntry>> {
+    run_with(simulate, da_bytes, |r| r.pgpt(on_event))
 }
 
 /// Unlock or lock the bootloader (seccfg).
@@ -620,11 +622,13 @@ pub fn reboot(
 
 /// Shut the device down through DA mode.
 ///
+/// `da_bytes` is ignored in simulate mode.
+///
 /// # Errors
 ///
 /// Returns any [`crate::penumbra::PenumbraError`] from device open or the run.
-pub fn shutdown(da_bytes: &[u8], on_event: EventCb<'_>) -> Result<()> {
-    run_with(false, da_bytes, |r| r.shutdown(on_event))
+pub fn shutdown(da_bytes: &[u8], simulate: bool, on_event: EventCb<'_>) -> Result<()> {
+    run_with(simulate, da_bytes, |r| r.shutdown(on_event))
 }
 
 /// Set the active boot slot (`a` when `slot_a` is true).
@@ -645,9 +649,11 @@ pub fn set_active_slot(
 
 /// Crash the device into bootrom (preloader-only).
 ///
+/// `da_bytes` is ignored in simulate mode.
+///
 /// # Errors
 ///
 /// Returns any [`crate::penumbra::PenumbraError`] from device open or the run.
-pub fn crash(da_bytes: &[u8], on_event: EventCb<'_>) -> Result<()> {
-    run_with(false, da_bytes, |r| r.crash(on_event))
+pub fn crash(da_bytes: &[u8], simulate: bool, on_event: EventCb<'_>) -> Result<()> {
+    run_with(simulate, da_bytes, |r| r.crash(on_event))
 }

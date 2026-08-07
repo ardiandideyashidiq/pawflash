@@ -1067,7 +1067,7 @@ async fn penumbra_pgpt(on_event: Channel<ProgressEvent>, simulate: bool) -> Resu
     return Ok(vec!["boot".to_string(), "userdata".to_string()]);
   }
   run_penumbra_op(&on_event, move |emit| {
-    pawflash_core::penumbra::pgpt(&da, emit).map(|entries| {
+    pawflash_core::penumbra::pgpt(&da, false, emit).map(|entries| {
       entries.iter().map(|p| format!("{} 0x{:016X} 0x{:016X} {}", p.name, p.address, p.size, p.section)).collect()
     })
   })
@@ -1105,7 +1105,7 @@ async fn penumbra_shutdown(on_event: Channel<ProgressEvent>, simulate: bool) -> 
     return Ok(());
   }
   run_penumbra_op(&on_event, move |emit| {
-    pawflash_core::penumbra::shutdown(&da, emit)
+    pawflash_core::penumbra::shutdown(&da, false, emit)
   })
   .await
 }
