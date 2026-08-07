@@ -24,6 +24,8 @@ pub mod install;
 pub mod bridge;
 /// High-level read/write/erase operations.
 pub mod ops;
+/// Cross-process device contention lock.
+pub mod lock;
 /// Windows USBDK prerequisite check.
 pub mod usbdk;
 /// Serde types mirroring the bridge protocol.
@@ -31,6 +33,7 @@ pub mod types;
 
 pub use error::{MtkError, Result};
 pub use install::{current_version, ensure_installed, install_root};
+pub use lock::{acquire_device_lock, DeviceLock};
 pub use manifest::{current_platform, fetch_manifest, Manifest, PlatformAsset};
 pub use ops::{
     read_partition, write_partition, erase_partition, BridgeRunner, RealBridge, SimulatedMtkRunner,

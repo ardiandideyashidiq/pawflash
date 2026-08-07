@@ -8,6 +8,7 @@
 use crate::mtk::bridge::run_bridge;
 use crate::mtk::error::MtkError;
 use crate::mtk::install::ensure_installed;
+use crate::mtk::lock::acquire_device_lock;
 use crate::mtk::types::{MtkCommand, MtkEvent, MtkOutcome, PartType};
 use crate::mtk::{Manifest, Result};
 use std::path::Path;
@@ -113,6 +114,9 @@ fn run_op(
         return runner(true).run(Path::new(""), cmd, on_event);
     }
 
+    // Hold the contention lock for the whole op so concurrent pawflash
+    // processes cannot flash the same device simultaneously.
+    let _lock = acquire_device_lock()?;
     let bin = ensure_installed(manifest)?;
     runner(false).run(&bin, cmd, on_event)
 }

@@ -204,7 +204,17 @@ pub fn run_bridge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
     use std::time::Instant;
+
+    /// Serializes fake-bridge tests: writing an executable script and
+    /// immediately exec'ing it races across parallel test threads (ETXTBSY),
+    /// and a hung bridge child can outlive its test. Running these tests one
+    /// at a time eliminates both.
+    fn bridge_test_serial() -> MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     /// A fake bridge script whose temp dir lives as long as this struct.
     struct FakeBridge {
@@ -230,6 +240,7 @@ mod tests {
 
     #[test]
     fn parses_success_events() {
+        let _guard = bridge_test_serial();
         let fb = fake_bridge(
             r#"echo '{"type":"start","total":100,"partition":"boot"}'
                echo '{"type":"progress","bytes":50}'
@@ -249,6 +260,7 @@ mod tests {
 
     #[test]
     fn error_event_maps_to_err() {
+        let _guard = bridge_test_serial();
         let fb = fake_bridge(
             r#"echo '{"type":"error","message":"no device"}'
                exit 1"#,
@@ -259,6 +271,7 @@ mod tests {
 
     #[test]
     fn nonzero_exit_without_result_errors() {
+        let _guard = bridge_test_serial();
         let fb = fake_bridge("echo 'oops' >&2; exit 2");
         let err = run_bridge(&fb.bin, &MtkCommand::Selftest, &mut |_| {}).unwrap_err();
         assert!(matches!(err, MtkError::Bridge(_)));
@@ -266,6 +279,7 @@ mod tests {
 
     #[test]
     fn selftest_passes_raw_string() {
+        let _guard = bridge_test_serial();
         let fb = fake_bridge(
             r#"if [ "$1" = "selftest" ]; then
                  echo '{"type":"result","ok":true,"detail":"selftest ok"}'
@@ -282,6 +296,7 @@ mod tests {
 
     #[test]
     fn read_command_is_base64_encoded() {
+        let _guard = bridge_test_serial();
         let fb = fake_bridge(
             r#"echo "$1" | base64 -d > /dev/null 2>&1 || { echo '{"type":"error","message":"bad b64"}'; exit 1; }
                echo '{"type":"result","ok":true}'"#,
@@ -297,6 +312,7 @@ mod tests {
 
     #[test]
     fn malformed_line_is_protocol_error() {
+        let _guard = bridge_test_serial();
         let fb = fake_bridge("echo 'not json'; exit 1");
         let err = run_bridge(&fb.bin, &MtkCommand::Selftest, &mut |_| {}).unwrap_err();
         assert!(matches!(err, MtkError::Protocol(_)));
@@ -317,9 +333,12 @@ mod tests {
 
     #[test]
     fn timeout_fires_on_silent_bridge() {
-        // Emits a start event then goes silent — recv_timeout should fire.
+        let _guard = bridge_test_serial();
+        // Emits a start event then blocks on a pipe we never feed — the
+        // `exec` replaces the shell so killing it leaves no orphan children
+        // (which would otherwise trip ETXTBSY races in parallel test runs).
         let fb = fake_bridge(
-            "echo '{\"type\":\"start\",\"total\":100,\"partition\":\"boot\"}'; while :; do sleep 1; done",
+            "echo '{\"type\":\"start\",\"total\":100,\"partition\":\"boot\"}'; exec sleep 30",
         );
         let start = Instant::now();
         let err = run_bridge_with_timeout(
