@@ -127,6 +127,26 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
             level: event.data.ok ? "success" : "error",
           });
           break;
+        case "PenumbraPhase":
+          addEntry({ text: event.data.message, level: "info" });
+          break;
+        case "PenumbraProgress":
+          {
+            const pct = Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100);
+            const last = lastOverallPct.current;
+            if (pct - last.pct < 5 && last.pct >= 0) {
+              return;
+            }
+            lastOverallPct.current = { pct, at: Date.now() };
+            addEntry({ text: `penumbra ${pct}%`, level: "info" });
+          }
+          break;
+        case "PenumbraDone":
+          addEntry({
+            text: event.data.detail,
+            level: event.data.ok ? "success" : "error",
+          });
+          break;
         case "Warning":
           addEntry({ text: event.data.message, level: "warning" });
           break;

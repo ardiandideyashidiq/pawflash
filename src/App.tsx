@@ -34,6 +34,7 @@ import type { ProgressEvent } from "@/types/progress";
 const FlasherTab = lazy(() => import("@/components/tabs/FlasherTab"));
 const MenuTab = lazy(() => import("@/components/tabs/MenuTab"));
 const MtkTab = lazy(() => import("@/components/tabs/MtkTab"));
+const PenumbraTab = lazy(() => import("@/components/tabs/PenumbraTab"));
 const ExtrasTab = lazy(() => import("@/components/tabs/ExtrasTab"));
 const AboutTab = lazy(() => import("@/components/tabs/AboutTab"));
 
@@ -407,6 +408,7 @@ function AppRoot() {
                 <MenuTab onForceFastboot={startForceFastboot} menuActionDisabled={menuActionDisabled} />
               )}
               {tab === "mtk" && <MtkTab />}
+        {tab === "penumbra" && <PenumbraTab />}
               {tab === "extras" && (
                 <ExtrasTab
                   menuActionDisabled={menuActionDisabled}
