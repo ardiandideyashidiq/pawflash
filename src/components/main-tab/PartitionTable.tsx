@@ -56,7 +56,7 @@ export const PartitionTable = memo(function PartitionTable({
   }
 
   return (
-    <div className={cn("panel-shell flex min-h-0 flex-1 flex-col overflow-x-auto", className)}>
+    <div className={cn("panel-shell flex min-h-0 flex-1 flex-col overflow-x-auto [&_th]:border-r [&_th]:border-border [&_td]:border-r [&_td]:border-border", className)}>
       <div className="border-b border-border/80 bg-card/96">
         <Table className="table-fixed min-w-max">
           <colgroup>
@@ -64,7 +64,7 @@ export const PartitionTable = memo(function PartitionTable({
               <col key={width} className={cn(width, (i === 2 || i === 3) && "max-lg:hidden")} />
             ))}
           </colgroup>
-          <TableHeader className="[&_th]:text-muted-foreground">
+          <TableHeader className="[&_th]:text-muted-foreground [&_th]:text-center [&_th]:font-bold">
             <TableRow>
               <TableHead className={cn(columnWidths[0], "px-0 text-center")}>
                 <div className="flex justify-center">
@@ -112,7 +112,7 @@ export const PartitionTable = memo(function PartitionTable({
                 <TableCell className="truncate text-left" title={partition.partition}>
                   <span className="font-mono">{partition.partition}</span>
                 </TableCell>
-                <TableCell className="hidden whitespace-nowrap text-center lg:table-cell">
+                <TableCell className="hidden whitespace-nowrap text-right tabular-nums lg:table-cell">
                   {partition.size_human}
                 </TableCell>
                 <TableCell className="hidden truncate text-center lg:table-cell">
