@@ -463,7 +463,13 @@ function AppRoot() {
       >
         {({ tab }) => (
           <Suspense fallback={null}>
-            <div key={tab} className="animate-in fade-in duration-200 ease-out">
+            <div
+              key={tab}
+              className={cn(
+                "animate-in fade-in duration-200 ease-out",
+                tab === "flasher" && "h-full",
+              )}
+            >
               {tab === "flasher" && (
                 <FlasherTab
                   connected={deviceInfo?.connected ?? false}
