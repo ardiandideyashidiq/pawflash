@@ -3,6 +3,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import {
   AlertTriangle,
   CheckCircle2,
+  Construction,
   Download,
   FolderOpen,
   HardDrive,
@@ -272,327 +273,307 @@ export default memo(function PenumbraTab() {
     opBytes && opBytes.total > 0 ? Math.round((opBytes.bytes / opBytes.total) * 100) : null;
 
   return (
-    <div className="flex min-h-full flex-col gap-5 lg:grid lg:grid-cols-2 lg:gap-6">
-      {/* LEFT COLUMN: Status & DA Controls */}
-      <div className="flex flex-col gap-4">
-        {/* Consolidated DA Status & Search Card */}
-        <SectionCard
-          title="Penumbra DA Status & Resolver"
-          description="Native DA-mode library status and device model DA downloader."
-          headerActions={
+    <div className="relative min-h-full flex flex-col gap-3">
+      {/* Blurred & Disabled Background Content */}
+      <div className="flex flex-col gap-3.5 pointer-events-none select-none blur-[3px] opacity-60">
+        {/* COMPACT HEADER STATUS STRIP */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/60 px-4 py-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 font-mono">
+              <span className="text-muted-foreground">DA Selection:</span>
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  status?.da_installed ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-amber-500"
+                }`}
+              />
+              <span className="font-semibold text-foreground truncate max-w-[140px]" title={status?.da_version ?? "None Selected"}>
+                {status?.da_installed ? status.da_version : "None Selected"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">DA Device:</span>
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  status?.device_visible
+                    ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                    : "bg-muted-foreground/40"
+                }`}
+              />
+              <span className="font-semibold text-foreground">
+                {status?.device_visible ? "Connected" : "Not Detected"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 font-mono text-muted-foreground">
+              <span>Platform:</span>
+              <span className="text-foreground">{status?.platform ?? "…"}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" disabled={isBusy} onClick={() => void doctor()}>
+              <Stethoscope className="h-3.5 w-3.5" />
+              Doctor
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-xs text-destructive hover:text-destructive"
+              disabled={isBusy || !status?.da_installed}
+              onClick={() => void remove()}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove Cache
+            </Button>
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               title="Refresh status"
               disabled={isBusy}
               onClick={() => void refreshStatus()}
             >
-              <RefreshCw className={`h-4 w-4 ${isBusy ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${isBusy ? "animate-spin" : ""}`} />
             </Button>
-          }
-          contentClassName="space-y-4"
-        >
-          {/* Status Indicators Grid */}
-          <div className="grid grid-cols-2 gap-3 rounded-lg border border-border/50 bg-background/40 p-3.5 text-xs">
-            <div className="flex flex-col gap-1">
-              <span className="text-muted-foreground font-medium">DA Selection</span>
-              <div className="flex items-center gap-2 font-mono">
-                <span
-                  className={`inline-block h-2 w-2 rounded-full ${
-                    status?.da_installed ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-amber-500"
-                  }`}
-                />
-                <span className="font-semibold truncate" title={status?.da_version ?? "None Selected"}>
-                  {status?.da_installed ? status.da_version : "None Selected"}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="text-muted-foreground font-medium">DA Device</span>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`inline-block h-2 w-2 rounded-full ${
-                    status?.device_visible
-                      ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-                      : "bg-muted-foreground/40"
-                  }`}
-                />
-                <span className="font-semibold">
-                  {status?.device_visible ? "Connected (DA)" : "Not Detected"}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="text-muted-foreground font-medium">Host Platform</span>
-              <span className="font-mono text-foreground/90">{status?.platform ?? "…"}</span>
-            </div>
-
-            {status?.da_path && (
-              <div className="col-span-2 flex flex-col gap-1 border-t border-border/30 pt-2">
-                <span className="text-muted-foreground font-medium">DA Binary Path</span>
-                <span className="truncate font-mono text-[11px] text-muted-foreground" title={status.da_path}>
-                  {status.da_path}
-                </span>
-              </div>
-            )}
           </div>
+        </div>
 
-          {/* Model Lookup Section */}
-          <div className="space-y-2 pt-1 border-t border-border/40">
-            <label htmlFor="penumbra-device-input" className="text-xs font-medium text-muted-foreground">
-              Download DA by Device Model Name
-            </label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  id="penumbra-device-input"
-                  value={deviceModel}
-                  onChange={(e) => setDeviceModel(e.target.value)}
-                  placeholder="e.g. Infinix NOTE 12, POCO X7 Pro"
-                  aria-label="Device model"
-                  disabled={isBusy}
-                  className="font-mono text-xs pr-8"
-                />
-                {deviceModel && (
-                  <button
-                    type="button"
-                    onClick={() => setDeviceModel("")}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-              <Button
-                className="gap-2 shrink-0"
-                disabled={isBusy || !deviceModel.trim()}
-                onClick={() => void download()}
-              >
-                <Download className="h-4 w-4" />
-                Fetch DA
-              </Button>
-            </div>
-
-            {/* Quick Model Chips */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              <span className="text-[11px] text-muted-foreground self-center mr-1">Presets:</span>
-              {DEVICE_MODEL_PRESETS.map((model) => (
-                <button
-                  key={model}
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => {
-                    setDeviceModel(model);
-                    void download(model);
-                  }}
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-mono transition-colors ${
-                    deviceModel === model
-                      ? "border-primary bg-primary/10 text-primary font-semibold"
-                      : "border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  {model}
-                </button>
-              ))}
-            </div>
+        {simulate && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>SIMULATED MODE — real device I/O is bypassed.</span>
           </div>
+        )}
 
-          {/* Action Bar */}
-          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/40">
-            <Button variant="outline" className="gap-2" disabled={isBusy} onClick={() => void doctor()}>
-              <Stethoscope className="h-4 w-4" />
-              Doctor
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2 text-destructive hover:text-destructive"
-              disabled={isBusy || !status?.da_installed}
-              onClick={() => void remove()}
+        {/* 2-COLUMN COMPACT CONTENT GRID */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+          {/* LEFT COLUMN: DA Search & Quick Controls */}
+          <div className="flex flex-col gap-3.5">
+            {/* DA Model Resolver */}
+            <SectionCard
+              title="DA Driver Resolver"
+              description="Resolve Download Agent by device model name."
+              contentClassName="space-y-3"
             >
-              <Trash2 className="h-4 w-4" />
-              Remove Cache
-            </Button>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    id="penumbra-device-input"
+                    value={deviceModel}
+                    onChange={(e) => setDeviceModel(e.target.value)}
+                    placeholder="e.g. Infinix NOTE 12, POCO X7 Pro"
+                    aria-label="Device model"
+                    disabled={isBusy}
+                    className="h-9 font-mono text-xs pr-8"
+                  />
+                  {deviceModel && (
+                    <button
+                      type="button"
+                      onClick={() => setDeviceModel("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                {/* Preset Dropdown */}
+                <select
+                  aria-label="Preset Device Models"
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setDeviceModel(e.target.value);
+                      void download(e.target.value);
+                    }
+                  }}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-xs font-mono text-muted-foreground cursor-pointer focus:outline-none"
+                  defaultValue=""
+                >
+                  <option value="" disabled>Presets…</option>
+                  {DEVICE_MODEL_PRESETS.map((m) => (
+                    <option key={m} value={m} className="bg-popover text-popover-foreground">
+                      {m}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  className="gap-1.5 h-9 text-xs shrink-0"
+                  disabled={isBusy || !deviceModel.trim()}
+                  onClick={() => void download()}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Fetch DA
+                </Button>
+              </div>
+            </SectionCard>
+
+            {/* Categorized Device Controls */}
+            <SectionCard
+              title="Device Commands"
+              description="Bootloader lock state toggle, partition table, and power controls."
+              contentClassName="space-y-2.5"
+            >
+              <div className="grid grid-cols-3 gap-2">
+                <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" disabled={isBusy} onClick={() => seccfg(true)}>
+                  <ShieldAlert className="h-3.5 w-3.5 text-amber-500" />
+                  Unlock BL
+                </Button>
+                <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" disabled={isBusy} onClick={() => seccfg(false)}>
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                  Lock BL
+                </Button>
+                <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" disabled={isBusy} onClick={() => void pgpt()}>
+                  <ListTree className="h-3.5 w-3.5 text-primary" />
+                  PGPT
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/40">
+                <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" disabled={isBusy} onClick={reboot}>
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reboot Fastboot
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={isBusy}
+                  onClick={shutdown}
+                >
+                  <Power className="h-3.5 w-3.5" />
+                  Shutdown
+                </Button>
+              </div>
+            </SectionCard>
           </div>
 
-          {simulate && (
-            <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <span>SIMULATED MODE — real device I/O is bypassed.</span>
-            </div>
-          )}
-        </SectionCard>
+          {/* RIGHT COLUMN: Partition Operations */}
+          <div className="flex flex-col gap-4">
+            <SectionCard
+              title="DA Partition Operations"
+              description="Read, write, or erase partition blocks via penumbra DA."
+              contentClassName="space-y-3"
+            >
+              {/* Partition Name Input + Preset Dropdown */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="penumbra-partition-input" className="text-xs font-medium text-muted-foreground">
+                    Target Partition Name
+                  </label>
+                  <select
+                    aria-label="Preset Partition"
+                    onChange={(e) => e.target.value && setPartitionName(e.target.value)}
+                    className="bg-transparent text-[11px] font-mono text-primary cursor-pointer focus:outline-none"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Select Preset…</option>
+                    {PARTITION_PRESETS.map((p) => (
+                      <option key={p} value={p} className="bg-popover text-popover-foreground">
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Input
+                  id="penumbra-partition-input"
+                  value={partitionName}
+                  onChange={(e) => setPartitionName(e.target.value)}
+                  placeholder="e.g. boot, vbmeta, recovery"
+                  aria-label="penumbra partition"
+                  disabled={isBusy}
+                  className="h-9"
+                />
+              </div>
 
-        {/* Categorized Device Controls */}
-        <SectionCard
-          title="Device Control Operations"
-          description="Bootloader lock state toggle, partition table, and hardware power commands."
-          contentClassName="space-y-4"
-        >
-          {/* Security / BL Locks */}
-          <div className="space-y-2">
-            <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-              Bootloader Security (`seccfg`)
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" className="gap-2" disabled={isBusy} onClick={() => seccfg(true)}>
-                <ShieldAlert className="h-4 w-4 text-amber-500" />
-                Unlock BL
-              </Button>
-              <Button variant="outline" className="gap-2" disabled={isBusy} onClick={() => seccfg(false)}>
-                <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                Lock BL
-              </Button>
-            </div>
-          </div>
+              {/* File Selection */}
+              <div className="space-y-1">
+                <label htmlFor="penumbra-file-input" className="text-xs font-medium text-muted-foreground">
+                  Image File Path (Read output / Write input)
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    id="penumbra-file-input"
+                    value={filePath}
+                    onChange={(e) => setFilePath(e.target.value)}
+                    placeholder="/path/to/image.img"
+                    aria-label="penumbra file path"
+                    disabled={isBusy}
+                    className="h-9 font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={isBusy}
+                    onClick={() => void handleBrowseFile()}
+                    title="Browse Image File"
+                    className="h-9 w-9 shrink-0"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
 
-          {/* Diagnostics & Structure */}
-          <div className="space-y-2">
-            <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-              Partition Table
-            </span>
-            <Button variant="outline" className="w-full gap-2" disabled={isBusy} onClick={() => void pgpt()}>
-              <ListTree className="h-4 w-4 text-primary" />
-              Parse Partition Table (PGPT)
-            </Button>
-          </div>
+              {/* Operation Progress Indicator */}
+              {opPercent !== null && (
+                <div className="space-y-1 rounded-lg border border-primary/20 bg-primary/5 p-2.5">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="flex items-center gap-2 text-primary">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Executing Operation…
+                    </span>
+                    <span className="font-mono">{opPercent}%</span>
+                  </div>
+                  <Progress value={opPercent} className="h-1.5" />
+                </div>
+              )}
 
-          {/* Power Controls */}
-          <div className="space-y-2 pt-2 border-t border-border/40">
-            <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-              Hardware Power State
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" className="gap-2" disabled={isBusy} onClick={reboot}>
-                <RotateCcw className="h-4 w-4" />
-                Reboot Fastboot
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                disabled={isBusy}
-                onClick={shutdown}
-              >
-                <Power className="h-4 w-4" />
-                Shutdown
-              </Button>
-            </div>
+              {/* Action Trigger Buttons */}
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                <Button
+                  className="gap-2 h-9 text-xs"
+                  disabled={isBusy || !partitionName || !filePath}
+                  onClick={() => executeOp("read")}
+                >
+                  <HardDrive className="h-4 w-4" />
+                  Read
+                </Button>
+                <Button
+                  className="gap-2 h-9 text-xs"
+                  disabled={isBusy || !partitionName || !filePath}
+                  onClick={() => executeOp("write")}
+                >
+                  <HardDrive className="h-4 w-4" />
+                  Write
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-2 h-9 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={isBusy || !partitionName}
+                  onClick={() => executeOp("erase")}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Erase
+                </Button>
+              </div>
+            </SectionCard>
           </div>
-        </SectionCard>
+        </div>
       </div>
 
-      {/* RIGHT COLUMN: DA Operations */}
-      <div className="flex flex-col gap-4">
-        <SectionCard
-          title="DA Partition Operations"
-          description="Read, write, or erase specific partition blocks via penumbra DA."
-          contentClassName="space-y-4"
-        >
-          {/* Target Partition */}
-          <div className="space-y-2">
-            <label htmlFor="penumbra-partition-input" className="text-xs font-medium text-muted-foreground">
-              Target Partition Name
-            </label>
-            <Input
-              id="penumbra-partition-input"
-              value={partitionName}
-              onChange={(e) => setPartitionName(e.target.value)}
-              placeholder="e.g. boot, vbmeta, recovery"
-              aria-label="penumbra partition"
-              disabled={isBusy}
-            />
-
-            {/* Partition Presets */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {PARTITION_PRESETS.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  disabled={isBusy}
-                  onClick={() => setPartitionName(preset)}
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-mono transition-colors ${
-                    partitionName === preset
-                      ? "border-primary bg-primary/10 text-primary font-semibold"
-                      : "border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  {preset}
-                </button>
-              ))}
-            </div>
+      {/* Work In Progress Overlay */}
+      <div className="absolute inset-0 z-20 flex items-center justify-center p-6 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-primary/30 bg-background/80 px-8 py-7 shadow-2xl backdrop-blur-md">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Construction className="h-6 w-6" />
           </div>
-
-          {/* File Selection */}
-          <div className="space-y-2">
-            <label htmlFor="penumbra-file-input" className="text-xs font-medium text-muted-foreground">
-              Image File Path (Read output / Write input)
-            </label>
-            <div className="flex gap-2">
-              <Input
-                id="penumbra-file-input"
-                value={filePath}
-                onChange={(e) => setFilePath(e.target.value)}
-                placeholder="/path/to/image.img"
-                aria-label="penumbra file path"
-                disabled={isBusy}
-                className="font-mono text-xs"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                disabled={isBusy}
-                onClick={() => void handleBrowseFile()}
-                title="Browse Image File"
-              >
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-            </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold tracking-tight text-foreground">
+              Work In Progress
+            </h3>
+            <p className="max-w-xs text-xs text-muted-foreground">
+              The Penumbra DA-mode tab is currently under active development.
+            </p>
           </div>
-
-          {/* Operation Progress Indicator */}
-          {opPercent !== null && (
-            <div className="space-y-1.5 rounded-lg border border-primary/20 bg-primary/5 p-3">
-              <div className="flex items-center justify-between text-xs font-medium">
-                <span className="flex items-center gap-2 text-primary">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Executing DA Operation…
-                </span>
-                <span className="font-mono">{opPercent}%</span>
-              </div>
-              <Progress value={opPercent} className="h-2" />
-            </div>
-          )}
-
-          {/* Action Trigger Buttons */}
-          <div className="grid grid-cols-3 gap-2.5 pt-2">
-            <Button
-              className="gap-2"
-              disabled={isBusy || !partitionName || !filePath}
-              onClick={() => executeOp("read")}
-            >
-              <HardDrive className="h-4 w-4" />
-              Read
-            </Button>
-            <Button
-              className="gap-2"
-              disabled={isBusy || !partitionName || !filePath}
-              onClick={() => executeOp("write")}
-            >
-              <HardDrive className="h-4 w-4" />
-              Write
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              disabled={isBusy || !partitionName}
-              onClick={() => executeOp("erase")}
-            >
-              <Trash2 className="h-4 w-4" />
-              Erase
-            </Button>
-          </div>
-        </SectionCard>
+        </div>
       </div>
 
       {/* DOWNLOAD PROGRESS MODAL */}
@@ -670,4 +651,5 @@ export default memo(function PenumbraTab() {
     </div>
   );
 });
+
 

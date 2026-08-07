@@ -39,10 +39,10 @@ interface MtkStatusPayload {
 }
 
 const PARTTYPES = [
-  { id: "user", label: "user", desc: "Main UFS/eMMC Flash storage" },
-  { id: "boot1", label: "boot1", desc: "Hardware Boot Partition 1" },
-  { id: "boot2", label: "boot2", desc: "Hardware Boot Partition 2" },
-  { id: "rpmb", label: "rpmb", desc: "Replay Protected Memory Block" },
+  { id: "user", label: "user (Main storage)" },
+  { id: "boot1", label: "boot1 (Boot Partition 1)" },
+  { id: "boot2", label: "boot2 (Boot Partition 2)" },
+  { id: "rpmb", label: "rpmb (Replay Memory Block)" },
 ] as const;
 
 const PARTITION_PRESETS = [
@@ -166,7 +166,6 @@ export default memo(function MtkTab() {
 
   const handleBrowseFile = useCallback(async () => {
     try {
-      // Dynamic import to support desktop environment dialog safely
       const dialog = await import("@tauri-apps/plugin-dialog");
       const selected = await dialog.open({
         multiple: false,
@@ -176,7 +175,6 @@ export default memo(function MtkTab() {
         setFilePath(selected);
       }
     } catch {
-      // Fallback for missing dialog plugin context
       const fileInput = document.createElement("input");
       fileInput.type = "file";
       fileInput.onchange = (e) => {
@@ -242,120 +240,119 @@ export default memo(function MtkTab() {
     opBytes && opBytes.total > 0 ? Math.round((opBytes.bytes / opBytes.total) * 100) : null;
 
   return (
-    <div className="relative min-h-full">
+    <div className="relative min-h-full flex flex-col gap-3">
       {/* Blurred & Disabled Background Content */}
-      <div className="flex min-h-full flex-col gap-5 pointer-events-none select-none blur-[3px] opacity-60 lg:grid lg:grid-cols-2 lg:gap-6">
-        {/* LEFT COLUMN: Status & Bridge Controls */}
-        <div className="flex flex-col gap-4">
-          <SectionCard
-            title="MTK Bridge Status"
-            description="DA-mode partition operations via the frozen mtkclient bridge."
-            headerActions={
-              <Button
-                variant="ghost"
-                size="icon"
-                title="Refresh status"
-                disabled={isBusy}
-                onClick={() => void refreshStatus()}
-              >
-                <RefreshCw className={`h-4 w-4 ${isBusy ? "animate-spin" : ""}`} />
-              </Button>
-            }
-            contentClassName="space-y-4"
-          >
-            {/* Status Indicators Grid */}
-            <div className="grid grid-cols-2 gap-3 rounded-lg border border-border/50 bg-background/40 p-3.5 text-xs">
-              <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground font-medium">Bridge Installation</span>
-                <div className="flex items-center gap-2 font-mono">
-                  <span
-                    className={`inline-block h-2 w-2 rounded-full ${
-                      status?.installed ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-amber-500"
-                    }`}
-                  />
-                  <span className="font-semibold">
-                    {status?.installed ? status.version : "Not Installed"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground font-medium">DA Device</span>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`inline-block h-2 w-2 rounded-full ${
-                      status?.device_visible
-                        ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-                        : "bg-muted-foreground/40"
-                    }`}
-                  />
-                  <span className="font-semibold">
-                    {status?.device_visible ? "Connected (DA)" : "Not Detected"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-muted-foreground font-medium">Host Platform</span>
-                <span className="font-mono text-foreground/90">{status?.platform ?? "…"}</span>
-              </div>
-
-              {status?.path && (
-                <div className="col-span-2 flex flex-col gap-1 border-t border-border/30 pt-2">
-                  <span className="text-muted-foreground font-medium">Bridge Executable Path</span>
-                  <span className="truncate font-mono text-[11px] text-muted-foreground" title={status.path}>
-                    {status.path}
-                  </span>
-                </div>
-              )}
+      <div className="flex flex-col gap-3.5 pointer-events-none select-none blur-[3px] opacity-60">
+        {/* COMPACT HEADER STATUS STRIP */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/60 px-4 py-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Installation Badge */}
+            <div className="flex items-center gap-2 font-mono">
+              <span className="text-muted-foreground">Bridge:</span>
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  status?.installed ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-amber-500"
+                }`}
+              />
+              <span className="font-semibold text-foreground">
+                {status?.installed ? status.version : "Not Installed"}
+              </span>
             </div>
 
-            {/* Action Bar */}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button
-                className="gap-2"
-                disabled={isBusy || status?.installed}
-                onClick={() => void download()}
-              >
-                <Download className="h-4 w-4" />
-                {status?.installed ? "Installed" : "Download Bridge"}
-              </Button>
-              <Button variant="outline" className="gap-2" disabled={isBusy} onClick={() => void doctor()}>
-                <Stethoscope className="h-4 w-4" />
-                Doctor
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2 text-destructive hover:text-destructive"
-                disabled={isBusy || !status?.installed}
-                onClick={() => void remove()}
-              >
-                <Trash2 className="h-4 w-4" />
-                Remove
-              </Button>
+            {/* Device Badge */}
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">DA Device:</span>
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  status?.device_visible
+                    ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                    : "bg-muted-foreground/40"
+                }`}
+              />
+              <span className="font-semibold text-foreground">
+                {status?.device_visible ? "Connected" : "Not Detected"}
+              </span>
             </div>
 
-            {simulate && (
-              <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                <span>SIMULATED MODE — real device I/O is bypassed.</span>
-              </div>
-            )}
-          </SectionCard>
+            {/* Host Platform */}
+            <div className="flex items-center gap-1.5 font-mono text-muted-foreground">
+              <span>Platform:</span>
+              <span className="text-foreground">{status?.platform ?? "…"}</span>
+            </div>
+          </div>
+
+          {/* Quick Header Actions */}
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              disabled={isBusy || status?.installed}
+              onClick={() => void download()}
+            >
+              <Download className="h-3.5 w-3.5" />
+              {status?.installed ? "Installed" : "Download"}
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs" disabled={isBusy} onClick={() => void doctor()}>
+              <Stethoscope className="h-3.5 w-3.5" />
+              Doctor
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-xs text-destructive hover:text-destructive"
+              disabled={isBusy || !status?.installed}
+              onClick={() => void remove()}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title="Refresh status"
+              disabled={isBusy}
+              onClick={() => void refreshStatus()}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isBusy ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
 
-        {/* RIGHT COLUMN: DA Operations */}
-        <div className="flex flex-col gap-4">
-          <SectionCard
-            title="Direct DA Partition Operations"
-            description="Read, write, or erase specific partition blocks via Download Agent."
-            contentClassName="space-y-4"
-          >
-            {/* Target Partition */}
-            <div className="space-y-2">
-              <label htmlFor="mtk-partition-input" className="text-xs font-medium text-muted-foreground">
-                Target Partition Name
-              </label>
+        {simulate && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>SIMULATED MODE — real device I/O is bypassed.</span>
+          </div>
+        )}
+
+        {/* COMPACT ZERO-SCROLL DA OPERATIONS CARD */}
+        <SectionCard
+          title="Direct DA Partition Operations"
+          description="Read, write, or erase partition blocks via MediaTek Download Agent."
+          contentClassName="space-y-3.5"
+        >
+          {/* Target Partition Input & Select Dropdown */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label htmlFor="mtk-partition-input" className="text-xs font-medium text-muted-foreground">
+                  Target Partition Name
+                </label>
+                {/* Partition Preset Dropdown */}
+                <select
+                  aria-label="Preset Partition"
+                  onChange={(e) => e.target.value && setPartitionName(e.target.value)}
+                  className="bg-transparent text-[11px] font-mono text-primary cursor-pointer focus:outline-none"
+                  defaultValue=""
+                >
+                  <option value="" disabled>Select Preset…</option>
+                  {PARTITION_PRESETS.map((p) => (
+                    <option key={p} value={p} className="bg-popover text-popover-foreground">
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <Input
                 id="mtk-partition-input"
                 value={partitionName}
@@ -363,124 +360,107 @@ export default memo(function MtkTab() {
                 placeholder="e.g. boot, vbmeta, recovery"
                 aria-label="MTK partition"
                 disabled={isBusy}
+                className="h-9"
               />
-
-              {/* Quick Presets */}
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {PARTITION_PRESETS.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => setPartitionName(preset)}
-                    className={`rounded-md border px-2 py-0.5 text-[11px] font-mono transition-colors ${
-                      partitionName === preset
-                        ? "border-primary bg-primary/10 text-primary font-semibold"
-                        : "border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
             </div>
 
-            {/* File Path Selection */}
-            <div className="space-y-2">
-              <label htmlFor="mtk-file-input" className="text-xs font-medium text-muted-foreground">
-                Image File Path (Read output / Write input)
-              </label>
-              <div className="flex gap-2">
-                <Input
-                  id="mtk-file-input"
-                  value={filePath}
-                  onChange={(e) => setFilePath(e.target.value)}
-                  placeholder="/path/to/image.img"
-                  aria-label="MTK file path"
-                  disabled={isBusy}
-                  className="font-mono text-xs"
-                />
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={isBusy}
-                  onClick={() => void handleBrowseFile()}
-                  title="Browse Image File"
-                >
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Hardware Target Partition Type */}
-            <div className="space-y-2">
+            {/* Hardware Partition Type */}
+            <div className="space-y-1">
               <label htmlFor="mtk-parttype-select" className="text-xs font-medium text-muted-foreground">
-                Hardware Partition Target (`parttype`)
+                Hardware Target (`parttype`)
               </label>
               <select
                 id="mtk-parttype-select"
                 value={selectedParttype}
                 onChange={(e) => setSelectedParttype(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 aria-label="MTK parttype"
                 disabled={isBusy}
               >
                 {PARTTYPES.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.label} — {p.desc}
+                    {p.label}
                   </option>
                 ))}
               </select>
             </div>
+          </div>
 
-            {/* Operation Progress Indicator */}
-            {opPercent !== null && (
-              <div className="space-y-1.5 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="flex items-center gap-2 text-primary">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Executing Operation…
-                  </span>
-                  <span className="font-mono">{opPercent}%</span>
-                </div>
-                <Progress value={opPercent} className="h-2" />
-              </div>
-            )}
-
-            {/* Action Trigger Buttons */}
-            <div className="grid grid-cols-3 gap-2.5 pt-2">
-              <Button
-                className="gap-2"
-                disabled={isBusy || !partitionName || !filePath}
-                onClick={() => executeOp("read")}
-              >
-                <HardDrive className="h-4 w-4" />
-                Read
-              </Button>
-              <Button
-                className="gap-2"
-                disabled={isBusy || !partitionName || !filePath}
-                onClick={() => executeOp("write")}
-              >
-                <HardDrive className="h-4 w-4" />
-                Write
-              </Button>
+          {/* File Selection Row */}
+          <div className="space-y-1">
+            <label htmlFor="mtk-file-input" className="text-xs font-medium text-muted-foreground">
+              Image File Path (Read output / Write input)
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="mtk-file-input"
+                value={filePath}
+                onChange={(e) => setFilePath(e.target.value)}
+                placeholder="/path/to/image.img"
+                aria-label="MTK file path"
+                disabled={isBusy}
+                className="h-9 font-mono text-xs"
+              />
               <Button
                 variant="outline"
-                className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                disabled={isBusy || !partitionName}
-                onClick={() => executeOp("erase")}
+                size="icon"
+                disabled={isBusy}
+                onClick={() => void handleBrowseFile()}
+                title="Browse Image File"
+                className="h-9 w-9 shrink-0"
               >
-                <Trash2 className="h-4 w-4" />
-                Erase
+                <FolderOpen className="h-4 w-4" />
               </Button>
             </div>
-          </SectionCard>
-        </div>
+          </div>
+
+          {/* Operation Progress Indicator */}
+          {opPercent !== null && (
+            <div className="space-y-1 rounded-lg border border-primary/20 bg-primary/5 p-2.5">
+              <div className="flex items-center justify-between text-xs font-medium">
+                <span className="flex items-center gap-2 text-primary">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Executing Operation…
+                </span>
+                <span className="font-mono">{opPercent}%</span>
+              </div>
+              <Progress value={opPercent} className="h-1.5" />
+            </div>
+          )}
+
+          {/* Action Trigger Buttons */}
+          <div className="grid grid-cols-3 gap-2 pt-1">
+            <Button
+              className="gap-2 h-9 text-xs"
+              disabled={isBusy || !partitionName || !filePath}
+              onClick={() => executeOp("read")}
+            >
+              <HardDrive className="h-4 w-4" />
+              Read
+            </Button>
+            <Button
+              className="gap-2 h-9 text-xs"
+              disabled={isBusy || !partitionName || !filePath}
+              onClick={() => executeOp("write")}
+            >
+              <HardDrive className="h-4 w-4" />
+              Write
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2 h-9 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={isBusy || !partitionName}
+              onClick={() => executeOp("erase")}
+            >
+              <Trash2 className="h-4 w-4" />
+              Erase
+            </Button>
+          </div>
+        </SectionCard>
       </div>
 
       {/* Work In Progress Overlay */}
-      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 text-center">
+      <div className="absolute inset-0 z-20 flex items-center justify-center p-6 text-center">
         <div className="flex flex-col items-center gap-3 rounded-lg border border-primary/30 bg-background/80 px-8 py-7 shadow-2xl backdrop-blur-md">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Construction className="h-6 w-6" />
@@ -574,4 +554,5 @@ export default memo(function MtkTab() {
     </div>
   );
 });
+
 
