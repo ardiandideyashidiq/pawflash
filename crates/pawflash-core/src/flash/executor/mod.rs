@@ -294,4 +294,56 @@ mod tests {
             "expected an ImageTooLarge error: {err}"
         );
     }
+
+    #[tokio::test]
+    async fn execute_plan_overall_progress_is_monotonic() {
+        // The overall denominator must be a plan-wide constant (not
+        // completed + current partition total), so the bar never regresses
+        // at a partition boundary.
+        let dir = tempfile::TempDir::new().unwrap();
+        let img_a = dir.path().join("boot_a.img");
+        let img_b = dir.path().join("boot_b.img");
+        std::fs::write(&img_a, b"image a payload").unwrap();
+        std::fs::write(&img_b, b"image b payload").unwrap();
+
+        let mut action_a = make_action("boot_a", img_a.to_str());
+        action_a.size = 4 * 1024 * 1024;
+        let mut action_b = make_action("boot_b", img_b.to_str());
+        action_b.size = 8 * 1024 * 1024;
+
+        let mut exec = mock_executor();
+        let plan = make_empty_plan(vec![action_a, action_b]);
+
+        let mut events: Vec<(u64, u64)> = Vec::new();
+        let mut on_transfer = |ev: crate::flash::progress::FlashTransferEvent| {
+            events.push((ev.overall_bytes, ev.overall_total));
+        };
+
+        let result = exec
+            .execute_plan(
+                &plan,
+                FlashRunOptions {
+                    on_transfer: Some(&mut on_transfer),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert_eq!(result.succeeded, 2);
+        assert_eq!(result.failed, 0);
+
+        assert!(!events.is_empty(), "expected transfer events");
+        let totals: std::collections::BTreeSet<u64> =
+            events.iter().map(|(_, t)| *t).collect();
+        assert_eq!(
+            totals.len(),
+            1,
+            "overall_total must be constant across partitions: {events:?}"
+        );
+        assert_eq!(*totals.first().unwrap(), 12 * 1024 * 1024);
+        let mut prev = 0;
+        for (bytes, _) in &events {
+            assert!(*bytes >= prev, "overall_bytes must be non-decreasing: {events:?}");
+            prev = *bytes;
+        }
+    }
 }

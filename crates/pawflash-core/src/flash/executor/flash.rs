@@ -169,6 +169,13 @@ impl<T: FlashTransport> FlashExecutor<T> {
         let current_bytes = AtomicU64::new(0);
         let mut cancelled = false;
 
+        // Nominal byte total across all plan actions. Used as the overall
+        // progress denominator so the bar is monotonic across partitions.
+        let plan_total: u64 = all_actions
+            .iter()
+            .filter_map(|a| u64::try_from(a.size).ok())
+            .sum();
+
         for action in &all_actions {
             if opts.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
                 info!(partition = %action.partition, "cancellation requested before partition");
@@ -193,7 +200,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
                         bytes,
                         total,
                         overall_bytes: completed + bytes,
-                        overall_total: completed + total,
+                        overall_total: plan_total,
                     });
                 }));
             }

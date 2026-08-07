@@ -38,7 +38,7 @@ export const FlashDialog = memo(function FlashDialog({
   } = useFlashProgress();
 
   const imagePct = total > 0 ? Math.round((bytes / total) * 100) : 0;
-  const overallPct = overallTotal > 0 ? Math.round((overallBytes / overallTotal) * 100) : 0;
+  const overallPct = overallTotal > 0 ? Math.min(100, Math.round((overallBytes / overallTotal) * 100)) : 0;
   const tone = phaseTone(phase);
   const isFinished = phase === "complete" || phase === "cancelled" || phase === "error";
 

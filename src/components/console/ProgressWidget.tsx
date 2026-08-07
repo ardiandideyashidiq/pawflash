@@ -54,7 +54,7 @@ export const ProgressWidget = memo(function ProgressWidget() {
 
   const overallPct =
     flash.overallTotal > 0
-      ? Math.round((flash.overallBytes / flash.overallTotal) * 100)
+      ? Math.min(100, Math.round((flash.overallBytes / flash.overallTotal) * 100))
       : 0;
 
   return (
