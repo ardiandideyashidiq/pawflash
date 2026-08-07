@@ -121,6 +121,10 @@ pub async fn run(
                 },
             );
 
+            if json && !dry_run && !show {
+                miette::bail!("--json requires --dry-run (plan preview as JSON); refusing to flash");
+            }
+
             if !show && !dry_run && !json {
                 if !simulate {
                     warn!("no --json/--dry-run specified; entering interactive confirmation flow");

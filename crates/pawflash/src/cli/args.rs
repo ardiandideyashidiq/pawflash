@@ -66,7 +66,7 @@ pub enum FlashAction {
         /// Plan preview only, don't flash (can combine with --json)
         #[arg(long)]
         dry_run: bool,
-        /// With --dry-run: output plan as JSON instead of human-readable
+        /// With --dry-run: output the plan as JSON. Requires --dry-run or --show.
         #[arg(long)]
         json: bool,
         /// Storage layout selection
