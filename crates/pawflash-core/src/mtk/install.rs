@@ -6,13 +6,11 @@
 
 use crate::mtk::error::MtkError;
 use crate::mtk::Manifest;
+use crate::penumbra::platform::base_data_dir;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-
-/// Default install root when no explicit data directory is configured.
-const INSTALL_SUBDIR: &str = "pawflash/mtk-bridge";
 
 /// Read chunk size for streaming a download with progress.
 const READ_CHUNK: usize = 64 * 1024;
@@ -20,35 +18,7 @@ const READ_CHUNK: usize = 64 * 1024;
 /// The platform data directory holding the installed bridge.
 #[must_use]
 pub fn install_root() -> PathBuf {
-    // Explicit test/data override wins, then the platform data dir.
-    if let Ok(dir) = std::env::var("PAWFLASH_DATA_DIR") {
-        return PathBuf::from(dir).join("mtk-bridge");
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let base = std::env::var_os("XDG_DATA_HOME")
-            .map_or_else(
-                || {
-                    std::env::var_os("HOME")
-                        .map(PathBuf::from)
-                        .unwrap_or_default()
-                        .join(".local/share")
-                },
-                PathBuf::from,
-            );
-        base.join(INSTALL_SUBDIR)
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let base = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir);
-        base.join(INSTALL_SUBDIR)
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-    {
-        std::env::temp_dir().join(INSTALL_SUBDIR)
-    }
+    base_data_dir().join("mtk-bridge")
 }
 
 /// Read the version file at `root`; `None` if absent.

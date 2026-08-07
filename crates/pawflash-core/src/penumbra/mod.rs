@@ -17,8 +17,11 @@
 
 /// Error types for the penumbra integration.
 pub mod error;
+/// Platform data-dir resolution shared with the mtk module.
+pub mod platform;
 /// Serde event types consumed by the CLI and GUI.
 pub mod types;
 
 pub use error::{PenumbraError, Result};
+pub use platform::{base_data_dir, penumbra_dir};
 pub use types::PenumbraEvent;
