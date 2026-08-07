@@ -80,6 +80,10 @@ struct CancelState {
   flash: Arc<AtomicBool>,
   force_fastboot: Arc<AtomicBool>,
   in_flight: Arc<AtomicBool>,
+  /// Token for the current operation's connect-wait phase. Each operation
+  /// installs a fresh token at entry (a fired token is consumed); `cancel_flash`
+  /// fires the current one so a pending `wait_for_device` aborts immediately.
+  cancel_token: Mutex<Arc<tokio_util::sync::CancellationToken>>,
 }
 
 /// Acquire the single-operation guard, failing if another device-write
@@ -89,6 +93,15 @@ fn acquire_guard(cancel: &CancelState) -> Result<(), String> {
     return Err("another flash/device operation is already running".into());
   }
   Ok(())
+}
+
+/// Install a fresh cancellation token for the current operation and return a
+/// clone for the caller's connect-wait phase. A fired token is consumed, so
+/// each operation must start with an unfired one.
+fn fresh_cancel_token(cancel: &CancelState) -> tokio_util::sync::CancellationToken {
+  let token = tokio_util::sync::CancellationToken::new();
+  *cancel.cancel_token.lock().unwrap_or_else(|p| p.into_inner()) = Arc::new(token.clone());
+  token
 }
 
 /// RAII guard that releases `in_flight` on drop, covering every early-return
@@ -440,11 +453,19 @@ async fn get_var(name: String, simulate: bool) -> Result<String, String> {
 #[tauri::command]
 async fn disable_vbmeta(on_event: Channel<ProgressEvent>, cancel: State<'_, CancelState>, simulate: bool) -> Result<(), String> {
   let _guard = OpGuard::new(&cancel)?;
-  send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to device...".into() });
+  send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Waiting for fastboot device...".into() });
   if simulate {
     send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
   }
-  let mut executor = AnyExecutor::connect(simulate, None).await.map_err(|e| {
+  let wait_token = fresh_cancel_token(&cancel);
+  let mut executor = AnyExecutor::connect_wait(
+    simulate,
+    None,
+    std::time::Duration::from_secs(60),
+    wait_token,
+  )
+  .await
+  .map_err(|e| {
     warn!(error = %e, "connect failed");
     e
   })?;
@@ -538,9 +559,17 @@ async fn execute_plan(
     send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
     send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to simulated device...".into() });
   } else {
-    send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to fastboot device...".into() });
+    send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Waiting for fastboot device...".into() });
   }
-  let mut executor = AnyExecutor::connect(simulate, Some(parsed.as_ref())).await.map_err(|e| {
+  let wait_token = fresh_cancel_token(&cancel);
+  let mut executor = AnyExecutor::connect_wait(
+    simulate,
+    Some(parsed.as_ref()),
+    std::time::Duration::from_secs(60),
+    wait_token,
+  )
+  .await
+  .map_err(|e| {
     warn!(error = %e, "execute_plan: connect failed");
     e
   })?;
@@ -621,6 +650,11 @@ async fn execute_plan(
 async fn cancel_flash(cancel: State<'_, CancelState>) -> Result<(), String> {
   info!("cancel_flash requested");
   cancel.flash.store(true, Ordering::Relaxed);
+  cancel
+    .cancel_token
+    .lock()
+    .unwrap_or_else(|p| p.into_inner())
+    .cancel();
   Ok(())
 }
 
@@ -634,11 +668,19 @@ async fn flash_raw_image(
   simulate: bool,
 ) -> Result<String, String> {
   let _guard = OpGuard::new(&cancel)?;
-  send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to device...".into() });
+  send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Waiting for fastboot device...".into() });
   if simulate {
     send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
   }
-  let mut executor = AnyExecutor::connect(simulate, None).await.map_err(|e| {
+  let wait_token = fresh_cancel_token(&cancel);
+  let mut executor = AnyExecutor::connect_wait(
+    simulate,
+    None,
+    std::time::Duration::from_secs(60),
+    wait_token,
+  )
+  .await
+  .map_err(|e| {
     warn!(error = %e, "connect failed");
     e
   })?;

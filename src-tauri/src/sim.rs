@@ -7,12 +7,14 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 
 use pawflash_core::flash::executor::{BootTarget, FlashExecutor};
 use pawflash_core::flash::progress::FlashRunOptions;
 use pawflash_core::flash::results::FlashResult;
 use pawflash_core::flash::simulate::{simulated_vars, SimulatedTransport};
 use pawflash_core::scatter_parser::types::ScatterFile;
+use tokio_util::sync::CancellationToken;
 
 /// A flash executor backed by either a real USB device or a simulation.
 ///
@@ -42,6 +44,30 @@ impl AnyExecutor {
       Ok(Self::Sim(FlashExecutor::new(transport, vars)))
     } else {
       FlashExecutor::connect()
+        .await
+        .map(Self::Real)
+        .map_err(|e| e.to_string())
+    }
+  }
+
+  /// Like [`Self::connect`], but for real (non-simulated) connections it
+  /// polls for up to `timeout` waiting for a fastboot device to appear —
+  /// matching the CLI's flash connect behavior. Cancel aborts the wait.
+  ///
+  /// # Errors
+  ///
+  /// Returns an error if no device appears within `timeout` or the wait is
+  /// cancelled.
+  pub async fn connect_wait(
+    simulate: bool,
+    scatter: Option<&ScatterFile>,
+    timeout: Duration,
+    cancel: CancellationToken,
+  ) -> Result<Self, String> {
+    if simulate {
+      Self::connect(simulate, scatter).await
+    } else {
+      FlashExecutor::wait_for_device(timeout, cancel)
         .await
         .map(Self::Real)
         .map_err(|e| e.to_string())
