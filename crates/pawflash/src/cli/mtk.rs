@@ -90,7 +90,7 @@ pub fn run(action: MtkAction, simulate: bool) -> Result<()> {
             run_status(simulate);
             Ok(())
         }
-        MtkAction::Download => run_download(),
+        MtkAction::Download => run_download(simulate),
         MtkAction::Remove { yes } => run_remove(yes),
         MtkAction::Doctor => run_doctor(simulate),
         MtkAction::Read { partition, file, parttype } => {
@@ -118,7 +118,12 @@ fn run_status(simulate: bool) {
     }
 }
 
-fn run_download() -> Result<()> {
+fn run_download(simulate: bool) -> Result<()> {
+    if simulate {
+        output::status::data("mtk bridge: download skipped (simulated)");
+        return Ok(());
+    }
+
     output::status::data("fetching mtk bridge manifest...");
     let manifest = fetch_manifest().context("failed to fetch mtk bridge manifest")?;
     let platform = current_platform()?;
@@ -126,9 +131,28 @@ fn run_download() -> Result<()> {
     let sha_prefix = &asset.sha256[..8.min(asset.sha256.len())];
     output::status::data(format!("platform {platform}: {sha_prefix} ({url})", url = asset.url));
     info!(version = %manifest.version, "installing mtk bridge");
-    let bin = mtk::ensure_installed(&manifest).context("failed to install mtk bridge")?;
-    output::status::ok("mtk bridge installed", manifest.version);
-    output::status::data(format!("binary: {}", bin.display()));
+
+    // Byte/total progress bar during the download phase.
+    let pb = output::spinner::partition_progress_bar("download");
+    let mut on_progress = |done: u64, total: u64| {
+        if total > 0 {
+            pb.set_length(total);
+        }
+        pb.set_position(done);
+    };
+    let result = mtk::ensure_installed(&manifest, Some(&mut on_progress));
+    match result {
+        Ok(bin) => {
+            pb.finish_and_clear();
+            output::status::ok("mtk bridge installed", manifest.version);
+            output::status::data(format!("binary: {}", bin.display()));
+        }
+        Err(e) => {
+            pb.abandon();
+            info!(error = %e, "mtk bridge install failed");
+            return Err(e).context("failed to install mtk bridge");
+        }
+    }
     Ok(())
 }
 

@@ -583,16 +583,49 @@ async fn mtk_status(simulate: bool) -> Result<MtkStatusPayload, AppError> {
   })
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
-async fn mtk_download(on_event: Channel<ProgressEvent>) -> Result<(), AppError> {
+async fn mtk_download(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<(), AppError> {
   send_progress(&on_event, ProgressEvent::MtkPhase { phase: "manifest".into(), message: "Fetching bridge manifest...".into() });
+
+  if simulate {
+    // Simulated download: no network. Stream a realistic byte count so the UI
+    // exercises the same progress path as a real download.
+    send_progress(&on_event, ProgressEvent::MtkPhase { phase: "download".into(), message: "Downloading (simulated)...".into() });
+    const SIM_TOTAL: u64 = 56 * 1024 * 1024;
+    let channel = on_event.clone();
+    tokio::task::spawn_blocking(move || {
+      let mut done = 0u64;
+      while done < SIM_TOTAL {
+        done = (done + 1024 * 1024).min(SIM_TOTAL);
+        let _ = channel.send(ProgressEvent::MtkProgress { bytes: done, total: SIM_TOTAL });
+        std::thread::sleep(std::time::Duration::from_millis(8));
+      }
+    })
+    .await
+    .map_err(|e| AppError::Other { message: e.to_string() })?;
+    send_progress(&on_event, ProgressEvent::MtkDone { ok: true, detail: "installed (simulated)".into() });
+    return Ok(());
+  }
+
   let manifest = pawflash_core::mtk::fetch_manifest().map_err(|e| AppError::Other { message: mtk_err_string(&e) })?;
   send_progress(&on_event, ProgressEvent::MtkPhase { phase: "download".into(), message: format!("Downloading {}...", manifest.version) });
-  let bin = tokio::task::spawn_blocking(move || pawflash_core::mtk::ensure_installed(&manifest))
-    .await
-    .map_err(|e| AppError::Other { message: e.to_string() })?
-    .map_err(|e| AppError::Other { message: mtk_err_string(&e) })?;
+  let channel = on_event.clone();
+  let bin = tokio::task::spawn_blocking(move || {
+    let mut last_sent = 0u64;
+    let mut on_progress = |done: u64, total: u64| {
+      // Throttle to one event per MiB so a large download doesn't spam the
+      // channel; always emit the final tick.
+      if done - last_sent >= 1024 * 1024 || done == total {
+        last_sent = done;
+        let _ = channel.send(ProgressEvent::MtkProgress { bytes: done, total });
+      }
+    };
+    pawflash_core::mtk::ensure_installed(&manifest, Some(&mut on_progress))
+  })
+  .await
+  .map_err(|e| AppError::Other { message: e.to_string() })?
+  .map_err(|e| AppError::Other { message: mtk_err_string(&e) })?;
   send_progress(&on_event, ProgressEvent::MtkDone { ok: true, detail: format!("installed at {}", bin.display()) });
   Ok(())
 }

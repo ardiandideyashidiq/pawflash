@@ -117,7 +117,7 @@ fn run_op(
     // Hold the contention lock for the whole op so concurrent pawflash
     // processes cannot flash the same device simultaneously.
     let _lock = acquire_device_lock()?;
-    let bin = ensure_installed(manifest)?;
+    let bin = ensure_installed(manifest, None)?;
     runner(false).run(&bin, cmd, on_event)
 }
 

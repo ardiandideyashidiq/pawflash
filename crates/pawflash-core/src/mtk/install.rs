@@ -8,10 +8,14 @@ use crate::mtk::error::MtkError;
 use crate::mtk::Manifest;
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Default install root when no explicit data directory is configured.
 const INSTALL_SUBDIR: &str = "pawflash/mtk-bridge";
+
+/// Read chunk size for streaming a download with progress.
+const READ_CHUNK: usize = 64 * 1024;
 
 /// The platform data directory holding the installed bridge.
 #[must_use]
@@ -63,18 +67,54 @@ fn current_version_at(root: &Path) -> Option<String> {
     read_version(root)
 }
 
-/// Download `url` into memory (blocking).
+/// Read `reader` to completion, invoking `on_progress(done, total)` per chunk.
+///
+/// `total` is a hint from the HTTP `Content-Length`; when unknown it is `0`
+/// and callers should treat progress as indeterminate.
+fn read_body_with_progress(
+    mut reader: impl Read,
+    total: u64,
+    on_progress: &mut dyn FnMut(u64, u64),
+) -> std::io::Result<Vec<u8>> {
+    let mut buf = vec![0u8; READ_CHUNK];
+    let mut out = Vec::new();
+    let mut done = 0u64;
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&buf[..n]);
+        done += u64::try_from(n).unwrap_or(u64::MAX);
+        on_progress(done, total);
+    }
+    Ok(out)
+}
+
+/// Download `url` into memory (blocking), reporting progress per 64 KiB chunk.
 ///
 /// # Errors
 ///
 /// Returns [`MtkError::Download`] on any HTTP failure.
-pub fn download_bytes(url: &str) -> crate::mtk::Result<Vec<u8>> {
+pub fn download_bytes(
+    url: &str,
+    on_progress: Option<&mut dyn FnMut(u64, u64)>,
+) -> crate::mtk::Result<Vec<u8>> {
     let mut res = ureq::get(url)
         .call()
         .map_err(|source| MtkError::Download { url: url.to_string(), source })?;
-    res.body_mut()
-        .read_to_vec()
-        .map_err(|source| MtkError::Download { url: url.to_string(), source })
+    let total = res.body_mut().content_length().unwrap_or(0);
+    match on_progress {
+        Some(cb) => read_body_with_progress(res.body_mut().as_reader(), total, cb)
+            .map_err(|source| MtkError::Download {
+                url: url.to_string(),
+                source: ureq::Error::Io(source),
+            }),
+        None => res
+            .body_mut()
+            .read_to_vec()
+            .map_err(|source| MtkError::Download { url: url.to_string(), source }),
+    }
 }
 
 /// SHA-256 hex digest of `bytes`.
@@ -103,7 +143,10 @@ fn extract_archive(bytes: &[u8], root: &Path) -> Result<(), MtkError> {
 /// Verify, extract, and atomically install archive `bytes` for `manifest`.
 ///
 /// This is the network-free core of the install path (tests drive it directly
-/// with locally-generated archives).
+/// with locally-generated archives). Staging happens in a sibling dir of
+/// `root` so the final rename stays on one filesystem (a `tempdir()` in `/tmp`
+/// would cross devices when `root` lives on the home mount, and
+/// `fs::rename` would fail with `EXDEV`).
 ///
 /// # Errors
 ///
@@ -116,9 +159,18 @@ fn install_from_bytes(manifest: &Manifest, root: &Path, bytes: &[u8]) -> crate::
         return Err(MtkError::HashMismatch { expected: asset.sha256.clone(), actual });
     }
 
-    let staging = tempfile::tempdir()
-        .map_err(|source| MtkError::Install(source.to_string()))?;
-    extract_archive(bytes, staging.path())?;
+    let parent = root.parent().ok_or_else(|| MtkError::Install("install root has no parent".into()))?;
+    fs::create_dir_all(parent).map_err(|source| MtkError::Install(source.to_string()))?;
+    fs::create_dir_all(root).map_err(|source| MtkError::Install(source.to_string()))?;
+
+    // Unique staging dir on the same filesystem as `root`.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let staging = parent.join(format!(".mtk-bridge-stage-{stamp}"));
+    let _guard = StageCleanup(staging.clone());
+    fs::create_dir_all(&staging).map_err(|source| MtkError::Install(source.to_string()))?;
+    extract_archive(bytes, &staging)?;
 
     // Remove any previous install atomically-ish: rename the fresh one in,
     // then drop the old tree.
@@ -127,13 +179,13 @@ fn install_from_bytes(manifest: &Manifest, root: &Path, bytes: &[u8]) -> crate::
     if final_dir.exists() {
         let _ = fs::rename(&final_dir, &old_dir);
     }
-    if staging.path().join("bridge").exists() {
-        let staged = staging.path().join("bridge");
+    if staging.join("bridge").exists() {
+        let staged = staging.join("bridge");
         fs::rename(&staged, &final_dir).map_err(|source| MtkError::Install(source.to_string()))?;
     } else {
         // Tolerate archives that don't wrap in `bridge/`.
         fs::create_dir_all(&final_dir).map_err(|source| MtkError::Install(source.to_string()))?;
-        for entry in fs::read_dir(staging.path())
+        for entry in fs::read_dir(&staging)
             .map_err(|source| MtkError::Install(source.to_string()))?
         {
             let entry = entry.map_err(|source| MtkError::Install(source.to_string()))?;
@@ -152,20 +204,35 @@ fn install_from_bytes(manifest: &Manifest, root: &Path, bytes: &[u8]) -> crate::
     Ok(bridge_binary_path(root))
 }
 
+/// Removes the staging dir on drop (best-effort).
+struct StageCleanup(PathBuf);
+
+impl Drop for StageCleanup {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 /// Ensure the bridge for `manifest` is installed under an explicit root.
 ///
 /// Skips install when `root/version` already matches the manifest version.
+/// `on_progress` receives `(downloaded_bytes, total_bytes)` during the
+/// download phase (`total` is `0` when the server omits `Content-Length`).
 ///
 /// # Errors
 ///
 /// Returns a [`MtkError`] on download, hash, or extract failure.
-pub fn ensure_installed_at(manifest: &Manifest, root: &Path) -> crate::mtk::Result<PathBuf> {
+pub fn ensure_installed_at(
+    manifest: &Manifest,
+    root: &Path,
+    on_progress: Option<&mut dyn FnMut(u64, u64)>,
+) -> crate::mtk::Result<PathBuf> {
     if current_version_at(root).as_deref() == Some(manifest.version.as_str()) {
         return Ok(bridge_binary_path(root));
     }
 
     let asset = manifest.asset_for(&crate::mtk::manifest::current_platform()?)?;
-    let bytes = download_bytes(&asset.url)?;
+    let bytes = download_bytes(&asset.url, on_progress)?;
     install_from_bytes(manifest, root, &bytes)
 }
 
@@ -177,12 +244,18 @@ fn bridge_binary_path(root: &Path) -> PathBuf {
 
 /// Ensure the bridge for `manifest` is installed; return the binary path.
 ///
+/// `on_progress` receives `(downloaded_bytes, total_bytes)` during the
+/// download phase (`total` is `0` when the server omits `Content-Length`).
+///
 /// # Errors
 ///
 /// Returns a [`MtkError`] on download, hash, or extract failure.
-pub fn ensure_installed(manifest: &Manifest) -> crate::mtk::Result<PathBuf> {
+pub fn ensure_installed(
+    manifest: &Manifest,
+    on_progress: Option<&mut dyn FnMut(u64, u64)>,
+) -> crate::mtk::Result<PathBuf> {
     let root = install_root();
-    ensure_installed_at(manifest, &root)
+    ensure_installed_at(manifest, &root, on_progress)
 }
 
 #[cfg(test)]
@@ -243,6 +316,21 @@ mod tests {
     }
 
     #[test]
+    fn install_creates_missing_root_dir() {
+        // Regression: the real install root (e.g. ~/.local/share/pawflash/mtk-bridge)
+        // does not exist on first run; staging lives in the root's parent so the
+        // final rename must create `root` first, else it fails with ENOENT.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("mtk-bridge");
+        assert!(!root.exists());
+        let manifest = make_manifest("v1", sample_manifest_sha256(), None);
+        let bytes = sample_archive_bytes();
+        let bin = install_from_bytes(&manifest, &root, &bytes).unwrap();
+        assert!(bin.exists());
+        assert_eq!(read_version(&root).as_deref(), Some("v1"));
+    }
+
+    #[test]
     fn stale_version_reinstalls() {
         let tmp = tempfile::tempdir().unwrap();
         let m1 = make_manifest("v1", sample_manifest_sha256(), None);
@@ -273,15 +361,50 @@ mod tests {
         let manifest = make_manifest("v1", sample_manifest_sha256(), None);
         let bytes = sample_archive_bytes();
         install_from_bytes(&manifest, tmp.path(), &bytes).unwrap();
-        let bin = ensure_installed_at(&manifest, tmp.path()).unwrap();
+        let bin = ensure_installed_at(&manifest, tmp.path(), None).unwrap();
         assert!(bin.exists());
         assert_eq!(read_version(tmp.path()).as_deref(), Some("v1"));
     }
 
     #[test]
     fn download_bytes_fails_on_bad_url() {
-        let err = download_bytes("https://example.invalid/does-not-exist.tar.gz");
+        let err = download_bytes("https://example.invalid/does-not-exist.tar.gz", None);
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn read_body_with_progress_reports_cumulative_chunks() {
+        // 200 KiB payload read in 64 KiB chunks → callbacks at 64/128/192/200 KiB.
+        let payload = vec![0xABu8; 200 * 1024];
+        let mut progress = Vec::new();
+        let out = read_body_with_progress(
+            std::io::Cursor::new(&payload),
+            200 * 1024,
+            &mut |done, total| progress.push((done, total)),
+        )
+        .expect("read succeeds");
+        assert_eq!(out, payload);
+        assert_eq!(progress, vec![
+            (64 * 1024, 200 * 1024),
+            (128 * 1024, 200 * 1024),
+            (192 * 1024, 200 * 1024),
+            (200 * 1024, 200 * 1024),
+        ]);
+    }
+
+    #[test]
+    fn read_body_with_progress_zero_total_still_reports() {
+        // Unknown total (0) must not suppress progress reporting.
+        let payload = vec![0u8; 10];
+        let mut progress = Vec::new();
+        let out = read_body_with_progress(
+            std::io::Cursor::new(&payload),
+            0,
+            &mut |done, total| progress.push((done, total)),
+        )
+        .expect("read succeeds");
+        assert_eq!(out, payload);
+        assert_eq!(progress, vec![(10, 0)]);
     }
 
     #[test]

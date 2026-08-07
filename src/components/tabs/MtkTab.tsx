@@ -27,6 +27,7 @@ export default memo(function MtkTab() {
   const [status, setStatus] = useState<MtkStatusPayload | null>(null);
   const [busy, setBusy] = useState(false);
   const [opBytes, setOpBytes] = useState<{ bytes: number; total: number } | null>(null);
+  const [downloadBytes, setDownloadBytes] = useState<{ bytes: number; total: number } | null>(null);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -42,12 +43,21 @@ export default memo(function MtkTab() {
   }, [refreshStatus]);
 
   const runChannelOp = useCallback(
-    async (command: string, args: Record<string, unknown>): Promise<unknown> => {
+    async (
+      command: string,
+      args: Record<string, unknown>,
+      onProgress?: (bytes: number, total: number) => void,
+    ): Promise<unknown> => {
       const channel = new Channel<ProgressEvent>();
       channel.onmessage = (event) => {
         addProgressEvent(event);
         if (event.event === "MtkProgress") {
-          setOpBytes({ bytes: event.data.bytes, total: event.data.total });
+          const next = { bytes: event.data.bytes, total: event.data.total };
+          if (onProgress) {
+            onProgress(next.bytes, next.total);
+          } else {
+            setOpBytes(next);
+          }
         }
         if (event.event === "MtkDone" || event.event === "Error") {
           setBusy(false);
@@ -55,6 +65,7 @@ export default memo(function MtkTab() {
       };
       setBusy(true);
       setOpBytes(null);
+      setDownloadBytes(null);
       try {
         const result = await invoke(command, { ...args, onEvent: channel, simulate });
         return result;
@@ -69,7 +80,11 @@ export default memo(function MtkTab() {
   );
 
   const download = useCallback(async () => {
-    const ok = await runChannelOp("mtk_download", {});
+    const ok = await runChannelOp(
+      "mtk_download",
+      {},
+      (bytes, total) => setDownloadBytes({ bytes, total }),
+    );
     if (ok !== null) {
       addEntry({ text: "mtk bridge downloaded", level: "success" });
       void refreshStatus();
@@ -180,6 +195,22 @@ export default memo(function MtkTab() {
               Remove
             </Button>
           </div>
+          {downloadBytes !== null &&
+            (downloadBytes.total > 0 ? (
+              <div className="flex items-center gap-3">
+                <Progress
+                  value={(downloadBytes.bytes / downloadBytes.total) * 100}
+                  className="flex-1"
+                />
+                <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
+                  {Math.round((downloadBytes.bytes / downloadBytes.total) * 100)}%
+                </span>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                downloading… {Math.round(downloadBytes.bytes / (1024 * 1024))} MiB
+              </p>
+            ))}
           {simulate && (
             <p className="text-xs text-warning">SIMULATED MODE — no device will be touched.</p>
           )}
