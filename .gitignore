@@ -4,3 +4,4 @@ handshake.log
 dist/
 node_modules/
 plans
+/comport.txt
