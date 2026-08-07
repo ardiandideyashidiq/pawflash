@@ -112,7 +112,7 @@ export const FlashDialog = memo(function FlashDialog({
               className={cn(
                 "grid gap-3",
                 phase !== "complete"
-                  ? "lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)] border-b border-border pb-3"
+                  ? "lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)]"
                   : "grid-cols-1",
               )}
             >

@@ -63,6 +63,7 @@ function SelectContent({
   >) {
   return (
     <SelectPrimitive.Portal>
+      <SelectPrimitive.Backdrop className="fixed inset-0 z-50 bg-stone-950/18 backdrop-blur-sm transition-opacity duration-150 data-closed:opacity-0 data-open:opacity-100" />
       <SelectPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}

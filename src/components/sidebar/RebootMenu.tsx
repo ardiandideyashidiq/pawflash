@@ -93,8 +93,9 @@ export const RebootMenu = memo(function RebootMenu({
       </Menu.Trigger>
 
       <Menu.Portal>
+        <Menu.Backdrop className="fixed inset-0 z-50 bg-stone-950/18 backdrop-blur-sm transition-opacity duration-150 data-closed:opacity-0 data-open:opacity-100" />
         <Menu.Positioner side="right" align="start" sideOffset={8}>
-          <Menu.Popup className="min-w-52 rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-[var(--overlay-shadow)] outline-none">
+          <Menu.Popup className="z-50 min-w-52 rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-[var(--overlay-shadow)] outline-none">
             <div className="flex flex-col gap-1.5">
               {(["system", "bootloader", "fastbootd", "recovery"] as RebootTarget[]).map(
                 (nextTarget) => {

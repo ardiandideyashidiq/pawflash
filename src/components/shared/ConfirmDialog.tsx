@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { createDismissibleDialogRootHandler } from "@/components/shared/dialogBehavior";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -30,7 +31,7 @@ export function ConfirmDialog({
   isPending = false,
 }: ConfirmDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={createDismissibleDialogRootHandler(onOpenChange)}>
       <DialogContent className="gap-4" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>

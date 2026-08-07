@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { createDismissibleDialogRootHandler } from "@/components/shared/dialogBehavior";
 import type { PartitionRow } from "@/types/api";
 
 interface FlashPlanConfirmDialogProps {
@@ -28,7 +29,7 @@ export const FlashPlanConfirmDialog = memo(function FlashPlanConfirmDialog({
   const selectedCount = selectedPartitions.length;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={createDismissibleDialogRootHandler(onOpenChange)}>
       <DialogContent
         className="w-[min(34rem,calc(100vw-1rem))] !max-w-none gap-4 bg-background text-foreground sm:!max-w-none"
         showCloseButton={false}
