@@ -72,11 +72,42 @@ pub struct DeviceInfo {
 }
 
 /// Cooperative cancellation flags for the single in-flight flash /
-/// force-fastboot operation. The GUI guarantees only one runs at a time.
-#[derive(Default)]
+/// force-fastboot operation. The GUI guarantees only one runs at a time;
+/// the `in_flight` flag enforces that at the backend so a duplicate invoke
+/// (double-click, stale render) cannot start a second device-write operation.
+#[derive(Default, Debug)]
 struct CancelState {
   flash: Arc<AtomicBool>,
   force_fastboot: Arc<AtomicBool>,
+  in_flight: Arc<AtomicBool>,
+}
+
+/// Acquire the single-operation guard, failing if another device-write
+/// operation is already running.
+fn acquire_guard(cancel: &CancelState) -> Result<(), String> {
+  if cancel.in_flight.swap(true, Ordering::AcqRel) {
+    return Err("another flash/device operation is already running".into());
+  }
+  Ok(())
+}
+
+/// RAII guard that releases `in_flight` on drop, covering every early-return
+/// and `?` exit path of the command it guards.
+struct OpGuard<'a> {
+  cancel: &'a CancelState,
+}
+
+impl<'a> OpGuard<'a> {
+  fn new(cancel: &'a CancelState) -> Result<Self, String> {
+    acquire_guard(cancel)?;
+    Ok(Self { cancel })
+  }
+}
+
+impl Drop for OpGuard<'_> {
+  fn drop(&mut self) {
+    self.cancel.in_flight.store(false, Ordering::Release);
+  }
 }
 
 /// In-memory cache of parsed scatter files, keyed by path and invalidated on
@@ -196,6 +227,7 @@ async fn force_fastboot(
   simulate: bool,
 ) -> Result<(), String> {
   cancel.force_fastboot.store(false, Ordering::Relaxed);
+  let _guard = OpGuard::new(&cancel)?;
 
   if simulate {
     info!("simulated force fastboot");
@@ -406,7 +438,8 @@ async fn get_var(name: String, simulate: bool) -> Result<String, String> {
 
 #[tracing::instrument(skip(on_event), fields(simulate))]
 #[tauri::command]
-async fn disable_vbmeta(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<(), String> {
+async fn disable_vbmeta(on_event: Channel<ProgressEvent>, cancel: State<'_, CancelState>, simulate: bool) -> Result<(), String> {
+  let _guard = OpGuard::new(&cancel)?;
   send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to device...".into() });
   if simulate {
     send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
@@ -476,6 +509,7 @@ async fn execute_plan(
   simulate: bool,
 ) -> Result<pawflash_core::flash::results::FlashResult, String> {
   cancel.flash.store(false, Ordering::Relaxed);
+  let _guard = OpGuard::new(&cancel)?;
 
   // Parse
   send_progress(&on_event, ProgressEvent::Phase { phase: "parsing".into(), message: "Parsing scatter file...".into() });
@@ -596,8 +630,10 @@ async fn flash_raw_image(
   partition: String,
   image_path: String,
   on_event: Channel<ProgressEvent>,
+  cancel: State<'_, CancelState>,
   simulate: bool,
 ) -> Result<String, String> {
+  let _guard = OpGuard::new(&cancel)?;
   send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Connecting to device...".into() });
   if simulate {
     send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
@@ -695,4 +731,34 @@ pub fn run() {
     ])
     .run(tauri::generate_context!())
     .expect("error while running pawflash");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn guard_acquire_release_reacquire() {
+        let cancel = CancelState::default();
+        let guard = OpGuard::new(&cancel).expect("first acquire succeeds");
+        drop(guard);
+        let _guard = OpGuard::new(&cancel).expect("re-acquire after drop succeeds");
+    }
+
+    #[test]
+    fn guard_refuses_concurrent_acquire() {
+        let cancel = CancelState::default();
+        let _guard = OpGuard::new(&cancel).expect("first acquire succeeds");
+        let second = OpGuard::new(&cancel);
+        assert!(second.is_err(), "second concurrent acquire must fail");
+    }
+
+    #[test]
+    fn guard_drop_releases_for_next_acquire() {
+        let cancel = CancelState::default();
+        {
+            let _guard = OpGuard::new(&cancel).expect("first acquire succeeds");
+        }
+        let _guard = OpGuard::new(&cancel).expect("acquire succeeds after drop");
+    }
 }
