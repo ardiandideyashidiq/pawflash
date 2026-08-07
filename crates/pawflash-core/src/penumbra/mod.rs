@@ -17,11 +17,14 @@
 
 /// Error types for the penumbra integration.
 pub mod error;
+/// DA manifest fetch and device-name resolution.
+pub mod manifest;
 /// Platform data-dir resolution shared with the mtk module.
 pub mod platform;
 /// Serde event types consumed by the CLI and GUI.
 pub mod types;
 
 pub use error::{PenumbraError, Result};
+pub use manifest::{fetch_da_manifest, list_dais, resolve_by_brand_chipset, resolve_by_device, DAEntry, DAManifest, DA_MANIFEST_URL};
 pub use platform::{base_data_dir, penumbra_dir};
 pub use types::PenumbraEvent;
