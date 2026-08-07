@@ -55,6 +55,17 @@ impl MockTransport {
     }
 
     pub fn commands(&self) -> &[String] { &self.commands }
+
+    /// Set the `max-download-size` variable this mock reports, controlling
+    /// whether the executor routes images through the sparse-wrap path.
+    #[must_use]
+    pub fn with_max_download(mut self, bytes: u32) -> Self {
+        self.get_var_responses.insert(
+            "max-download-size".to_string(),
+            Ok(format!("0x{bytes:X}")),
+        );
+        self
+    }
 }
 
 impl Default for MockTransport { fn default() -> Self { Self::new() } }

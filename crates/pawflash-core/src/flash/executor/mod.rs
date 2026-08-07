@@ -346,4 +346,183 @@ mod tests {
             prev = *bytes;
         }
     }
+
+    #[tokio::test]
+    async fn execute_plan_routes_oversized_image_through_sparse_wrap() {
+        // With a configured max-download-size smaller than the image, the
+        // executor must wrap the raw image in sparse format and issue one
+        // download+flash pair per split.
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("big.img");
+        // 2 MiB plain blob (NOT a sparse image) exceeds the 1 MiB limit.
+        let payload: Vec<u8> = (0..2_000_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&img, &payload).unwrap();
+
+        let fb = MockTransport::new().with_max_download(1024 * 1024);
+        let mut exec = FlashExecutor::new(fb, HashMap::new());
+        let plan = make_empty_plan(vec![make_action("boot", img.to_str())]);
+
+        let result = exec.execute_plan(&plan, FlashRunOptions::default()).await;
+        assert_eq!(result.total, 1);
+        assert_eq!(result.succeeded, 1);
+        assert_eq!(result.failed, 0);
+
+        let cmds = exec.fb.commands();
+        let downloads: Vec<&String> = cmds.iter().filter(|c| c.starts_with("download:")).collect();
+        let flashes: Vec<&String> = cmds.iter().filter(|c| c.starts_with("flash:")).collect();
+        assert!(
+            downloads.len() >= 2,
+            "expected multiple downloads for the sparse wrap, got: {cmds:?}"
+        );
+        assert_eq!(downloads.len(), flashes.len(), "one flash per download: {cmds:?}");
+    }
+
+    #[tokio::test]
+    async fn execute_plan_cancellation_short_circuits_before_second_partition() {
+        use std::sync::atomic::AtomicBool;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("boot.img");
+        std::fs::write(&img, b"fake image data").unwrap();
+
+        let cancel = AtomicBool::new(true);
+        let mut exec = mock_executor();
+        let plan = make_empty_plan(vec![
+            make_action("boot", img.to_str()),
+            make_action("system", img.to_str()),
+        ]);
+
+        let result = exec
+            .execute_plan(
+                &plan,
+                FlashRunOptions {
+                    cancel: Some(&cancel),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(result.cancelled, "expected cancelled result");
+        assert_eq!(result.total, 0, "no partition should be processed when pre-cancelled");
+        // No partition flash commands at all.
+        let cmds = exec.fb.commands();
+        assert!(
+            !cmds.iter().any(|c| c.starts_with("flash:")),
+            "no flash expected after pre-cancel: {cmds:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_plan_b_slot_plan_sets_active_before_flashing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("boot_b.img");
+        std::fs::write(&img, b"fake image data").unwrap();
+
+        let mut action = make_action("boot_b", img.to_str());
+        action.slot = Some("b".to_string());
+        let mut exec = mock_executor();
+        let plan = make_empty_plan(vec![action]);
+
+        let result = exec.execute_plan(&plan, FlashRunOptions::default()).await;
+        assert_eq!(result.succeeded, 1);
+
+        let cmds = exec.fb.commands();
+        let set_active_pos = cmds.iter().position(|c| c == "set_active:b");
+        let first_flash_pos = cmds.iter().position(|c| c.starts_with("flash:"));
+        assert!(
+            set_active_pos.is_some(),
+            "expected set_active:b for a b-slot plan: {cmds:?}"
+        );
+        assert!(
+            first_flash_pos.is_some_and(|f| set_active_pos.unwrap() < f),
+            "set_active must precede the first flash: {cmds:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn flash_empty_vbmeta_flashes_both_slots() {
+        let mut exec = mock_executor();
+        let resp = exec.flash_empty_vbmeta().await.expect("empty vbmeta flash");
+        assert!(!resp.is_empty());
+        let cmds = exec.fb.commands();
+        let flash_cmds: Vec<&String> = cmds.iter().filter(|c| c.starts_with("flash:")).collect();
+        let target_names: Vec<&str> = flash_cmds
+            .iter()
+            .filter_map(|c| c.strip_prefix("flash:"))
+            .collect();
+        assert!(
+            target_names.contains(&"vbmeta_a") && target_names.contains(&"vbmeta_b"),
+            "expected vbmeta_a and vbmeta_b flashes, got: {target_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn execute_plan_against_simulated_transport_records_command_sequence() {
+        // End-to-end: scatter-seeded SimulatedTransport drives the full
+        // execute_plan path with real disk I/O, asserting the SIM command
+        // sequence and a successful outcome.
+        use crate::flash::simulate::SimulatedTransport;
+        use crate::scatter_parser::types::ScatterFile;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("boot.img");
+        std::fs::write(&img, b"fake image data").unwrap();
+
+        let mut layouts = std::collections::BTreeMap::new();
+        layouts.insert(
+            "EMMC".to_string(),
+            vec![crate::scatter_parser::types::ScatterPartition {
+                source: "sim".to_string(),
+                layout: "EMMC".to_string(),
+                index: Some("SYS0".to_string()),
+                name: "boot".to_string(),
+                file_name: Some("boot.img".to_string()),
+                is_download: true,
+                image_type: None,
+                linear_start: 0,
+                physical_start: 0,
+                size: 0x0040_0000,
+                region: "EMMC_BOOT_1".to_string(),
+                storage: None,
+                boundary_check: true,
+                is_reserved: false,
+                operation_type: None,
+                is_upgradable: None,
+                empty_boot_needed: None,
+                combo_partsize_check: None,
+                safety_class: String::new(),
+                raw: json!({}),
+            }],
+        );
+        let scatter = ScatterFile {
+            path: dir.path().join("test.xml"),
+            format: "xml".to_string(),
+            text_hash: "abc".to_string(),
+            platform: Some("MT6789".to_string()),
+            project: None,
+            general: json!({}),
+            layouts,
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        };
+
+        let transport = SimulatedTransport::from_scatter(&scatter);
+        let vars = transport.device_vars().clone();
+        let mut exec = FlashExecutor::new(transport, vars);
+        let plan = make_empty_plan(vec![make_action("boot", img.to_str())]);
+
+        let result = exec.execute_plan(&plan, FlashRunOptions::default()).await;
+        assert_eq!(result.total, 1);
+        assert_eq!(result.succeeded, 1);
+        assert_eq!(result.failed, 0);
+
+        let cmds = &exec.fb.commands;
+        assert!(
+            cmds.iter().any(|c| c.starts_with("SIM download:")),
+            "expected a SIM download of the image, got: {cmds:?}"
+        );
+        assert!(
+            cmds.iter().any(|c| c == "SIM flash:boot"),
+            "expected SIM flash:boot, got: {cmds:?}"
+        );
+    }
 }
