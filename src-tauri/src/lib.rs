@@ -64,6 +64,9 @@ pub enum ProgressEvent {
   MtkPhase { phase: String, message: String },
   MtkProgress { bytes: u64, total: u64 },
   MtkDone { ok: bool, detail: String },
+  PenumbraPhase { phase: String, message: String },
+  PenumbraProgress { bytes: u64, total: u64 },
+  PenumbraDone { ok: bool, detail: String },
   Done { ok: bool, detail: String },
 }
 
@@ -798,6 +801,315 @@ fn parttype_from_str(s: &str) -> Result<pawflash_core::mtk::PartType, AppError> 
   }
 }
 
+// ── Penumbra DA commands ─────────────────────────────────────────────
+
+/// Status payload for the penumbra DA integration.
+#[derive(Debug, Clone, Serialize)]
+pub struct PenumbraStatusPayload {
+  pub da_version: Option<String>,
+  pub da_path: Option<String>,
+  pub da_installed: bool,
+  pub device_visible: bool,
+  pub platform: String,
+}
+
+/// Map a core `PenumbraError` to a GUI-friendly string.
+fn penumbra_err_string(e: &pawflash_core::penumbra::PenumbraError) -> String {
+  match e {
+    pawflash_core::penumbra::PenumbraError::DeviceBusy => {
+      "another pawflash process is using the device".to_string()
+    }
+    pawflash_core::penumbra::PenumbraError::HashMismatch { .. } => {
+      "DA download failed verification; try `da download` again".to_string()
+    }
+    pawflash_core::penumbra::PenumbraError::NoDaSelected => {
+      "no DA selected — run `da download` first".to_string()
+    }
+    other => other.to_string(),
+  }
+}
+
+/// Resolve DA bytes for a GUI op (`--da` style override or persisted selection).
+fn gui_da_bytes(simulate: bool) -> Result<Vec<u8>, AppError> {
+  if simulate {
+    return Ok(Vec::new());
+  }
+  let sel = pawflash_core::penumbra::load_selection()
+    .ok_or_else(|| AppError::Other { message: "no DA selected".into() })?;
+  if !sel.sha256.is_empty() {
+    pawflash_core::penumbra::verify_da(Path::new(&sel.path), &sel.sha256)
+      .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?;
+  }
+  std::fs::read(&sel.path).map_err(|e| AppError::Other { message: e.to_string() })
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn penumbra_status(simulate: bool) -> Result<PenumbraStatusPayload, AppError> {
+  let platform = if cfg!(target_os = "windows") { "windows-x86_64" } else { "linux-x86_64" }.to_string();
+  let device_visible = if simulate {
+    false
+  } else {
+    pawflash_core::udev::device_visible().await
+  };
+  let da_version = if simulate { None } else { pawflash_core::penumbra::load_selection().map(|s| format!("{} ({})", s.brand, s.chipset)) };
+  let da_installed = da_version.is_some();
+  let da_path = pawflash_core::penumbra::load_selection().map(|s| s.path);
+  Ok(PenumbraStatusPayload {
+    da_version,
+    da_path,
+    da_installed,
+    device_visible,
+    platform,
+  })
+}
+
+#[tracing::instrument(skip_all, fields(simulate))]
+#[tauri::command]
+async fn penumbra_da_download(
+  device: Option<String>,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<(), AppError> {
+  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "manifest".into(), message: "Fetching DA manifest...".into() });
+
+  if simulate {
+    send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "download".into(), message: "Downloading (simulated)...".into() });
+    send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "DA installed (simulated)".into() });
+    return Ok(());
+  }
+
+  let entry = match device {
+    Some(d) if !d.trim().is_empty() => {
+      pawflash_core::penumbra::resolve_by_device(&d)
+        .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?
+    }
+    _ => return Err(AppError::Other { message: "enter a device model name".into() }),
+  };
+  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "download".into(), message: format!("Downloading {} ({})...", entry.brand, entry.chipset) });
+
+  let selection = pawflash_core::penumbra::DaSelection {
+    brand: entry.brand.clone(),
+    chipset: entry.chipset.clone(),
+    path: String::new(),
+    sha256: entry.sha256.clone(),
+  };
+  let channel = on_event.clone();
+  let path = tokio::task::spawn_blocking(move || {
+    let mut last_sent = 0u64;
+    let mut on_progress = |done: u64, total: u64| {
+      if done - last_sent >= 1024 * 1024 || done == total {
+        last_sent = done;
+        let _ = channel.send(ProgressEvent::PenumbraProgress { bytes: done, total });
+      }
+    };
+    pawflash_core::penumbra::download_da(&entry, &mut on_progress)
+  })
+  .await
+  .map_err(|e| AppError::Other { message: e.to_string() })?
+  .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?;
+
+  let sel = pawflash_core::penumbra::DaSelection {
+    brand: selection.brand,
+    chipset: selection.chipset,
+    path: path.display().to_string(),
+    sha256: selection.sha256,
+  };
+  pawflash_core::penumbra::save_selection(&sel)
+    .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?;
+  send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: format!("installed at {}", path.display()) });
+  Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn penumbra_da_status() -> Result<pawflash_core::penumbra::DaSelection, AppError> {
+  pawflash_core::penumbra::load_selection()
+    .ok_or_else(|| AppError::Other { message: "no DA selected".into() })
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn penumbra_da_remove(on_event: Channel<ProgressEvent>) -> Result<(), AppError> {
+  pawflash_core::penumbra::remove_cached_da()
+    .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?;
+  pawflash_core::penumbra::clear_selection()
+    .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?;
+  send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "DA cache removed".into() });
+  Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn penumbra_doctor(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<(), AppError> {
+  match pawflash_core::penumbra::load_selection() {
+    Some(sel) => send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "da".into(), message: format!("DA selected: {} ({})", sel.brand, sel.chipset) }),
+    None => send_progress(&on_event, ProgressEvent::Error { message: "no DA selected".into() }),
+  }
+  if !simulate {
+    match pawflash_core::penumbra::fetch_da_manifest() {
+      Ok(m) => send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "manifest".into(), message: format!("manifest reachable ({})", m.version) }),
+      Err(e) => send_progress(&on_event, ProgressEvent::Error { message: penumbra_err_string(&e) }),
+    }
+    let visible = pawflash_core::udev::device_visible().await;
+    send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "device".into(), message: if visible { "DA-capable device visible".into() } else { "no DA-capable device visible".into() } });
+  }
+  #[cfg(target_os = "windows")]
+  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "hint".into(), message: "install a WinUSB driver via Zadig for the MTK device".into() });
+  send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "doctor complete".into() });
+  Ok(())
+}
+
+/// Run a blocking core penumbra op, translating events into `ProgressEvent`s.
+async fn run_penumbra_op<F, T>(on_event: &Channel<ProgressEvent>, op: F) -> Result<T, AppError>
+where
+  F: FnOnce(&mut (dyn FnMut(&pawflash_core::penumbra::PenumbraEvent) + Send)) -> Result<T, pawflash_core::penumbra::PenumbraError>
+    + Send
+    + 'static,
+  T: Send + 'static,
+{
+  let channel = on_event.clone();
+  tokio::task::spawn_blocking(move || {
+    let mut emit = move |ev: &pawflash_core::penumbra::PenumbraEvent| {
+      let _ = channel.send(match ev {
+        pawflash_core::penumbra::PenumbraEvent::Phase { phase, message } => {
+          ProgressEvent::PenumbraPhase { phase: phase.clone(), message: message.clone() }
+        }
+        pawflash_core::penumbra::PenumbraEvent::Progress { bytes, total } => {
+          ProgressEvent::PenumbraProgress { bytes: *bytes, total: *total }
+        }
+        pawflash_core::penumbra::PenumbraEvent::Log { level, message } => {
+          ProgressEvent::PenumbraPhase { phase: "log".into(), message: format!("[{level}] {message}") }
+        }
+        pawflash_core::penumbra::PenumbraEvent::Done { ok, detail } => {
+          ProgressEvent::PenumbraDone { ok: *ok, detail: detail.clone() }
+        }
+      });
+    };
+    op(&mut emit)
+  })
+  .await
+  .map_err(|e| AppError::Other { message: e.to_string() })?
+  .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })
+}
+
+#[tracing::instrument(skip_all, fields(partition, simulate))]
+#[tauri::command]
+async fn penumbra_read(
+  partition: String,
+  file: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<u64, AppError> {
+  let da = gui_da_bytes(simulate)?;
+  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "read".into(), message: format!("Reading {partition} → {file}") });
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::read_partition(&da, &partition, Path::new(&file), simulate, emit)
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(partition, simulate))]
+#[tauri::command]
+async fn penumbra_write(
+  partition: String,
+  file: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<u64, AppError> {
+  let da = gui_da_bytes(simulate)?;
+  if !simulate && !Path::new(&file).exists() {
+    return Err(AppError::Other { message: format!("file not found: {file}") });
+  }
+  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "write".into(), message: format!("Writing {file} → {partition}") });
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::write_partition(&da, &partition, Path::new(&file), simulate, emit)
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(partition, simulate))]
+#[tauri::command]
+async fn penumbra_erase(
+  partition: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<(), AppError> {
+  let da = gui_da_bytes(simulate)?;
+  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "erase".into(), message: format!("Erasing {partition}") });
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::erase_partition(&da, &partition, simulate, emit)
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(unlock, simulate))]
+#[tauri::command]
+async fn penumbra_seccfg(
+  unlock: bool,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<(), AppError> {
+  let da = gui_da_bytes(simulate)?;
+  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "seccfg".into(), message: if unlock { "Unlocking bootloader...".to_string() } else { "Locking bootloader...".to_string() } });
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::seccfg(&da, unlock, simulate, emit)
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn penumbra_pgpt(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<Vec<String>, AppError> {
+  let da = gui_da_bytes(simulate)?;
+  if simulate {
+    send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "pgpt (simulated)".into() });
+    return Ok(vec!["boot".to_string(), "userdata".to_string()]);
+  }
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::pgpt(&da, emit).map(|entries| {
+      entries.iter().map(|p| format!("{} 0x{:016X} 0x{:016X} {}", p.name, p.address, p.size, p.section)).collect()
+    })
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(mode, simulate))]
+#[tauri::command]
+async fn penumbra_reboot(
+  mode: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<(), AppError> {
+  let da = gui_da_bytes(simulate)?;
+  let boot = match mode.as_str() {
+    "normal" => pawflash_core::penumbra::PenumbraBootMode::Normal,
+    "homescreen" => pawflash_core::penumbra::PenumbraBootMode::HomeScreen,
+    "fastboot" => pawflash_core::penumbra::PenumbraBootMode::Fastboot,
+    "meta" => pawflash_core::penumbra::PenumbraBootMode::Meta,
+    "test" => pawflash_core::penumbra::PenumbraBootMode::Test,
+    other => return Err(AppError::Other { message: format!("invalid boot mode '{other}'") }),
+  };
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::reboot(&da, boot, simulate, emit)
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all)]
+#[tauri::command]
+async fn penumbra_shutdown(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<(), AppError> {
+  let da = gui_da_bytes(simulate)?;
+  if simulate {
+    send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "shutdown (simulated)".into() });
+    return Ok(());
+  }
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::shutdown(&da, emit)
+  })
+  .await
+}
+
 // ── Scatter commands ──────────────────────────────────────────────────
 
 #[tracing::instrument(skip(cache), fields(path))]
@@ -1084,6 +1396,18 @@ pub fn run() {
       mtk_read,
       mtk_write,
       mtk_erase,
+      penumbra_status,
+      penumbra_da_download,
+      penumbra_da_status,
+      penumbra_da_remove,
+      penumbra_doctor,
+      penumbra_read,
+      penumbra_write,
+      penumbra_erase,
+      penumbra_seccfg,
+      penumbra_pgpt,
+      penumbra_reboot,
+      penumbra_shutdown,
     ])
     .run(tauri::generate_context!())
     .expect("error while running pawflash");
@@ -1150,6 +1474,34 @@ mod tests {
         let v = serde_json::to_value(ev).unwrap();
         assert_eq!(v["event"], "MtkProgress");
         assert_eq!(v["data"]["bytes"], 1024);
+    }
+
+    #[test]
+    fn penumbra_progress_events_serialize_with_tag() {
+        let ev = ProgressEvent::PenumbraProgress { bytes: 1024, total: 4096 };
+        let v = serde_json::to_value(ev).unwrap();
+        assert_eq!(v["event"], "PenumbraProgress");
+        assert_eq!(v["data"]["bytes"], 1024);
+    }
+
+    #[test]
+    fn penumbra_simulate_read_uses_simulated_runner() {
+        // Simulate mode must not require a DA selection: the empty-slice path
+        // routes to the simulated runner, which emits a complete event stream.
+        let mut events = Vec::new();
+        let bytes = pawflash_core::penumbra::read_partition(
+            &[],
+            "boot",
+            Path::new("/tmp/boot.img"),
+            true, // simulate
+            &mut |e| events.push(e.clone()),
+        )
+        .expect("simulated read succeeds");
+        assert_eq!(bytes, 128 * 1024 * 1024);
+        assert!(matches!(
+            events.last(),
+            Some(pawflash_core::penumbra::PenumbraEvent::Done { ok: true, .. })
+        ));
     }
 
     #[test]
