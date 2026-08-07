@@ -838,4 +838,21 @@ mod tests {
         }
         let _guard = OpGuard::new(&cancel).expect("acquire succeeds after drop");
     }
+
+    #[test]
+    fn app_error_serializes_as_tagged_dto() {
+        // The wire shape must match the TS `AppError` mirror in
+        // `src/types/api.ts` (`{ kind, detail: { ... } }`).
+        let value =
+            serde_json::to_value(AppError::ActionFailed { partition: "boot".into(), message: "boom".into() })
+                .expect("serializes");
+        assert_eq!(value["kind"], "ActionFailed");
+        assert_eq!(value["detail"]["partition"], "boot");
+        assert_eq!(value["detail"]["message"], "boom");
+
+        let no_device =
+            serde_json::to_value(AppError::NoDevice { message: "nope".into() }).expect("serializes");
+        assert_eq!(no_device["kind"], "NoDevice");
+        assert_eq!(no_device["detail"]["message"], "nope");
+    }
 }

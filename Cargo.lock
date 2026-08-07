@@ -2694,6 +2694,7 @@ dependencies = [
  "fastboot-protocol",
  "pawflash-core",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
