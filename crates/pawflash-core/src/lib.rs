@@ -15,6 +15,8 @@ pub mod flash;
 pub mod force_fastboot;
 /// DA-mode partition read/write/erase via the mtkclient bridge.
 pub mod mtk;
+/// Native DA-mode integration via the penumbra library.
+pub mod penumbra;
 
 /// User-facing output formatting, status lines, and tables.
 pub mod output;

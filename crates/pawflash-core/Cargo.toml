@@ -37,6 +37,7 @@ tracing = "0.1"
 ureq = "3"
 fastboot-protocol = { path = "../../vendor/fastboot-rs/fastboot-protocol" }
 android-sparse-image = { path = "../../vendor/fastboot-rs/android-sparse-image" }
+penumbra = { git = "https://github.com/ardiandideyashidiq/penumbra", rev = "2a66151efa73c3655ef9b876afa0806714ecd1c5" }
 async-trait = "0.1"
 strip-ansi-escapes = "0.2"
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
