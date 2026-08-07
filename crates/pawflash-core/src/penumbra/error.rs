@@ -63,12 +63,12 @@ pub enum PenumbraError {
     #[diagnostic(help("plug the device in and retry; on Linux check udev rules"))]
     NoDevice { wait: std::time::Duration },
 
-    /// The DA does not support the connected SoC.
+    /// The DA does not support the connected `SoC`.
     #[error("DA is not compatible with this device (hardware code 0x{hw_code:04X})")]
     #[diagnostic(help("run `pawflash penumbra da download` and pick a DA for your device"))]
     DaMismatch { hw_code: u16 },
 
-    /// A prerequisite (udev rules / WinUSB driver) is not satisfied.
+    /// A prerequisite (`udev` rules / `WinUSB` driver) is not satisfied.
     #[error("device prerequisite not satisfied: {0}")]
     Prerequisite(String),
 }

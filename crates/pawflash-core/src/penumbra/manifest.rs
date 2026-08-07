@@ -17,7 +17,7 @@ pub const DA_MANIFEST_URL: &str =
 pub struct DAEntry {
     /// OEM/brand subdirectory, e.g. `infinix`.
     pub brand: String,
-    /// SoC chipset, e.g. `mt6789`.
+    /// `SoC` chipset, e.g. `mt6789`.
     pub chipset: String,
     /// Retail device names using this DA, e.g. `["Infinix NOTE 12"]`.
     #[serde(default)]
@@ -32,7 +32,7 @@ impl DAEntry {
     /// Human-readable label for pickers: `"Infinix NOTE 12  (infinix · mt6789)"`.
     #[must_use]
     pub fn label(&self) -> String {
-        let device = self.devices.first().map(String::as_str).unwrap_or("unknown device");
+        let device = self.devices.first().map_or("unknown device", String::as_str);
         format!("{device}  ({brand} · {chipset})", brand = self.brand, chipset = self.chipset)
     }
 }

@@ -33,15 +33,16 @@ pub mod state;
 pub mod types;
 
 pub use da::{da_cache_path, download_da, remove_cached_da, verify_da};
-pub use device::{open_device, PenumbraDevice};
+pub use device::{open_device, PenumbraDevice, parse_da_file};
 pub use error::{PenumbraError, Result};
 pub use manifest::{fetch_da_manifest, list_dais, resolve_by_brand_chipset, resolve_by_device, DAEntry, DAManifest, DA_MANIFEST_URL};
 pub use ops::{
-    erase_partition, format, pgpt, peek, poke, read_all, read_offset, read_partition, reboot,
-    rpmb_auth, rpmb_read, rpmb_write, seccfg, set_active_slot, shutdown, upload, write_all,
-    write_offset, write_partition, download_flash, PenumbraBootMode, PenumbraRunner,
-    PartitionEntry, RealPenumbra, SimulatedPenumbra,
+    crash, erase_offset, erase_partition, format, pgpt, peek, poke, read_all, read_offset,
+    read_partition, reboot, rpmb_auth, rpmb_read, rpmb_write, seccfg, set_active_slot, shutdown,
+    upload, write_all, write_offset, write_partition, download_flash, PenumbraBootMode,
+    PenumbraRunner, PartitionEntry, RealPenumbra, SimulatedPenumbra,
 };
+pub use penumbra::core::storage::PartitionKind;
 pub use platform::{base_data_dir, penumbra_dir};
 pub use state::{clear_selection, load_selection, save_selection, DaSelection};
 pub use types::PenumbraEvent;

@@ -32,9 +32,9 @@ pub struct PenumbraDevice {
 ///
 /// Returns [`PenumbraError::DeviceBusy`] if the lock is held, [`PenumbraError::NoDevice`]
 /// if no port appears, [`PenumbraError::DaMismatch`] if the DA doesn't support
-/// the connected SoC, or a wrapped penumbra error otherwise.
+/// the connected `SoC`, or a wrapped penumbra error otherwise.
 pub fn open_device(da_bytes: Vec<u8>, wait: Duration) -> Result<PenumbraDevice> {
-    let _lock = acquire_device_lock().map_err(|e| map_lock_err(e))?;
+    let lock = acquire_device_lock().map_err(map_lock_err)?;
     let port = wait_for_port(wait, Duration::from_millis(500))?;
     let da_hint = da_bytes_parse_hint(&da_bytes);
 
@@ -46,9 +46,9 @@ pub fn open_device(da_bytes: Vec<u8>, wait: Duration) -> Result<PenumbraDevice> 
 
     device
         .init()
-        .map_err(|e| remap_init_error(e, da_hint))?;
+        .map_err(|e| remap_init_error(&e, da_hint))?;
 
-    Ok(PenumbraDevice { device, _lock })
+    Ok(PenumbraDevice { device, _lock: lock })
 }
 
 /// Map an mtk lock error to a penumbra one.
@@ -56,7 +56,7 @@ fn map_lock_err(e: crate::mtk::MtkError) -> PenumbraError {
     match e {
         crate::mtk::MtkError::DeviceBusy => PenumbraError::DeviceBusy,
         other => PenumbraError::DeviceLock {
-            source: std::io::Error::new(std::io::ErrorKind::Other, other.to_string()),
+            source: std::io::Error::other(other.to_string()),
         },
     }
 }
@@ -75,7 +75,7 @@ fn wait_for_port(wait: Duration, tick: Duration) -> Result<Box<dyn penumbra::MTK
     }
 }
 
-/// Try to parse the DA bytes to extract an hw_code for the error hint.
+/// Try to parse the DA bytes to extract an `hw_code` for the error hint.
 fn da_bytes_parse_hint(da_bytes: &[u8]) -> Option<u16> {
     DAFile::parse_da(da_bytes)
         .ok()
@@ -83,7 +83,7 @@ fn da_bytes_parse_hint(da_bytes: &[u8]) -> Option<u16> {
 }
 
 /// Remap penumbra's `init` error: an incompatible DA gets an actionable hint.
-fn remap_init_error(e: penumbra::error::Error, da_hint: Option<u16>) -> PenumbraError {
+fn remap_init_error(e: &penumbra::error::Error, da_hint: Option<u16>) -> PenumbraError {
     let msg = e.to_string();
     if msg.contains("No compatible DA") {
         // The hw_code is embedded in the message as 0xXXXX.
@@ -100,7 +100,7 @@ fn remap_init_error(e: penumbra::error::Error, da_hint: Option<u16>) -> Penumbra
 /// Extract `0xXXXX` from a message like `No compatible DA for hardware code 0x0677`.
 fn parse_hw_code(msg: &str) -> Option<u16> {
     msg.split("0x").nth(1).and_then(|s| {
-        let hex: String = s.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+        let hex: String = s.chars().take_while(char::is_ascii_hexdigit).collect();
         u16::from_str_radix(&hex, 16).ok()
     })
 }
@@ -141,21 +141,21 @@ mod tests {
     #[test]
     fn remap_init_error_da_mismatch() {
         let e = penumbra::error::Error::penumbra("No compatible DA for hardware code 0x0677");
-        let mapped = remap_init_error(e, None);
+        let mapped = remap_init_error(&e, None);
         assert!(matches!(mapped, PenumbraError::DaMismatch { hw_code: 0x0677 }));
     }
 
     #[test]
     fn remap_init_error_other_keeps_message() {
         let e = penumbra::error::Error::penumbra("boom");
-        let mapped = remap_init_error(e, None);
+        let mapped = remap_init_error(&e, None);
         assert!(matches!(mapped, PenumbraError::Penumbra(ref m) if m.contains("boom")));
     }
 
     #[test]
     fn remap_init_error_appends_da_hint() {
         let e = penumbra::error::Error::penumbra("connection reset");
-        let mapped = remap_init_error(e, Some(0x6789));
+        let mapped = remap_init_error(&e, Some(0x6789));
         assert!(matches!(mapped, PenumbraError::Penumbra(ref m) if m.contains("0x6789")));
     }
 
