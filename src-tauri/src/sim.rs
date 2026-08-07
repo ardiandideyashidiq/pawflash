@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
+use pawflash_core::flash::error::FlashError;
 use pawflash_core::flash::executor::{BootTarget, FlashExecutor};
 use pawflash_core::flash::progress::FlashRunOptions;
 use pawflash_core::flash::results::FlashResult;
@@ -34,7 +35,7 @@ impl AnyExecutor {
   /// # Errors
   ///
   /// Returns an error if connecting to a real device fails.
-  pub async fn connect(simulate: bool, scatter: Option<&ScatterFile>) -> Result<Self, String> {
+  pub async fn connect(simulate: bool, scatter: Option<&ScatterFile>) -> Result<Self, FlashError> {
     if simulate {
       let transport = match scatter {
         Some(parsed) => SimulatedTransport::from_scatter(parsed),
@@ -46,7 +47,7 @@ impl AnyExecutor {
       FlashExecutor::connect()
         .await
         .map(Self::Real)
-        .map_err(|e| e.to_string())
+         
     }
   }
 
@@ -63,14 +64,14 @@ impl AnyExecutor {
     scatter: Option<&ScatterFile>,
     timeout: Duration,
     cancel: CancellationToken,
-  ) -> Result<Self, String> {
+  ) -> Result<Self, FlashError> {
     if simulate {
       Self::connect(simulate, scatter).await
     } else {
       FlashExecutor::wait_for_device(timeout, cancel)
         .await
         .map(Self::Real)
-        .map_err(|e| e.to_string())
+         
     }
   }
 
@@ -84,72 +85,65 @@ impl AnyExecutor {
 
   /// # Errors
   /// Returns an error if the device does not respond.
-  pub async fn get_var(&mut self, var: &str) -> Result<String, String> {
-    let result = match self {
+  pub async fn get_var(&mut self, var: &str) -> Result<String, FlashError> {
+    match self {
       Self::Real(executor) => executor.get_var(var).await,
       Self::Sim(executor) => executor.get_var(var).await,
-    };
-    result.map_err(|e| e.to_string())
+    }
   }
 
   /// # Errors
   /// Returns an error if the reboot command fails.
-  pub async fn reboot_to(&mut self, target: BootTarget) -> Result<(), String> {
-    let result = match self {
+  pub async fn reboot_to(&mut self, target: BootTarget) -> Result<(), FlashError> {
+    match self {
       Self::Real(executor) => executor.reboot_to(target).await,
       Self::Sim(executor) => executor.reboot_to(target).await,
-    };
-    result.map_err(|e| e.to_string())
+    }
   }
 
   /// # Errors
   /// Returns an error if the flashing command fails.
-  pub async fn flashing_lock(&mut self) -> Result<String, String> {
-    let result = match self {
+  pub async fn flashing_lock(&mut self) -> Result<String, FlashError> {
+    match self {
       Self::Real(executor) => executor.flashing_lock().await,
       Self::Sim(executor) => executor.flashing_lock().await,
-    };
-    result.map_err(|e| e.to_string())
+    }
   }
 
   /// # Errors
   /// Returns an error if the flashing command fails.
-  pub async fn flashing_unlock(&mut self) -> Result<String, String> {
-    let result = match self {
+  pub async fn flashing_unlock(&mut self) -> Result<String, FlashError> {
+    match self {
       Self::Real(executor) => executor.flashing_unlock().await,
       Self::Sim(executor) => executor.flashing_unlock().await,
-    };
-    result.map_err(|e| e.to_string())
+    }
   }
 
   /// # Errors
   /// Returns an error if the `set_active` command fails.
-  pub async fn set_active_slot(&mut self, slot: &str) -> Result<String, String> {
-    let result = match self {
+  pub async fn set_active_slot(&mut self, slot: &str) -> Result<String, FlashError> {
+    match self {
       Self::Real(executor) => executor.set_active_slot(slot).await,
       Self::Sim(executor) => executor.set_active_slot(slot).await,
-    };
-    result.map_err(|e| e.to_string())
+    }
   }
 
   /// # Errors
   /// Returns an error if flashing the empty vbmeta fails.
-  pub async fn flash_empty_vbmeta(&mut self) -> Result<String, String> {
-    let result = match self {
+  pub async fn flash_empty_vbmeta(&mut self) -> Result<String, FlashError> {
+    match self {
       Self::Real(executor) => executor.flash_empty_vbmeta().await,
       Self::Sim(executor) => executor.flash_empty_vbmeta().await,
-    };
-    result.map_err(|e| e.to_string())
+    }
   }
 
   /// # Errors
   /// Returns an error if the image cannot be read or the flash fails.
-  pub async fn flash_raw_image(&mut self, partition: &str, image_path: &Path) -> Result<String, String> {
-    let result = match self {
+  pub async fn flash_raw_image(&mut self, partition: &str, image_path: &Path) -> Result<String, FlashError> {
+    match self {
       Self::Real(executor) => executor.flash_raw_image(partition, image_path).await,
       Self::Sim(executor) => executor.flash_raw_image(partition, image_path).await,
-    };
-    result.map_err(|e| e.to_string())
+    }
   }
 
   /// Execute a flash plan, streaming transfer progress through `opts`.

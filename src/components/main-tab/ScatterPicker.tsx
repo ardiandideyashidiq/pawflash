@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen } from "lucide-react";
 import { toast } from "sonner";
+import { errorMessage } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConsole } from "@/hooks/useConsole";
@@ -33,7 +34,7 @@ export const ScatterPicker = memo(function ScatterPicker({
       try {
         await invoke("parse_scatter", { path: selected });
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         addEntry({ text: `ScatterRejected ${name} ${message}`, level: "error" });
         toast.error(message);
         return;

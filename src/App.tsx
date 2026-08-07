@@ -27,6 +27,7 @@ import { FlashPlanProvider, useFlashPlan } from "@/hooks/useFlashPlan";
 import { buildFlashPlanOptions } from "@/lib/plan";
 import { useDevice } from "@/hooks/useDevice";
 import { applyDismissibleDialogChange } from "@/components/shared/dialogBehavior";
+import { errorMessage } from "@/types/api";
 import type { DeviceInfo, FlashResult } from "@/types/api";
 import type { ProgressEvent } from "@/types/progress";
 
@@ -108,7 +109,7 @@ function AppRoot() {
         }
         return info;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         addEntry({ text: `DeviceCheck Error ${message}`, level: "error" });
         if (notify) toast.error(message);
         return null;

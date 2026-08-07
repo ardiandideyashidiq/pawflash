@@ -1,5 +1,27 @@
 export type Theme = "light" | "dark";
 
+/** Error DTO returned by the Tauri backend (see `AppError` in src-tauri/src/lib.rs). */
+export type AppError =
+  | { kind: "NoDevice"; detail: { message: string } }
+  | { kind: "Permission"; detail: { message: string } }
+  | { kind: "Protocol"; detail: { message: string } }
+  | { kind: "ActionFailed"; detail: { partition: string; message: string } }
+  | { kind: "Cancelled"; detail: { message: string } }
+  | { kind: "Timeout"; detail: { message: string } }
+  | { kind: "Other"; detail: { message: string } };
+
+/** Extract a readable message from a thrown value that may be an `AppError`
+ * DTO, an `Error`, or a plain string. */
+export function errorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "kind" in error) {
+    const detail = (error as { detail?: { message?: string } }).detail;
+    if (detail?.message) return detail.message;
+    return String((error as { kind?: string }).kind);
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
 export interface DeviceInfo {
   connected: boolean;
   serial: string | null;

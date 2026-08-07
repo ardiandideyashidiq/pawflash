@@ -71,6 +71,49 @@ pub struct DeviceInfo {
   pub vars: HashMap<String, String>,
 }
 
+/// Serializable error DTO for the Tauri boundary. Core `FlashError` variants
+/// are mapped to a tagged kind so the GUI can render error-class-specific
+/// guidance instead of a raw string; unknown errors fall back to `Other`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", content = "detail")]
+pub enum AppError {
+  NoDevice { message: String },
+  Permission { message: String },
+  Protocol { message: String },
+  ActionFailed { partition: String, message: String },
+  Cancelled { message: String },
+  Timeout { message: String },
+  Other { message: String },
+}
+
+impl From<String> for AppError {
+  fn from(message: String) -> Self {
+    Self::Other { message }
+  }
+}
+
+impl From<&str> for AppError {
+  fn from(message: &str) -> Self {
+    Self::Other { message: message.to_string() }
+  }
+}
+
+impl From<pawflash_core::flash::error::FlashError> for AppError {
+  fn from(e: pawflash_core::flash::error::FlashError) -> Self {
+    match e {
+      pawflash_core::flash::error::FlashError::NoDevice => Self::NoDevice { message: e.to_string() },
+      pawflash_core::flash::error::FlashError::Timeout { partition, step } => Self::Timeout {
+        message: format!("flash transfer timed out: {partition}: {step}"),
+      },
+      pawflash_core::flash::error::FlashError::Cancelled => Self::Cancelled { message: "flash cancelled".into() },
+      pawflash_core::flash::error::FlashError::ActionFailed { partition, reason } => {
+        Self::ActionFailed { partition, message: reason }
+      }
+      other => Self::Other { message: other.to_string() },
+    }
+  }
+}
+
 /// Cooperative cancellation flags for the single in-flight flash /
 /// force-fastboot operation. The GUI guarantees only one runs at a time;
 /// the `in_flight` flag enforces that at the backend so a duplicate invoke
@@ -193,7 +236,7 @@ fn send_progress(ch: &Channel<ProgressEvent>, event: ProgressEvent) {
 
 #[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
-async fn get_device_info(simulate: bool) -> Result<DeviceInfo, String> {
+async fn get_device_info(simulate: bool) -> Result<DeviceInfo, AppError> {
   if simulate {
     info!("simulated device info requested");
     let vars = simulated_vars();
@@ -204,7 +247,7 @@ async fn get_device_info(simulate: bool) -> Result<DeviceInfo, String> {
     Ok(mut executor) => {
       let vars = executor.get_all_vars().await.map_err(|e| {
         warn!(error = %e, "get_all_vars failed");
-        e.to_string()
+        AppError::from(e)
       })?;
       let serial = vars.get("serialno").cloned();
       let connected = true;
@@ -219,7 +262,7 @@ async fn get_device_info(simulate: bool) -> Result<DeviceInfo, String> {
       // Permissions, open failures, protocol errors — report them so the GUI
       // does not silently present "not connected".
       warn!(error = %e, "get_device_info: connect failed");
-      Err(e.to_string())
+      Err(AppError::from(e))
     }
   }
 }
@@ -238,7 +281,7 @@ async fn force_fastboot(
   on_event: Channel<ProgressEvent>,
   cancel: State<'_, CancelState>,
   simulate: bool,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
   cancel.force_fastboot.store(false, Ordering::Relaxed);
   let _guard = OpGuard::new(&cancel)?;
 
@@ -271,7 +314,7 @@ async fn force_fastboot(
         }
         Err(e) => {
           warn!(error = %e, "wait_for_preloader failed");
-          return Err(e.to_string());
+          return Err(e.to_string().into());
         }
       }
     }
@@ -327,7 +370,7 @@ async fn force_fastboot(
 async fn run_simulated_force_fastboot(
   on_event: &Channel<ProgressEvent>,
   cancel: &CancelState,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
   send_progress(
     on_event,
     ProgressEvent::ForceFastbootStage {
@@ -371,7 +414,7 @@ async fn run_simulated_force_fastboot(
 
 #[tracing::instrument(skip(cancel))]
 #[tauri::command]
-async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), String> {
+async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), AppError> {
   info!("cancel_force_fastboot requested");
   cancel.force_fastboot.store(true, Ordering::Relaxed);
   Ok(())
@@ -379,19 +422,19 @@ async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), Str
 
 #[tracing::instrument(skip_all, fields(target, simulate))]
 #[tauri::command]
-async fn reboot_device(target: String, simulate: bool) -> Result<(), String> {
+async fn reboot_device(target: String, simulate: bool) -> Result<(), AppError> {
   let boot_target: BootTarget = target.parse().map_err(|e: String| e)?;
   let mut executor = AnyExecutor::connect(simulate, None).await?;
   info!(?boot_target, %simulate, "rebooting");
   executor.reboot_to(boot_target).await.map_err(|e| {
     warn!(?boot_target, error = %e, "reboot failed");
-    e
+    AppError::from(e)
   })
 }
 
 #[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
-async fn lock_bootloader(simulate: bool) -> Result<String, String> {
+async fn lock_bootloader(simulate: bool) -> Result<String, AppError> {
   let mut executor = AnyExecutor::connect(simulate, None).await?;
   let resp = executor.flashing_lock().await.map_err(|e| {
     warn!(error = %e, "flashing lock failed");
@@ -403,7 +446,7 @@ async fn lock_bootloader(simulate: bool) -> Result<String, String> {
 
 #[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
-async fn unlock_bootloader(simulate: bool) -> Result<String, String> {
+async fn unlock_bootloader(simulate: bool) -> Result<String, AppError> {
   let mut executor = AnyExecutor::connect(simulate, None).await?;
   let resp = executor.flashing_unlock().await.map_err(|e| {
     warn!(error = %e, "flashing unlock failed");
@@ -415,7 +458,7 @@ async fn unlock_bootloader(simulate: bool) -> Result<String, String> {
 
 #[tracing::instrument(skip_all, fields(slot, simulate))]
 #[tauri::command]
-async fn set_active_slot(slot: String, simulate: bool) -> Result<String, String> {
+async fn set_active_slot(slot: String, simulate: bool) -> Result<String, AppError> {
   if slot != "a" && slot != "b" {
     warn!(%slot, "invalid slot");
     return Err("slot must be 'a' or 'b'".into());
@@ -431,7 +474,7 @@ async fn set_active_slot(slot: String, simulate: bool) -> Result<String, String>
 
 #[tracing::instrument(skip_all, fields(name, simulate))]
 #[tauri::command]
-async fn get_var(name: String, simulate: bool) -> Result<String, String> {
+async fn get_var(name: String, simulate: bool) -> Result<String, AppError> {
   let mut executor = AnyExecutor::connect(simulate, None).await?;
   let value = executor.get_var(&name).await.map_err(|e| {
     warn!(%name, error = %e, "get_var failed");
@@ -443,7 +486,7 @@ async fn get_var(name: String, simulate: bool) -> Result<String, String> {
 
 #[tracing::instrument(skip(on_event), fields(simulate))]
 #[tauri::command]
-async fn disable_vbmeta(on_event: Channel<ProgressEvent>, cancel: State<'_, CancelState>, simulate: bool) -> Result<(), String> {
+async fn disable_vbmeta(on_event: Channel<ProgressEvent>, cancel: State<'_, CancelState>, simulate: bool) -> Result<(), AppError> {
   let _guard = OpGuard::new(&cancel)?;
   send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Waiting for fastboot device...".into() });
   if simulate {
@@ -499,7 +542,7 @@ async fn build_plan(
   path: String,
   options: sp::FlashPlanOptions,
   cache: State<'_, ScatterCache>,
-) -> Result<sp::FlashPlan, String> {
+) -> Result<sp::FlashPlan, AppError> {
   let parsed = cache.get_or_parse(Path::new(&path))?;
   let plan = sp::build_flash_plan(&parsed, &options);
   info!(
@@ -520,7 +563,7 @@ async fn execute_plan(
   cancel: State<'_, CancelState>,
   cache: State<'_, ScatterCache>,
   simulate: bool,
-) -> Result<pawflash_core::flash::results::FlashResult, String> {
+) -> Result<pawflash_core::flash::results::FlashResult, AppError> {
   cancel.flash.store(false, Ordering::Relaxed);
   let _guard = OpGuard::new(&cancel)?;
 
@@ -538,7 +581,7 @@ async fn execute_plan(
       warn!(%err, "plan error");
       send_progress(&on_event, ProgressEvent::Error { message: err.clone() });
     }
-    return Err(format!("flash plan has {} error(s)", plan.errors.len()));
+    return Err(format!("flash plan has {} error(s)", plan.errors.len()).into());
   }
 
   if plan.actions.is_empty() {
@@ -639,7 +682,7 @@ async fn execute_plan(
 
 #[tracing::instrument(skip(cancel))]
 #[tauri::command]
-async fn cancel_flash(cancel: State<'_, CancelState>) -> Result<(), String> {
+async fn cancel_flash(cancel: State<'_, CancelState>) -> Result<(), AppError> {
   info!("cancel_flash requested");
   cancel.flash.store(true, Ordering::Relaxed);
   cancel
@@ -658,7 +701,7 @@ async fn flash_raw_image(
   on_event: Channel<ProgressEvent>,
   cancel: State<'_, CancelState>,
   simulate: bool,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
   let _guard = OpGuard::new(&cancel)?;
   send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Waiting for fastboot device...".into() });
   if simulate {
@@ -680,7 +723,7 @@ async fn flash_raw_image(
   let path = Path::new(&image_path);
   if !path.exists() {
     warn!(%image_path, "image not found");
-    return Err(format!("image not found: {image_path}"));
+    return Err(format!("image not found: {image_path}").into());
   }
 
   // Resolve the target like the CLI: on an A/B device a bare partition name
@@ -715,7 +758,7 @@ async fn flash_raw_image(
     send_progress(&on_event, ProgressEvent::Error {
       message: format!("{target} is a {role} partition; raw-flashing it can brick or wipe the device."),
     });
-    return Err(format!("{target} is a {role} partition; refusing without explicit confirmation"));
+    return Err(format!("{target} is a {role} partition; refusing without explicit confirmation").into());
   }
   let resp = executor.flash_raw_image(&target, path).await.map_err(|e| {
     warn!(%target, error = %e, "flash_raw_image failed");
