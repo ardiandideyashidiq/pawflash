@@ -17,11 +17,18 @@ inputs:
 
 runs:
   using: composite
+  env:
+    SCCACHE_GHA_ENABLED: "true"
+    RUSTC_WRAPPER: "sccache"
+    SCCACHE_CACHE_SIZE: "2G"
+    CARGO_INCREMENTAL: "0"
 
   steps:
     - uses: dtolnay/rust-toolchain@stable
       with:
         targets: ${{ inputs.target }}
+
+    - uses: mozilla-actions/sccache-action@v0.0.11
 
     - uses: Swatinem/rust-cache@v2
       with:
@@ -29,6 +36,7 @@ runs:
         shared-key: pawflash
         cache-all-crates: true
         cache-on-failure: true
+        cache-targets: false
 
     - name: Install CLI system deps
       if: runner.os == 'Linux' && inputs.deps == 'cli'
@@ -59,3 +67,12 @@ runs:
       with:
         node-version: 22
         cache: pnpm
+
+    - name: Cache node_modules
+      if: inputs.deps == 'gui' || inputs.deps == 'all'
+      uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: node-modules-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          node-modules-${{ runner.os }}-
