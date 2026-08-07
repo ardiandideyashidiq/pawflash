@@ -50,24 +50,44 @@ pub fn parse_int(value: &str, field_name: &str) -> Result<i64> {
     };
     let s = digits.as_ref();
 
-    let parsed = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        i64::from_str_radix(rest, 16)
+    // Parse hex via u64 so values up to `0xFFFF_FFFF_FFFF_FFFF` are handled
+    // explicitly instead of overflowing i64 with a generic error. The final
+    // range check below rejects anything above `i64::MAX` with a clear
+    // message, because the `ScatterPartition` fields are `i64`.
+    let parsed: Option<u64> = if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u64::from_str_radix(rest, 16).ok()
     } else if let Some(rest) = s.strip_suffix('h').or_else(|| s.strip_suffix('H')) {
-        i64::from_str_radix(rest, 16)
+        u64::from_str_radix(rest, 16).ok()
     } else if s.chars().all(|c| c.is_ascii_digit()) {
         // Policy: an all-digit string is DECIMAL. MTK scatters write hex with
         // an explicit `0x`/`h` prefix, so a bare `"1000"` must not be read as
-        // `0x1000`. Mixed digit+letter hex (e.g. `"1000A"`) is unambiguous and
-        // falls through to the hex branch below.
-        s.parse::<i64>()
+        // `0x1000`.
+        s.parse::<u64>().ok()
     } else if s.chars().all(|c| c.is_ascii_hexdigit())
         && s.chars().any(|c| c.is_ascii_hexdigit() && c.is_ascii_alphabetic())
     {
-        i64::from_str_radix(s, 16)
+        // Policy: a mixed digit+letter string is unambiguous hex (e.g.
+        // `"1e9"`, `"1000A"`). Kept per MTK convention; see the pinned test.
+        u64::from_str_radix(s, 16).ok()
     } else {
         return Err(invalid(field_name, value));
     };
-    parsed.map(|n| n * sign).map_err(|_| invalid(field_name, value))
+
+    let Some(n) = parsed else {
+        return Err(invalid(field_name, value));
+    };
+    if n > i64::MAX as u64 {
+        return Err(Error::InvalidValue {
+            detail: format!(
+                "{field_name} value {value} overflows i64 (max 0x7fff_ffff_ffff_ffff)"
+            ),
+            source_text: None,
+            span: None,
+        });
+    }
+    i64::try_from(n)
+        .map(|n| n * sign)
+        .map_err(|_| invalid(field_name, value))
 }
 
 /// Format byte sizes like the Python parser.
@@ -277,6 +297,34 @@ mod tests {
     #[test]
     fn parse_int_should_error_on_invalid() {
         assert!(parse_int("not_a_number", "test").is_err());
+    }
+
+    #[test]
+    fn parse_int_should_reject_u64_scale_hex_with_clear_overflow_error() {
+        let err = parse_int("0xFFFFFFFFFFFFFFFF", "test").unwrap_err();
+        assert!(
+            err.to_string().contains("overflows i64"),
+            "expected an explicit overflow message: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_int_should_accept_i64_max_hex() {
+        assert_eq!(parse_int("0x7FFFFFFFFFFFFFFF", "test").unwrap(), i64::MAX);
+    }
+
+    #[test]
+    fn parse_int_mixed_letter_hex_is_unambiguous_hex() {
+        // MTK convention: unprefixed all-hexdigit strings with a letter are
+        // hex. Pinned so a silent reinterpretation can't creep in.
+        assert_eq!(parse_int("1e9", "test").unwrap(), 0x1E9);
+        assert_eq!(parse_int("1000A", "test").unwrap(), 0x1000A);
+    }
+
+    #[test]
+    fn parse_int_should_error_on_non_hex_letter() {
+        // 'g' is not a hex digit, so this is neither valid decimal nor hex.
+        assert!(parse_int("12g", "test").is_err());
     }
 
     #[test]
