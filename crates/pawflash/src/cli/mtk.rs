@@ -186,6 +186,14 @@ fn run_doctor(simulate: bool) -> Result<()> {
         }
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        match pawflash_core::mtk::ensure_usbdk() {
+            Ok(()) => output::status::ok("usbdk", "present"),
+            Err(e) => output::status::fail("usbdk", format!("{e}")),
+        }
+    }
+
     output::status::ok("doctor", "checks complete");
     Ok(())
 }
