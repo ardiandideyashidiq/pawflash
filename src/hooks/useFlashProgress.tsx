@@ -44,7 +44,6 @@ export interface FlashProgressData {
 export interface FlashProgressActions {
   reset: () => void;
   fail: (message: string) => void;
-  setIsMinimized: (v: boolean) => void;
   onEvent: (event: ProgressEvent) => void;
 }
 
@@ -79,11 +78,9 @@ const initialState: FlashProgressData = {
 
 export function FlashProgressProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<FlashProgressData>(initialState);
-  const isMinimizedRef = useRef(false);
   const lastSampleRef = useRef<{ partition: string; bytes: number; at: number } | null>(null);
 
   const reset = useCallback(() => {
-    isMinimizedRef.current = false;
     lastSampleRef.current = null;
     setState(initialState);
   }, []);
@@ -95,10 +92,6 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
       errorMessage: message,
       statusText: "",
     }));
-  }, []);
-
-  const setIsMinimized = useCallback((v: boolean) => {
-    isMinimizedRef.current = v;
   }, []);
 
   const onEvent = useCallback((event: ProgressEvent) => {
@@ -212,8 +205,8 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const actions = useMemo(
-    () => ({ reset, fail, setIsMinimized, onEvent }),
-    [reset, fail, setIsMinimized, onEvent],
+    () => ({ reset, fail, onEvent }),
+    [reset, fail, onEvent],
   );
 
   const fineValue = useMemo<FlashProgressState>(

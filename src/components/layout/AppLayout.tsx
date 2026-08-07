@@ -17,7 +17,6 @@ import { useUI } from "@/hooks/useUI";
 
 interface AppLayoutProps {
   children: (props: { tab: string }) => ReactNode;
-  sidebarStatus?: ReactNode;
   sidebarActions?:
     | ReactNode
     | ((props: { sidebarOpen: boolean }) => ReactNode);
@@ -34,7 +33,6 @@ const themeOptions = [
 
 export default function AppLayout({
   children,
-  sidebarStatus,
   sidebarActions,
   theme,
   onThemeChange,
@@ -151,9 +149,6 @@ export default function AppLayout({
 
         <div className="min-h-0 flex-1" />
 
-        {sidebarStatus && (
-          <div className={cn("space-y-3 p-3", !sidebarOpen && "px-2")}>{sidebarStatus}</div>
-        )}
         {sidebarActions && (
           <div className={cn("p-3", !sidebarOpen && "px-2")}>{renderSidebarSlot(sidebarActions)}</div>
         )}

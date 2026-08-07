@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { Toaster, toast } from "sonner";
-import { LoaderCircle, MonitorUp, PlugZap } from "lucide-react";
+import { PlugZap } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -78,9 +78,7 @@ function AppRoot() {
   const [isCancellingForceFastboot, setIsCancellingForceFastboot] = useState(false);
   const [flashConfirmOpen, setFlashConfirmOpen] = useState(false);
   const [flashOpen, setFlashOpen] = useState(false);
-  const [flashMinimized, setFlashMinimized] = useState(false);
   const [forceOpen, setForceOpen] = useState(false);
-  const [forceMinimized, setForceMinimized] = useState(false);
 
   const flashPhaseRef = useRef(flash.phase);
   const forcePhaseRef = useRef(force.phase);
@@ -152,7 +150,6 @@ function AppRoot() {
     if (flash.phase === "complete" || flash.phase === "cancelled" || flash.phase === "error") {
       const timeoutId = window.setTimeout(() => {
         setIsCancellingFlash(false);
-        setFlashMinimized(false);
       }, 0);
       return () => window.clearTimeout(timeoutId);
     }
@@ -162,7 +159,6 @@ function AppRoot() {
     if (force.phase === "complete" || force.phase === "cancelled" || force.phase === "error") {
       const timeoutId = window.setTimeout(() => {
         setIsCancellingForceFastboot(false);
-        setForceMinimized(false);
       }, 0);
       return () => window.clearTimeout(timeoutId);
     }
@@ -200,7 +196,6 @@ function AppRoot() {
 
     flash.reset();
     setFlashOpen(true);
-    setFlashMinimized(false);
     setIsStartingFlash(true);
     setFlashConfirmOpen(false);
 
@@ -254,7 +249,6 @@ function AppRoot() {
 
     force.reset();
     setForceOpen(true);
-    setForceMinimized(false);
     addEntry({ text: "ForceFastboot StartRequested", level: "command" });
 
     const channel = new Channel<ProgressEvent>();
@@ -283,7 +277,6 @@ function AppRoot() {
 
       flash.reset();
       setFlashOpen(true);
-      setFlashMinimized(false);
       setIsStartingFlash(true);
 
       const channel = new Channel<ProgressEvent>();
@@ -338,14 +331,10 @@ function AppRoot() {
 
   const hideFlashDialog = useCallback(() => {
     setFlashOpen(false);
-    setFlashMinimized(
-      flashPhaseRef.current === "waiting" || flashPhaseRef.current === "flashing",
-    );
   }, []);
 
   const hideForceDialog = useCallback(() => {
     setForceOpen(false);
-    setForceMinimized(forcePhaseRef.current === "waiting");
   }, []);
 
   const menuActionDisabled =
@@ -358,70 +347,6 @@ function AppRoot() {
     activeFlashSession ||
     activeForceSession ||
     planState.selectedFlashCount === 0;
-
-  const sidebarStatus = (
-    <div className="space-y-3">
-      {simulate && (
-        <div className="status-shell min-w-0 space-y-2 px-3 py-3">
-          <div className="flex min-w-0 items-center gap-2 text-sm">
-            <span className="dot-simulated inline-block h-2.5 w-2.5 shrink-0 rounded-full" />
-            <span className="truncate font-semibold uppercase tracking-wider text-trace-copper">
-              Simulated
-            </span>
-          </div>
-          <p className="text-xs leading-5 text-muted-foreground/80">
-            All operations run against a simulated device — no hardware is touched.
-          </p>
-        </div>
-      )}
-
-      {activeFlashSession && (
-        <div className="status-shell min-w-0 space-y-2 px-3 py-3">
-          <div className="flex min-w-0 items-center gap-2 text-sm">
-            <span
-              className={cn(
-                "inline-block h-2.5 w-2.5 shrink-0 rounded-full",
-                flash.phase === "waiting" && "dot-waiting",
-                flash.phase === "flashing" && "dot-flashing",
-              )}
-            />
-            <span className="truncate text-muted-foreground">{phaseLabel(flash.phase)}</span>
-          </div>
-          {flashMinimized && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start gap-2 overflow-hidden"
-              onClick={() => setFlashOpen(true)}
-            >
-              <MonitorUp className="h-4 w-4" />
-              <span className="truncate">Show progress</span>
-            </Button>
-          )}
-        </div>
-      )}
-
-      {activeForceSession && (
-        <div className="status-shell min-w-0 space-y-2 px-3 py-3">
-          <div className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-            <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
-            <span className="truncate">Waiting for preloader...</span>
-          </div>
-          {forceMinimized && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start gap-2 overflow-hidden"
-              onClick={() => setForceOpen(true)}
-            >
-              <MonitorUp className="h-4 w-4" />
-              <span className="truncate">Show progress</span>
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
-  );
 
   const sidebarActions = ({ sidebarOpen }: { sidebarOpen: boolean }) => (
     <div className={cn("space-y-3", !sidebarOpen && "space-y-2")}>
@@ -456,7 +381,6 @@ function AppRoot() {
     <TooltipProvider>
       <Toaster richColors position="top-center" theme={theme} />
       <AppLayout
-        sidebarStatus={sidebarStatus}
         sidebarActions={sidebarActions}
         theme={theme}
         onThemeChange={handleThemeChange}
@@ -507,7 +431,6 @@ function AppRoot() {
         onOpenChange={(nextOpen, reason) => {
           applyDismissibleDialogChange(nextOpen, reason, hideFlashDialog, () => setFlashOpen(true));
         }}
-        onMinimize={hideFlashDialog}
         onCancel={cancelFlash}
         canCancel={activeFlashSession}
       />
@@ -516,29 +439,11 @@ function AppRoot() {
         onOpenChange={(nextOpen, reason) => {
           applyDismissibleDialogChange(nextOpen, reason, hideForceDialog, () => setForceOpen(true));
         }}
-        onHide={hideForceDialog}
         onCancel={cancelForceFastboot}
       />
       <LogPanel />
     </TooltipProvider>
   );
-}
-
-function phaseLabel(phase: "idle" | "waiting" | "flashing" | "complete" | "cancelled" | "error") {
-  switch (phase) {
-    case "waiting":
-      return "Waiting for device...";
-    case "flashing":
-      return "Flashing...";
-    case "cancelled":
-      return "Cancelled";
-    case "complete":
-      return "Complete";
-    case "error":
-      return "Error";
-    default:
-      return "";
-  }
 }
 
 export default function App() {

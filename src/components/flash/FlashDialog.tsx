@@ -1,6 +1,6 @@
-import { memo, useEffect } from "react";
+import { memo } from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import { Minus, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -14,7 +14,6 @@ import {
 interface FlashDialogProps {
   open: boolean;
   onOpenChange: (open: boolean, reason?: DialogChangeReason) => void;
-  onMinimize: () => void;
   onCancel: () => void | Promise<void>;
   canCancel: boolean;
 }
@@ -22,7 +21,6 @@ interface FlashDialogProps {
 export const FlashDialog = memo(function FlashDialog({
   open,
   onOpenChange,
-  onMinimize,
   onCancel,
   canCancel,
 }: FlashDialogProps) {
@@ -37,12 +35,7 @@ export const FlashDialog = memo(function FlashDialog({
     summary,
     errorMessage,
     statusText,
-    setIsMinimized,
   } = useFlashProgress();
-
-  useEffect(() => {
-    if (open) setIsMinimized(false);
-  }, [open, setIsMinimized]);
 
   const imagePct = total > 0 ? Math.round((bytes / total) * 100) : 0;
   const overallPct = overallTotal > 0 ? Math.round((overallBytes / overallTotal) * 100) : 0;
@@ -81,21 +74,7 @@ export const FlashDialog = memo(function FlashDialog({
                   Cancel
                 </Button>
               )}
-              {canCancel ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full rounded-sm whitespace-nowrap sm:w-auto"
-                  aria-label="Hide flash dialog"
-                  onClick={() => {
-                    setIsMinimized(true);
-                    onMinimize();
-                  }}
-                >
-                  <Minus className="h-4 w-4" />
-                  Minimize
-                </Button>
-              ) : isFinished ? (
+              {!canCancel && isFinished && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -105,7 +84,7 @@ export const FlashDialog = memo(function FlashDialog({
                   <X className="h-4 w-4" />
                   Close
                 </Button>
-              ) : null}
+              )}
             </div>
           </div>
 

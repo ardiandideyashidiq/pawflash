@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import { CheckCircle2, LoaderCircle, Minus, X, XCircle } from "lucide-react";
+import { CheckCircle2, LoaderCircle, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
@@ -12,18 +12,15 @@ import {
 interface ForceFastbootDialogProps {
   open: boolean;
   onOpenChange: (open: boolean, reason?: DialogChangeReason) => void;
-  onHide: () => void;
   onCancel: () => void | Promise<void>;
 }
 
 export const ForceFastbootDialog = memo(function ForceFastbootDialog({
   open,
   onOpenChange,
-  onHide,
   onCancel,
 }: ForceFastbootDialogProps) {
   const { phase, stage, message } = useForceFastboot();
-  const canMinimize = phase === "waiting";
   const isFinished = phase === "complete" || phase === "cancelled" || phase === "error";
 
   const waitingTitle =
@@ -66,17 +63,12 @@ export const ForceFastbootDialog = memo(function ForceFastbootDialog({
                   Cancel
                 </Button>
               )}
-              {canMinimize ? (
-                <Button variant="outline" size="sm" className="rounded-sm whitespace-nowrap" onClick={onHide}>
-                  <Minus className="h-4 w-4" />
-                  Minimize
-                </Button>
-              ) : isFinished ? (
+              {isFinished && (
                 <Button variant="outline" size="sm" className="rounded-sm whitespace-nowrap" onClick={() => onOpenChange(false)}>
                   <X className="h-4 w-4" />
                   Close
                 </Button>
-              ) : null}
+              )}
             </div>
           </div>
 

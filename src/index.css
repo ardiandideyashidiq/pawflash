@@ -268,23 +268,4 @@
     0%, 100% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
   }
-
-  .dot-waiting {
-    background-color: var(--info);
-  }
-  .dot-flashing {
-    background-color: var(--color-trace-copper);
-  }
-  .dot-complete {
-    background-color: var(--success);
-  }
-  .dot-error {
-    background-color: var(--error);
-  }
-  .dot-cancelled {
-    background-color: var(--warning);
-  }
-  .dot-simulated {
-    background-color: var(--color-trace-gold);
-  }
 }
