@@ -85,7 +85,7 @@ function FlashTabInner({
       )}
 
       <div className="panel-shell shrink-0 px-5 py-4 sm:px-6 sm:py-5">
-        <div className="grid grid-cols-2 items-center gap-3 lg:grid-cols-4 lg:gap-4">
+        <div className="grid grid-cols-2 items-stretch gap-3 lg:grid-cols-4 lg:gap-4">
           <SummaryCard label="Chipset" value={plan?.chipset ?? "—"} />
           <SummaryCard label="Storage" value={plan?.storage ?? "—"} />
           <SummaryCard
