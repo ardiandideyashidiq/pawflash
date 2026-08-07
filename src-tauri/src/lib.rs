@@ -282,50 +282,42 @@ async fn force_fastboot(
     }
   };
 
-  let mut dev = pawflash_core::force_fastboot::serial::open_with_permission_recovery(&port)
+  let dev = pawflash_core::force_fastboot::serial::open_with_permission_recovery(&port)
     .map_err(|e| { warn!(%port, error = %e, "open_with_permission_recovery failed"); e.to_string() })?;
 
   info!(%port, "preloader found, sending FASTBOOT");
   send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "sending".into(), message: format!("Found preloader on {port}, sending FASTBOOT...") });
 
-  loop {
-    if cancel.force_fastboot.load(Ordering::Relaxed) {
-      info!("force fastboot cancelled during handshake");
-      send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
-      return Ok(());
-    }
-
-    use tokio::io::AsyncWriteExt;
-    match dev.write_all(b"FASTBOOT").await {
-      Ok(()) => { let _ = dev.flush().await; }
-      Err(_) => {
-        debug!("FASTBOOT write failed, checking mode and reconnecting");
-        drop(dev);
-        if pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
-          debug!("device already in fastboot mode after reconnect");
-          break;
-        }
-        let Some(new_port) =
-          pawflash_core::force_fastboot::serial::wait_for_preloader(true).await.map_err(|e| e.to_string())?
-        else {
-          warn!("preloader disappeared during handshake");
-          break;
-        };
-        debug!(port = %new_port, "reconnecting to preloader");
-        dev = pawflash_core::force_fastboot::serial::open_with_permission_recovery(&new_port)
-          .map_err(|e| e.to_string())?;
-        continue;
+  let sends = pawflash_core::force_fastboot::handshake::handshake(
+    dev,
+    &port,
+    Some(&cancel.force_fastboot),
+    |event| match event {
+      pawflash_core::force_fastboot::handshake::HandshakeEvent::Write { count } => {
+        debug!(sends = count, "FASTBOOT write");
       }
-    }
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    if pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
-      debug!("fastboot mode confirmed");
-      break;
-    }
+      pawflash_core::force_fastboot::handshake::HandshakeEvent::PortLost { port } => {
+        warn!(%port, "preloader port lost, waiting for reconnect");
+      }
+      pawflash_core::force_fastboot::handshake::HandshakeEvent::PortReconnected { port } => {
+        debug!(port = %port, "reconnected to preloader");
+      }
+    },
+  )
+  .await
+  .map_err(|e| {
+    warn!(error = %e, "force-fastboot handshake failed");
+    e.to_string()
+  })?;
+
+  if cancel.force_fastboot.load(Ordering::Relaxed) {
+    info!(sends, "force fastboot cancelled during handshake");
+    send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+    return Ok(());
   }
 
   send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "confirmed".into(), message: "Fastboot mode confirmed.".into() });
-  info!("device now in fastboot mode");
+  info!(sends, "device now in fastboot mode");
   send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Device now in fastboot mode".into() });
   Ok(())
 }

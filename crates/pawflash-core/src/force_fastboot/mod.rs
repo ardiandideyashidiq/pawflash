@@ -12,6 +12,8 @@
 pub mod error;
 /// Fastboot mode detection and device listing over USB.
 pub mod fastboot;
+/// The shared FASTBOOT preloader handshake loop.
+pub mod handshake;
 /// Serial-port scanning, opening, and preloader handshake waits.
 pub mod serial;
 /// Permission-checking helpers for serial port access.

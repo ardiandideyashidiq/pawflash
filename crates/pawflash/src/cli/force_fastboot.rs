@@ -1,9 +1,8 @@
 use miette::Result;
-use tokio::io::AsyncWriteExt;
 use tokio::time::{sleep, Duration, Instant};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
-use pawflash_core::force_fastboot::{fastboot, serial};
+use pawflash_core::force_fastboot::{fastboot, handshake, serial};
 use pawflash_core::output;
 
 /// Force a `MediaTek` device into fastboot mode via preloader handshake.
@@ -30,7 +29,7 @@ pub async fn run(simulate: bool) -> Result<()> {
         return Ok(());
     }
 
-    let Some(mut port) = output::spinner::run_with_spinner(
+    let Some(port) = output::spinner::run_with_spinner(
         "Waiting for preloader serial port (120s timeout)...",
         serial::wait_for_preloader(true),
     )
@@ -47,58 +46,29 @@ pub async fn run(simulate: bool) -> Result<()> {
     output::status::ok("[+]", format!("{port} appeared"));
     output::status::blank();
 
-    let mut dev = serial::open_with_permission_recovery(&port)?;
-    let mut count: u64 = 0;
+    let dev = serial::open_with_permission_recovery(&port)?;
     let start = Instant::now();
 
     let spinner = output::spinner::start("Waiting for preloader handshake...");
 
-    loop {
-        trace!(sends = count, elapsed = ?start.elapsed(), "writing FASTBOOT");
-        match dev.write_all(b"FASTBOOT").await {
-            Ok(()) => {
-                let _ = dev.flush().await;
-                count += 1;
-
-                if count % 5 == 0 {
-                    debug!(sends = count, "batch progress");
-                }
+    let count = handshake::handshake(
+        dev,
+        &port,
+        None,
+        |event| match event {
+            handshake::HandshakeEvent::Write { count } => {
+                trace!(sends = count, elapsed = ?start.elapsed(), "writing FASTBOOT");
             }
-            Err(err) => {
-                warn!(%err, %port, sends = count, "serial write failed");
+            handshake::HandshakeEvent::PortLost { port } => {
                 output::status::warn("[!]", format!("{port} disconnected"));
-
-                if fastboot::in_fastboot_mode().await {
-                    debug!("fastboot mode detected after write failure");
-                    break;
-                }
-
-                drop(dev);
                 output::status::warn("[!]", format!("{port} lost, waiting for reconnect"));
-
-                if let Some(new_port) = output::spinner::run_with_spinner(
-                    "Waiting for device to reconnect...",
-                    serial::wait_for_preloader(true),
-                ).await? {
-                    port = new_port;
-                    output::status::ok("[+]", format!("{port} reconnected"));
-                    debug!(%port, "reconnected after port loss");
-                    dev = serial::open_with_permission_recovery(&port)?;
-                    continue;
-                }
-
-                debug!("preloader wait returned None — fastboot detected");
-                break;
             }
-        }
-
-        if fastboot::in_fastboot_mode().await {
-            debug!(sends = count, "fastboot mode detected in main loop");
-            break;
-        }
-
-        sleep(Duration::from_millis(500)).await;
-    }
+            handshake::HandshakeEvent::PortReconnected { port } => {
+                output::status::ok("[+]", format!("{port} reconnected"));
+            }
+        },
+    )
+    .await?;
 
     output::spinner::succeed(&spinner);
 
