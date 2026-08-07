@@ -1,10 +1,10 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
-  Settings,
+  Info,
   Sun,
   Terminal,
   Wrench,
@@ -48,7 +48,7 @@ export default function AppLayout({
       { id: "flasher", label: "Flasher", icon: Zap },
       { id: "menu", label: "Menu", icon: Wrench },
       { id: "extras", label: "Extras", icon: Search },
-      { id: "settings", label: "Settings", icon: Settings },
+      { id: "about", label: "About", icon: Info },
     ],
     [],
   );
@@ -123,26 +123,31 @@ export default function AppLayout({
           aria-label="Main navigation"
           className={cn("flex flex-col gap-2 p-3", !sidebarOpen && "items-center px-2")}
         >
-          {navItems.map((item) => {
+          {navItems.map((item, index) => {
             const Icon = item.icon;
             const active = tab === item.id;
+            const notLast = index < navItems.length - 1;
             return (
-              <button
-                key={item.id}
-                onClick={() => setTab(item.id)}
-                aria-label={item.label}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-200 ease-out",
-                  sidebarOpen ? "w-full justify-start" : "w-11 justify-center px-0",
-                  active
-                    ? "border border-trace-copper/60 bg-trace-copper/15 text-trace-copper shadow-[var(--panel-shadow)]"
-                    : "text-muted-foreground hover:bg-accent-soft/70 hover:text-foreground",
+              <Fragment key={item.id}>
+                <button
+                  onClick={() => setTab(item.id)}
+                  aria-label={item.label}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-200 ease-out",
+                    sidebarOpen ? "w-full justify-start" : "w-11 justify-center px-0",
+                    active
+                      ? "border border-trace-copper/60 bg-trace-copper/15 text-trace-copper shadow-[var(--panel-shadow)]"
+                      : "text-muted-foreground hover:bg-accent-soft/70 hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {sidebarOpen && <span className="truncate">{item.label}</span>}
+                </button>
+                {notLast && (
+                  <Separator className={cn(sidebarOpen ? "w-full" : "mx-auto w-8")} />
                 )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {sidebarOpen && <span className="truncate">{item.label}</span>}
-              </button>
+              </Fragment>
             );
           })}
         </nav>

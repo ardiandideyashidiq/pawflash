@@ -34,7 +34,7 @@ import type { ProgressEvent } from "@/types/progress";
 const FlasherTab = lazy(() => import("@/components/tabs/FlasherTab"));
 const MenuTab = lazy(() => import("@/components/tabs/MenuTab"));
 const ExtrasTab = lazy(() => import("@/components/tabs/ExtrasTab"));
-const SettingsTab = lazy(() => import("@/components/tabs/SettingsTab"));
+const AboutTab = lazy(() => import("@/components/tabs/AboutTab"));
 
 const REBOOT_TARGET_STORAGE_KEY = "last-reboot-target";
 
@@ -412,7 +412,7 @@ function AppRoot() {
                   onManualFlash={startManualFlash}
                 />
               )}
-              {tab === "settings" && <SettingsTab />}
+              {tab === "about" && <AboutTab />}
             </div>
           </Suspense>
         )}

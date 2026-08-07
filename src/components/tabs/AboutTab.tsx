@@ -4,7 +4,7 @@ import { Label } from "@/components/ui/label";
 import { useConsole } from "@/hooks/useConsole";
 import { useSimulation } from "@/hooks/useSimulation";
 
-export default function SettingsTab() {
+export default function AboutTab() {
   const { simulate, setSimulate, available } = useSimulation();
   const { addEntry } = useConsole();
 
