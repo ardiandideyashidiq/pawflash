@@ -81,7 +81,7 @@ Single 2-phase workflow (matrix build → one combined release):
 |----------|---------|---------------|-------------|
 | `release.yml` | push to main | CLI `pawflash` linux + windows, Tauri bundles linux + windows | `release-YYYYMMDD-HHMMSS` |
 
-Shared setup: `.github/actions/setup/`. Linux build deps: `libudev-dev` (CLI), `libwebkit2gtk-4.1-dev` + `patchelf` (GUI).
+Shared setup: `.github/actions/setup/`. Linux build deps via `deps: all`: `libudev-dev` (CLI), `libwebkit2gtk-4.1-dev` + `patchelf` (GUI).
 
 ## Vendored dep notes
 
