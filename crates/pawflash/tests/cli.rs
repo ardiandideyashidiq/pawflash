@@ -135,3 +135,64 @@ fn help_shows_flash_subcommands() {
         .stdout(predicate::str::contains("scatter"))
         .stdout(predicate::str::contains("raw"));
 }
+
+#[test]
+fn mtkclient_help_lists_all_subcommands() {
+    let mut cmd = Command::cargo_bin("pawflash").expect("binary resolves");
+    let assert = cmd.arg("mtkclient").arg("--help").assert();
+    assert
+        .success()
+        .stdout(predicate::str::contains("status"))
+        .stdout(predicate::str::contains("download"))
+        .stdout(predicate::str::contains("remove"))
+        .stdout(predicate::str::contains("doctor"))
+        .stdout(predicate::str::contains("read"))
+        .stdout(predicate::str::contains("write"))
+        .stdout(predicate::str::contains("erase"));
+}
+
+#[test]
+fn mtkclient_status_simulate_reports_not_installed() {
+    let mut cmd = Command::cargo_bin("pawflash").expect("binary resolves");
+    let assert = cmd.arg("mtkclient").arg("status").arg("--simulate").assert();
+    assert
+        .success()
+        .stdout(predicate::str::contains("not installed"));
+}
+
+#[test]
+fn mtkclient_read_simulate_completes_without_network() {
+    // Simulate mode must not touch the network or require an installed bridge.
+    let mut cmd = Command::cargo_bin("pawflash").expect("binary resolves");
+    let output = cmd
+        .arg("mtkclient")
+        .arg("read")
+        .arg("--partition")
+        .arg("boot")
+        .arg("--file")
+        .arg("/tmp/boot.img")
+        .arg("--simulate")
+        .output()
+        .expect("command runs");
+    assert!(output.status.success(), "simulated read must succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The status line (via `output::status::ok`) is routed through the shared
+    // MultiProgress, which buffers when stdout is piped; assert on the data
+    // line that reaches stdout directly.
+    assert!(stdout.contains("reading boot"), "stdout: {stdout}");
+}
+
+#[test]
+fn mtkclient_invalid_parttype_errors() {
+    let mut cmd = Command::cargo_bin("pawflash").expect("binary resolves");
+    let assert = cmd
+        .arg("mtkclient")
+        .arg("erase")
+        .arg("--partition")
+        .arg("boot")
+        .arg("--parttype")
+        .arg("bogus")
+        .arg("--simulate")
+        .assert();
+    assert.failure();
+}

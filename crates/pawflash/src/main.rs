@@ -40,6 +40,9 @@ async fn run(cli: Cli) -> miette::Result<()> {
         Some(Commands::DisableVbmeta) => {
             pawflash::cli::disable_vbmeta::run(simulate).await?;
         }
+        Some(Commands::Mtkclient { action }) => {
+            pawflash::cli::mtk::run(action, simulate)?;
+        }
         Some(Commands::Device { action }) => {
             pawflash::cli::device::run(action, simulate).await?;
         }

@@ -8,6 +8,8 @@ pub mod flash;
 pub mod device;
 /// Disable-vbmeta CLI handler.
 pub mod disable_vbmeta;
+/// mtkclient DA-mode bridge CLI handler.
+pub mod mtk;
 
 /// Interactive flash prompt flow.
 pub mod interactive;

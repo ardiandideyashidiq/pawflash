@@ -29,7 +29,7 @@ pub mod types;
 
 pub use error::{MtkError, Result};
 pub use install::{current_version, ensure_installed, install_root};
-pub use manifest::{fetch_manifest, Manifest, PlatformAsset};
+pub use manifest::{current_platform, fetch_manifest, Manifest, PlatformAsset};
 pub use ops::{
     read_partition, write_partition, erase_partition, BridgeRunner, RealBridge, SimulatedMtkRunner,
 };

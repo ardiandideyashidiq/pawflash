@@ -48,6 +48,11 @@ pub enum Commands {
     /// Flash empty vbmeta to both slots, disabling dm-verity and AVB verification
     #[command(name = "disable-vbmeta")]
     DisableVbmeta,
+    /// DA-mode partition ops via the mtkclient bridge
+    Mtkclient {
+        #[command(subcommand)]
+        action: crate::cli::mtk::MtkAction,
+    },
     /// Fastboot device operations
     Device {
         #[command(subcommand)]
