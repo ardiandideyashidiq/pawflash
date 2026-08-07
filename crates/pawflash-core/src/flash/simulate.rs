@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -9,113 +8,46 @@ use crate::flash::transport::DownloadSender;
 use crate::flash::transport::FlashTransport;
 use crate::scatter_parser::types::ScatterFile;
 
-// ── Helpers ─────────────────────────────────────────────────────────
-
-/// Convert a byte count + throughput to a [`Duration`] using integer
-/// arithmetic (nanosecond precision, saturating).
-const fn bytes_to_delay(bytes: u64, bytes_per_sec: u64) -> Duration {
-    let mul = bytes.saturating_mul(1_000_000_000);
-    let nanos = match mul.checked_div(bytes_per_sec) {
-        Some(n) => n,
-        None => u64::MAX,
-    };
-    Duration::from_nanos(nanos)
-}
-
-// ── Speed configuration ────────────────────────────────────────────
-
-/// Transfer and flash write speeds for simulation (integer bytes/sec).
-///
-/// Controls how fast data appears to travel over USB and how fast
-/// the device appears to write to flash storage.
-#[derive(Debug, Clone)]
-pub struct SpeedConfig {
-    /// USB transfer throughput (bytes/sec).
-    /// USB 3.0 ≈ `209_715_200` (200 MiB/s), USB 2.0 ≈ `36_700_160` (35 MiB/s).
-    pub usb_bytes_per_sec: u64,
-    /// Flash write throughput (bytes/sec).
-    /// UFS ≈ `209_715_200`, eMMC ≈ `52_428_800`.
-    pub flash_bytes_per_sec: u64,
-    /// Base latency applied to every command.
-    pub command_latency: Duration,
-}
-
-impl Default for SpeedConfig {
-    fn default() -> Self {
-        Self {
-            usb_bytes_per_sec: 200 * 1024 * 1024,
-            flash_bytes_per_sec: 200 * 1024 * 1024,
-            command_latency: Duration::from_millis(50),
-        }
-    }
-}
-
-impl SpeedConfig {
-    /// Conservative USB 2.0 + eMMC profile.
-    #[must_use]
-    pub const fn usb2() -> Self {
-        Self {
-            usb_bytes_per_sec: 35 * 1024 * 1024,
-            flash_bytes_per_sec: 50 * 1024 * 1024,
-            command_latency: Duration::from_millis(100),
-        }
-    }
-}
-
 // ── Download sink ──────────────────────────────────────────────────
 
-/// Accumulates downloaded data and simulates USB transfer delay.
+/// Accumulates downloaded data without simulated USB transfer delay.
 ///
-/// Each `extend_from_slice` call sleeps proportionally to the chunk size
-/// divided by the configured USB speed, making progress-bar updates
-/// feel realistic.
+/// Simulation runs at the storage's native read speed: the executor reads
+/// image bytes from disk directly into this buffer, so wall-clock time
+/// reflects real filesystem throughput (like a file copy) rather than a
+/// fixed device profile.
+#[derive(Default)]
 pub struct SimulatedDownloadSink {
-    speed: Arc<SpeedConfig>,
     data: Vec<u8>,
 }
 
 impl SimulatedDownloadSink {
-    #[must_use]
-    pub const fn new(speed: Arc<SpeedConfig>) -> Self {
-        Self { speed, data: Vec::new() }
-    }
-
-    /// Simulate USB transfer delay for a data chunk.
+    /// Append a data chunk. No simulated delay — disk I/O bounds the rate.
     ///
     /// # Errors
     /// Returns an error if the data chunk is malformed (never in practice).
-    pub async fn extend_from_slice(&mut self, data: &[u8]) -> Result<()> {
-        let delay = bytes_to_delay(data.len() as u64, self.speed.usb_bytes_per_sec);
-        if delay > Duration::from_millis(1) {
-            tokio::time::sleep(delay).await;
-        }
+    pub fn extend_from_slice(&mut self, data: &[u8]) -> Result<()> {
         self.data.extend_from_slice(data);
         Ok(())
     }
 
-    /// Reserve up to `max` bytes for direct writes, simulating the same USB
-    /// transfer delay as [`Self::extend_from_slice`]. The reserved bytes are
+    /// Reserve up to `max` bytes for direct writes. The reserved bytes are
     /// committed to the buffer; the caller must fill them.
     ///
     /// # Errors
     /// Returns an error if reservation fails (never in practice).
-    pub async fn get_mut_data(&mut self, max: usize) -> Result<&mut [u8]> {
-        let delay = bytes_to_delay(max as u64, self.speed.usb_bytes_per_sec);
-        if delay > Duration::from_millis(1) {
-            tokio::time::sleep(delay).await;
-        }
+    pub fn get_mut_data(&mut self, max: usize) -> Result<&mut [u8]> {
         let start = self.data.len();
         self.data.reserve(max);
         self.data.resize(start + max, 0);
         Ok(&mut self.data[start..])
     }
 
-    /// Finalise the download with a short latency.
+    /// Finalise the download.
     ///
     /// # Errors
     /// Returns an error if finalisation fails (never in practice).
-    pub async fn finish(self) -> Result<()> {
-        tokio::time::sleep(Duration::from_millis(10)).await;
+    pub fn finish(self) -> Result<()> {
         Ok(())
     }
 
@@ -139,30 +71,27 @@ impl SimulatedDownloadSink {
 
 /// Fastboot transport backed by simulation — no real device required.
 ///
-/// Behaves like a real fastboot device but routes all I/O through
-/// configurable speed profiles instead of actual USB hardware.
+/// Behaves like a real fastboot device but routes all I/O through a
+/// simulated transport instead of actual USB hardware.
 ///
-/// **Scatter flash uses real disk I/O**: image files are read from
-/// disk by the executor; only the USB transfer + flash write phases
-/// are replaced with timed delays.  Total wall-clock time therefore
-/// includes real filesystem read time + simulated device time.
+/// **Scatter flash uses real disk I/O**: image files are read from disk by
+/// the executor and accumulated here, so wall-clock time reflects real
+/// filesystem throughput — transfers run at the storage's native speed,
+/// like a file copy. Only per-command latencies are simulated.
 pub struct SimulatedTransport {
-    speed: Arc<SpeedConfig>,
     device_vars: HashMap<String, String>,
     pub(crate) commands: Vec<String>,
     /// Accumulated downloaded bytes across all cycles (for metrics).
     total_downloaded: u64,
-    /// Size of the last download payload — used by `flash()` to compute
-    /// flash write delay.
+    /// Size of the last download payload (for metrics).
     last_download_size: u32,
 }
 
 impl SimulatedTransport {
     /// Create a transport with the given device variable responses.
     #[must_use]
-    pub fn new(device_vars: HashMap<String, String>) -> Self {
+    pub const fn new(device_vars: HashMap<String, String>) -> Self {
         Self {
-            speed: Arc::new(SpeedConfig::default()),
             device_vars,
             commands: Vec::new(),
             total_downloaded: 0,
@@ -236,24 +165,12 @@ impl FlashTransport for SimulatedTransport {
     async fn download(&mut self, size: u32) -> Result<DownloadSender<'_>> {
         self.commands.push(format!("SIM download:{size}"));
         self.last_download_size = size;
-        Ok(DownloadSender::Simulated(SimulatedDownloadSink::new(
-            self.speed.clone(),
-        )))
+        Ok(DownloadSender::Simulated(SimulatedDownloadSink::default()))
     }
 
     async fn flash(&mut self, partition: &str) -> Result<String> {
         self.commands.push(format!("SIM flash:{partition}"));
-
-        let write_size = u64::from(self.last_download_size);
-        self.total_downloaded += write_size;
-
-        let delay = bytes_to_delay(write_size, self.speed.flash_bytes_per_sec);
-        if delay > Duration::from_millis(1) {
-            tokio::time::sleep(delay).await;
-        } else {
-            tokio::time::sleep(self.speed.command_latency).await;
-        }
-
+        self.total_downloaded += u64::from(self.last_download_size);
         Ok(format!("OKAY flashing {partition}"))
     }
 

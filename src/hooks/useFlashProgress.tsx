@@ -80,7 +80,7 @@ const initialState: FlashProgressData = {
 export function FlashProgressProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<FlashProgressData>(initialState);
   const isMinimizedRef = useRef(false);
-  const lastSampleRef = useRef<{ bytes: number; at: number } | null>(null);
+  const lastSampleRef = useRef<{ partition: string; bytes: number; at: number } | null>(null);
 
   const reset = useCallback(() => {
     isMinimizedRef.current = false;
@@ -118,13 +118,24 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
         const now = performance.now();
         const prevSample = lastSampleRef.current;
         let speedBps = 0;
-        if (prevSample && event.data.bytes >= prevSample.bytes) {
+        // bytes are per-partition; a partition change (or a bytes regression)
+        // re-seeds the sample instead of computing a cross-partition delta
+        // that spans the gap between partitions (e.g. flash-write latency).
+        if (
+          prevSample &&
+          prevSample.partition === event.data.partition &&
+          event.data.bytes >= prevSample.bytes
+        ) {
           const dt = (now - prevSample.at) / 1000;
           if (dt > 0) {
             speedBps = (event.data.bytes - prevSample.bytes) / dt;
           }
         }
-        lastSampleRef.current = { bytes: event.data.bytes, at: now };
+        lastSampleRef.current = {
+          partition: event.data.partition,
+          bytes: event.data.bytes,
+          at: now,
+        };
         setState((prev) => ({
           ...prev,
           phase: "flashing",

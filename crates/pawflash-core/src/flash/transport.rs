@@ -27,7 +27,7 @@ impl DownloadSender<'_> {
             Self::Real(inner) => inner.extend_from_slice(data).await.map_err(FlashError::from),
             #[cfg(test)]
             Self::Mock(inner) => inner.extend_from_slice(data).await,
-            Self::Simulated(inner) => inner.extend_from_slice(data).await,
+            Self::Simulated(inner) => inner.extend_from_slice(data),
         }
     }
 
@@ -44,7 +44,7 @@ impl DownloadSender<'_> {
             Self::Real(inner) => inner.get_mut_data(max).await.map_err(FlashError::from),
             #[cfg(test)]
             Self::Mock(inner) => inner.get_mut_data(max).await,
-            Self::Simulated(inner) => inner.get_mut_data(max).await,
+            Self::Simulated(inner) => inner.get_mut_data(max),
         }
     }
 
@@ -57,7 +57,7 @@ impl DownloadSender<'_> {
             Self::Real(inner) => inner.finish().await.map_err(FlashError::from),
             #[cfg(test)]
             Self::Mock(inner) => inner.finish().await,
-            Self::Simulated(inner) => inner.finish().await,
+            Self::Simulated(inner) => inner.finish(),
         }
     }
 }
