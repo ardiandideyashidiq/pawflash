@@ -9,7 +9,7 @@ sudo apt install libudev-dev   # Linux
 cargo build --release          # requires Rust 1.85+
 ```
 
-Prebuilt binaries for Linux (x86_64) and Windows (x86_64) on [releases](https://github.com/user/pawflash/releases).
+Prebuilt binaries for Linux (x86_64) and Windows (x86_64) on [releases](https://github.com/ardiandideyashidiq/pawflash/releases).
 
 ## Usage
 
