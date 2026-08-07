@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<scatter>
+  <general>
+    <platform>MT6789</platform>
+    <project>MINIMAL_FIXTURE</project>
+    <storage_type name="EMMC">
+      <partition_index name="SYS0">
+        <partition_name>boot</partition_name>
+        <file_name>boot.img</file_name>
+        <is_download>true</is_download>
+        <type>NORMAL_ROM</type>
+        <linear_start_addr>0x0</linear_start_addr>
+        <physical_start_addr>0x0</physical_start_addr>
+        <partition_size>0x400000</partition_size>
+        <region>EMMC_BOOT_1</region>
+      </partition_index>
+      <partition_index name="SYS1">
+        <partition_name>userdata</partition_name>
+        <file_name>userdata.img</file_name>
+        <is_download>true</is_download>
+        <type>NORMAL_ROM</type>
+        <linear_start_addr>0x400000</linear_start_addr>
+        <physical_start_addr>0x400000</physical_start_addr>
+        <partition_size>0x1000000</partition_size>
+        <region>EMMC_USER</region>
+      </partition_index>
+    </storage_type>
+  </general>
+</scatter>

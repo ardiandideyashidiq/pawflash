@@ -122,7 +122,10 @@ pub async fn run(
                 },
             );
 
-            if json && !dry_run && !show {
+            // `--simulate` never touches real hardware, so `--json --simulate`
+            // is a safe headless simulated run; the guard only protects the
+            // real-device execute path.
+            if json && !dry_run && !show && !simulate {
                 miette::bail!("--json requires --dry-run (plan preview as JSON); refusing to flash");
             }
 
