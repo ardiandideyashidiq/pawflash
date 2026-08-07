@@ -112,8 +112,11 @@ async fn do_raw_flash<T: pawflash_core::flash::transport::FlashTransport>(
 
     info!(succeeded, failed, "flash complete");
 
-    if failed > 0 && succeeded == 0 {
-        bail!("flash-raw failed for all targets");
+    if failed > 0 {
+        bail!(
+            "flash-raw failed for {failed}/{total} targets",
+            total = succeeded + failed,
+        );
     }
 
     Ok(())
