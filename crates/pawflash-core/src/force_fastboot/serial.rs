@@ -149,7 +149,20 @@ pub fn open_with_permission_recovery(port: &str) -> Result<tokio_serial::SerialS
     open_serial(port)
 }
 
+/// Whether an already-present preloader port is a match given whether the
+/// device is already in fastboot mode.
+///
+/// Fastboot-mode detection wins: when checking for fastboot, a device already
+/// in fastboot no longer exposes a preloader port, so an existing port is not
+/// treated as a match.
+const fn should_match_existing(check_fastboot: bool, in_fastboot: bool) -> bool {
+    !(check_fastboot && in_fastboot)
+}
+
 /// Wait for a new preloader serial port to appear.
+///
+/// An already-present candidate port (in the set at entry) is matched
+/// immediately, unless the device is detected to already be in fastboot.
 ///
 /// # Errors
 ///
@@ -159,7 +172,8 @@ pub async fn wait_for_preloader(
     check_fastboot: bool,
 ) -> Result<Option<String>> {
     info!(check_fastboot, "waiting for preloader serial port (max 120s)");
-    let mut old = serial_ports();
+    let initial = serial_ports();
+    let mut old = initial.clone();
     let mut iterations = 0u64;
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
@@ -173,9 +187,17 @@ pub async fn wait_for_preloader(
         iterations += 1;
         trace!(iterations, ports = ?old, "polling for new serial port");
 
-        if check_fastboot && in_fastboot_mode().await {
+        let in_fastboot = check_fastboot && in_fastboot_mode().await;
+        if !should_match_existing(check_fastboot, in_fastboot) {
             info!("fastboot detected while waiting for preloader, returning None");
             return Ok(None);
+        }
+
+        // If we are not already in fastboot, an existing preloader port is a
+        // match — do not require it to appear after we started polling.
+        if let Some(port) = initial.iter().next().cloned() {
+            info!(%port, "preloader port already present");
+            return Ok(Some(port));
         }
 
         let new = serial_ports();
@@ -197,6 +219,14 @@ pub async fn wait_for_preloader(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn should_match_existing_pins_fastboot_precedence() {
+        assert!(!should_match_existing(true, true), "in fastboot -> existing port is not a match");
+        assert!(should_match_existing(true, false), "not in fastboot -> existing port is a match");
+        assert!(should_match_existing(false, true), "fastboot not checked -> existing port is a match");
+        assert!(should_match_existing(false, false));
+    }
 
     #[test]
     fn is_candidate_serial_port_should_accept_linux_acm() {
