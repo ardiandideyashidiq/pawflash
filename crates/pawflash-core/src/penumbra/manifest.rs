@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(m.version, "20194f5");
         assert_eq!(m.dais.len(), 2);
         assert_eq!(m.dais[0].devices, vec!["Infinix NOTE 12", "Infinix NOTE 12i"]);
-        assert!(m.dais[0].sha256.len() == 64);
+        assert_eq!(m.dais[0].sha256.len(), 64);
     }
 
     #[test]
