@@ -34,7 +34,7 @@ fastboot-protocol = { path = "../../vendor/fastboot-rs/fastboot-protocol" }
 android-sparse-image = { path = "../../vendor/fastboot-rs/android-sparse-image" }
 async-trait = "0.1"
 strip-ansi-escapes = "0.2"
-serde_yaml = "0.9.34"
+serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 
 [dev-dependencies]
 tempfile = "3"
