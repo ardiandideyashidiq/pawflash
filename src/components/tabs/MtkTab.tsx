@@ -1,10 +1,28 @@
 import { memo, useCallback, useEffect, useState } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { Download, HardDrive, RefreshCw, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FolderOpen,
+  HardDrive,
+  Loader2,
+  RefreshCw,
+  Stethoscope,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SectionCard } from "@/components/menu-tab/SectionCard";
 import { useConsole } from "@/hooks/useConsole";
 import { useSimulation } from "@/hooks/useSimulation";
@@ -19,7 +37,23 @@ interface MtkStatusPayload {
   platform: string;
 }
 
-const PARTTYPES = ["user", "boot1", "boot2", "rpmb"] as const;
+const PARTTYPES = [
+  { id: "user", label: "user", desc: "Main UFS/eMMC Flash storage" },
+  { id: "boot1", label: "boot1", desc: "Hardware Boot Partition 1" },
+  { id: "boot2", label: "boot2", desc: "Hardware Boot Partition 2" },
+  { id: "rpmb", label: "rpmb", desc: "Replay Protected Memory Block" },
+] as const;
+
+const PARTITION_PRESETS = [
+  "boot",
+  "init_boot",
+  "vbmeta",
+  "vendor_boot",
+  "recovery",
+  "super",
+  "userdata",
+  "preloader",
+];
 
 export default memo(function MtkTab() {
   const { addEntry, addProgressEvent } = useConsole();
@@ -27,7 +61,20 @@ export default memo(function MtkTab() {
   const [status, setStatus] = useState<MtkStatusPayload | null>(null);
   const [busy, setBusy] = useState(false);
   const [opBytes, setOpBytes] = useState<{ bytes: number; total: number } | null>(null);
+
+  // Form State
+  const [partitionName, setPartitionName] = useState("");
+  const [filePath, setFilePath] = useState("");
+  const [selectedParttype, setSelectedParttype] = useState<string>("user");
+
+  // Download Dialog State
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloadPhase, setDownloadPhase] = useState<string>("Preparing download…");
   const [downloadBytes, setDownloadBytes] = useState<{ bytes: number; total: number } | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Erase Confirmation State
+  const [eraseConfirmOpen, setEraseConfirmOpen] = useState(false);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -47,10 +94,14 @@ export default memo(function MtkTab() {
       command: string,
       args: Record<string, unknown>,
       onProgress?: (bytes: number, total: number) => void,
+      onPhase?: (phase: string, message: string) => void,
     ): Promise<unknown> => {
       const channel = new Channel<ProgressEvent>();
       channel.onmessage = (event) => {
         addProgressEvent(event);
+        if (event.event === "MtkPhase" && onPhase) {
+          onPhase(event.data.phase, event.data.message);
+        }
         if (event.event === "MtkProgress") {
           const next = { bytes: event.data.bytes, total: event.data.total };
           if (onProgress) {
@@ -65,7 +116,6 @@ export default memo(function MtkTab() {
       };
       setBusy(true);
       setOpBytes(null);
-      setDownloadBytes(null);
       try {
         const result = await invoke(command, { ...args, onEvent: channel, simulate });
         return result;
@@ -80,14 +130,26 @@ export default memo(function MtkTab() {
   );
 
   const download = useCallback(async () => {
+    setDownloadModalOpen(true);
+    setIsDownloading(true);
+    setDownloadPhase("Initializing download...");
+    setDownloadBytes(null);
+
     const ok = await runChannelOp(
       "mtk_download",
       {},
       (bytes, total) => setDownloadBytes({ bytes, total }),
+      (_phase, message) => setDownloadPhase(message),
     );
+
+    setIsDownloading(false);
     if (ok !== null) {
-      addEntry({ text: "mtk bridge downloaded", level: "success" });
+      addEntry({ text: "mtk bridge downloaded successfully", level: "success" });
+      toast.success("MTK Bridge downloaded");
       void refreshStatus();
+      setTimeout(() => {
+        setDownloadModalOpen(false);
+      }, 1200);
     }
   }, [runChannelOp, refreshStatus, addEntry]);
 
@@ -98,7 +160,33 @@ export default memo(function MtkTab() {
   const remove = useCallback(async () => {
     await runChannelOp("mtk_remove", {});
     void refreshStatus();
+    toast.info("MTK Bridge uninstalled");
   }, [runChannelOp, refreshStatus]);
+
+  const handleBrowseFile = useCallback(async () => {
+    try {
+      // Dynamic import to support desktop environment dialog safely
+      const dialog = await import("@tauri-apps/plugin-dialog");
+      const selected = await dialog.open({
+        multiple: false,
+        filters: [{ name: "Image Files", extensions: ["img", "bin", "iso"] }],
+      });
+      if (selected && typeof selected === "string") {
+        setFilePath(selected);
+      }
+    } catch {
+      // Fallback for missing dialog plugin context
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.onchange = (e) => {
+        const target = e.target as HTMLInputElement;
+        if (target.files && target.files[0]) {
+          setFilePath(target.files[0].name);
+        }
+      };
+      fileInput.click();
+    }
+  }, []);
 
   const op = useCallback(
     async (
@@ -111,41 +199,54 @@ export default memo(function MtkTab() {
       if (command !== "mtk_erase") args.file = file;
       const result = await runChannelOp(command, args);
       if (result !== null) {
-        addEntry({ text: `${command} complete`, level: "success" });
+        addEntry({ text: `${command} complete for ${partition}`, level: "success" });
+        toast.success(`Operation ${command.replace("mtk_", "")} completed successfully`);
       }
     },
     [runChannelOp, addEntry],
   );
 
-  const runOpAction = useCallback(
+  const executeOp = useCallback(
     (action: "read" | "write" | "erase") => {
-      const partition = (document.getElementById("mtk-partition") as HTMLInputElement | null)?.value ?? "";
-      const file = (document.getElementById("mtk-file") as HTMLInputElement | null)?.value ?? "";
-      const parttype = (document.getElementById("mtk-parttype") as HTMLSelectElement | null)?.value ?? "user";
-      if (!partition) {
-        toast.error("Partition is required");
+      if (!partitionName.trim()) {
+        toast.error("Partition name is required");
         return;
       }
-      if (action !== "erase" && !file) {
+      if (action !== "erase" && !filePath.trim()) {
         toast.error("File path is required");
         return;
       }
-      const command = action === "read" ? "mtk_read" : action === "write" ? "mtk_write" : "mtk_erase";
-      void op(command, partition, file, parttype);
+      if (action === "erase") {
+        setEraseConfirmOpen(true);
+        return;
+      }
+      const command = action === "read" ? "mtk_read" : "mtk_write";
+      void op(command, partitionName.trim(), filePath.trim(), selectedParttype);
     },
-    [op],
+    [partitionName, filePath, selectedParttype, op],
   );
 
-  const isBusy = busy;
-  const bytesLabel =
-    opBytes && opBytes.total > 0 ? `${Math.round((opBytes.bytes / opBytes.total) * 100)}%` : null;
+  const confirmErase = useCallback(() => {
+    setEraseConfirmOpen(false);
+    void op("mtk_erase", partitionName.trim(), "", selectedParttype);
+  }, [op, partitionName, selectedParttype]);
+
+  const isBusy = busy || isDownloading;
+  const downloadPercent =
+    downloadBytes && downloadBytes.total > 0
+      ? Math.round((downloadBytes.bytes / downloadBytes.total) * 100)
+      : null;
+
+  const opPercent =
+    opBytes && opBytes.total > 0 ? Math.round((opBytes.bytes / opBytes.total) * 100) : null;
 
   return (
     <div className="flex min-h-full flex-col gap-5 lg:grid lg:grid-cols-2 lg:gap-6">
+      {/* LEFT COLUMN: Status & Bridge Controls */}
       <div className="flex flex-col gap-4">
         <SectionCard
-          title="MTK bridge"
-          description="DA-mode read/write/erase via the frozen mtkclient bridge."
+          title="MTK Bridge Status"
+          description="DA-mode partition operations via the frozen mtkclient bridge."
           headerActions={
             <Button
               variant="ghost"
@@ -154,40 +255,75 @@ export default memo(function MtkTab() {
               disabled={isBusy}
               onClick={() => void refreshStatus()}
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className={`h-4 w-4 ${isBusy ? "animate-spin" : ""}`} />
             </Button>
           }
-          contentClassName="space-y-3"
+          contentClassName="space-y-4"
         >
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
-            <dt className="text-muted-foreground">Platform</dt>
-            <dd>{status?.platform ?? "…"}</dd>
-            <dt className="text-muted-foreground">Bridge</dt>
-            <dd>{status?.installed ? status.version : "not installed"}</dd>
-            <dt className="text-muted-foreground">Device</dt>
-            <dd>{status?.device_visible ? "visible" : "not detected"}</dd>
-            {status?.path ? (
-              <>
-                <dt className="text-muted-foreground">Path</dt>
-                <dd className="break-all font-mono text-xs">{status.path}</dd>
-              </>
-            ) : null}
-          </dl>
-          <div className="flex flex-wrap gap-2">
+          {/* Status Indicators Grid */}
+          <div className="grid grid-cols-2 gap-3 rounded-lg border border-border/50 bg-background/40 p-3.5 text-xs">
+            <div className="flex flex-col gap-1">
+              <span className="text-muted-foreground font-medium">Bridge Installation</span>
+              <div className="flex items-center gap-2 font-mono">
+                <span
+                  className={`inline-block h-2 w-2 rounded-full ${
+                    status?.installed ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-amber-500"
+                  }`}
+                />
+                <span className="font-semibold">
+                  {status?.installed ? status.version : "Not Installed"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <span className="text-muted-foreground font-medium">DA Device</span>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block h-2 w-2 rounded-full ${
+                    status?.device_visible
+                      ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                      : "bg-muted-foreground/40"
+                  }`}
+                />
+                <span className="font-semibold">
+                  {status?.device_visible ? "Connected (DA)" : "Not Detected"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <span className="text-muted-foreground font-medium">Host Platform</span>
+              <span className="font-mono text-foreground/90">{status?.platform ?? "…"}</span>
+            </div>
+
+            {status?.path && (
+              <div className="col-span-2 flex flex-col gap-1 border-t border-border/30 pt-2">
+                <span className="text-muted-foreground font-medium">Bridge Executable Path</span>
+                <span className="truncate font-mono text-[11px] text-muted-foreground" title={status.path}>
+                  {status.path}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Action Bar */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <Button
               className="gap-2"
               disabled={isBusy || status?.installed}
               onClick={() => void download()}
             >
               <Download className="h-4 w-4" />
-              {status?.installed ? "Installed" : "Download"}
+              {status?.installed ? "Installed" : "Download Bridge"}
             </Button>
-            <Button variant="outline" disabled={isBusy} onClick={() => void doctor()}>
+            <Button variant="outline" className="gap-2" disabled={isBusy} onClick={() => void doctor()}>
+              <Stethoscope className="h-4 w-4" />
               Doctor
             </Button>
             <Button
               variant="outline"
-              className="gap-2 text-destructive"
+              className="gap-2 text-destructive hover:text-destructive"
               disabled={isBusy || !status?.installed}
               onClick={() => void remove()}
             >
@@ -195,78 +331,226 @@ export default memo(function MtkTab() {
               Remove
             </Button>
           </div>
-          {downloadBytes !== null &&
-            (downloadBytes.total > 0 ? (
-              <div className="flex items-center gap-3">
-                <Progress
-                  value={(downloadBytes.bytes / downloadBytes.total) * 100}
-                  className="flex-1"
-                />
-                <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
-                  {Math.round((downloadBytes.bytes / downloadBytes.total) * 100)}%
-                </span>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                downloading… {Math.round(downloadBytes.bytes / (1024 * 1024))} MiB
-              </p>
-            ))}
-          {simulate && (
-            <p className="text-xs text-warning">SIMULATED MODE — no device will be touched.</p>
-          )}
-        </SectionCard>
 
-        <SectionCard title="DA operations" contentClassName="space-y-3">
-          <Input
-            id="mtk-partition"
-            placeholder="partition (e.g. boot)"
-            aria-label="MTK partition"
-            disabled={isBusy}
-          />
-          <Input
-            id="mtk-file"
-            placeholder="file path"
-            aria-label="MTK file path"
-            disabled={isBusy}
-          />
-          <select
-            id="mtk-parttype"
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            aria-label="MTK parttype"
-            defaultValue="user"
-          >
-            {PARTTYPES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-          {bytesLabel !== null && (
-            <div className="flex items-center gap-3">
-              <Progress
-                value={((opBytes?.bytes ?? 0) / Math.max(opBytes?.total ?? 1, 1)) * 100}
-                className="flex-1"
-              />
-              <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
-                {bytesLabel}
-              </span>
+          {simulate && (
+            <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-500">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>SIMULATED MODE — real device I/O is bypassed.</span>
             </div>
           )}
-          <div className="grid grid-cols-3 gap-2">
-            <Button className="gap-2" disabled={isBusy} onClick={() => runOpAction("read")}>
+        </SectionCard>
+      </div>
+
+      {/* RIGHT COLUMN: DA Operations */}
+      <div className="flex flex-col gap-4">
+        <SectionCard
+          title="Direct DA Partition Operations"
+          description="Read, write, or erase specific partition blocks via Download Agent."
+          contentClassName="space-y-4"
+        >
+          {/* Target Partition */}
+          <div className="space-y-2">
+            <label htmlFor="mtk-partition-input" className="text-xs font-medium text-muted-foreground">
+              Target Partition Name
+            </label>
+            <Input
+              id="mtk-partition-input"
+              value={partitionName}
+              onChange={(e) => setPartitionName(e.target.value)}
+              placeholder="e.g. boot, vbmeta, recovery"
+              aria-label="MTK partition"
+              disabled={isBusy}
+            />
+
+            {/* Quick Presets */}
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {PARTITION_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => setPartitionName(preset)}
+                  className={`rounded-md border px-2 py-0.5 text-[11px] font-mono transition-colors ${
+                    partitionName === preset
+                      ? "border-primary bg-primary/10 text-primary font-semibold"
+                      : "border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* File Path Selection */}
+          <div className="space-y-2">
+            <label htmlFor="mtk-file-input" className="text-xs font-medium text-muted-foreground">
+              Image File Path (Read output / Write input)
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id="mtk-file-input"
+                value={filePath}
+                onChange={(e) => setFilePath(e.target.value)}
+                placeholder="/path/to/image.img"
+                aria-label="MTK file path"
+                disabled={isBusy}
+                className="font-mono text-xs"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={isBusy}
+                onClick={() => void handleBrowseFile()}
+                title="Browse Image File"
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Hardware Target Partition Type */}
+          <div className="space-y-2">
+            <label htmlFor="mtk-parttype-select" className="text-xs font-medium text-muted-foreground">
+              Hardware Partition Target (`parttype`)
+            </label>
+            <select
+              id="mtk-parttype-select"
+              value={selectedParttype}
+              onChange={(e) => setSelectedParttype(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              aria-label="MTK parttype"
+              disabled={isBusy}
+            >
+              {PARTTYPES.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label} — {p.desc}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Operation Progress Indicator */}
+          {opPercent !== null && (
+            <div className="space-y-1.5 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="flex items-center justify-between text-xs font-medium">
+                <span className="flex items-center gap-2 text-primary">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Executing Operation…
+                </span>
+                <span className="font-mono">{opPercent}%</span>
+              </div>
+              <Progress value={opPercent} className="h-2" />
+            </div>
+          )}
+
+          {/* Action Trigger Buttons */}
+          <div className="grid grid-cols-3 gap-2.5 pt-2">
+            <Button
+              className="gap-2"
+              disabled={isBusy || !partitionName || !filePath}
+              onClick={() => executeOp("read")}
+            >
               <HardDrive className="h-4 w-4" />
               Read
             </Button>
-            <Button className="gap-2" disabled={isBusy} onClick={() => runOpAction("write")}>
+            <Button
+              className="gap-2"
+              disabled={isBusy || !partitionName || !filePath}
+              onClick={() => executeOp("write")}
+            >
               <HardDrive className="h-4 w-4" />
               Write
             </Button>
-            <Button variant="outline" disabled={isBusy} onClick={() => runOpAction("erase")}>
+            <Button
+              variant="outline"
+              className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={isBusy || !partitionName}
+              onClick={() => executeOp("erase")}
+            >
+              <Trash2 className="h-4 w-4" />
               Erase
             </Button>
           </div>
         </SectionCard>
       </div>
+
+      {/* DOWNLOAD PROGRESS MODAL */}
+      <Dialog open={downloadModalOpen} onOpenChange={isDownloading ? undefined : setDownloadModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              {isDownloading ? (
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+              )}
+              {isDownloading ? "Downloading MTK Bridge" : "Download Complete"}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Fetching official frozen bridge binary release for MediaTek DA-mode operations.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-foreground">{downloadPhase}</span>
+                {downloadPercent !== null && (
+                  <span className="font-mono text-muted-foreground">{downloadPercent}%</span>
+                )}
+              </div>
+              <Progress
+                value={downloadPercent ?? 0}
+                className="h-2.5"
+              />
+            </div>
+
+            {downloadBytes && downloadBytes.total > 0 && (
+              <div className="flex justify-between font-mono text-[11px] text-muted-foreground">
+                <span>Downloaded: {(downloadBytes.bytes / (1024 * 1024)).toFixed(1)} MiB</span>
+                <span>Total: {(downloadBytes.total / (1024 * 1024)).toFixed(1)} MiB</span>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="sm:justify-end">
+            <Button
+              variant="outline"
+              disabled={isDownloading}
+              onClick={() => setDownloadModalOpen(false)}
+            >
+              {isDownloading ? "Downloading..." : "Close"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ERASE CONFIRMATION DIALOG */}
+      <Dialog open={eraseConfirmOpen} onOpenChange={setEraseConfirmOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Confirm Partition Erase
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Are you sure you want to permanently erase the partition{" "}
+              <strong className="font-mono text-foreground">{partitionName}</strong> on target{" "}
+              <strong className="font-mono text-foreground">{selectedParttype}</strong>? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button variant="ghost" onClick={() => setEraseConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmErase}>
+              Erase Partition
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });
+
