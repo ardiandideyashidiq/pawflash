@@ -45,8 +45,6 @@ Global flags: `-v`/`-vv`/`-vvv` (log verbosity), `--serial <sn>`, `--simulate`.
 - **[penumbra](https://github.com/shomykohai/penumbra/)** by shomykohai — MTK flash tool in Rust; native in-process DA driver for MediaTek devices (used via the [pawflash fork](https://github.com/ardiandideyashidiq/penumbra)).
 - **[mtkclient](https://github.com/bkerler/mtkclient)** by bkerler — MediaTek Flash and Repair Utility; low-level BROM/DA-mode tool (used via a frozen Python bridge from the [pawflash fork](https://github.com/ardiandideyashidiq/mtkclient)).
 
-Built with **Tauri v2**, **React 19**, **Tailwind CSS v4**, **shadcn/ui** (base-ui), **Vite**, and the **Rust** ecosystem (tokio, serde, clap, tracing, miette, nusb).
-
 ## License
 
 GPL-3.0-or-later.
