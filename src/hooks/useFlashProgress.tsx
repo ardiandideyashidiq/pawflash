@@ -232,17 +232,22 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
         }));
         break;
       case "Error":
+        // Per-partition failures surface via the summary counts; they must
+        // not mark the whole session failed mid-run (that would clear
+        // `activeFlashSession` and re-enable device actions while flashing).
         setState((prev) => ({
           ...prev,
-          phase: "error",
           errorMessage: event.data.message,
           statusText: "",
         }));
         break;
       case "Done":
+        // Partial failures still count as a completed run; the summary
+        // carries the success/failure breakdown. `phase: "error"` is
+        // reserved for genuine fatal errors via `fail()`.
         setState((prev) => ({
           ...prev,
-          phase: event.data.ok ? "complete" : "error",
+          phase: "complete",
           statusText: "",
           summary: prev.summary
             ? { ...prev.summary, totalBytes: prev.overallTotal }

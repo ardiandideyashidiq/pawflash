@@ -133,7 +133,7 @@ export const FlashDialog = memo(function FlashDialog({
                 {summary ? (
                   <div className="flex items-center justify-around border-t border-border/50 pt-2 text-xs">
                     <div>
-                      <span className="text-muted-foreground">Done: </span>
+                      <span className="text-muted-foreground">Success: </span>
                       <span className="font-semibold text-success">{summary.flashed}</span>
                     </div>
                     <div>
@@ -213,7 +213,7 @@ function compactTitle(phase: FlashPhase) {
     case "flashing":
       return "Flash progress";
     case "complete":
-      return "Flash complete";
+      return "Flash completed";
     case "cancelled":
       return "Cancelled";
     case "error":

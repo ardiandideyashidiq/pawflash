@@ -1259,7 +1259,10 @@ async fn execute_plan(
   );
   send_progress(&on_event, ProgressEvent::Done {
     ok: result.failed == 0,
-    detail: format!("{}/{} partitions flashed successfully", result.succeeded, result.total),
+    detail: format!(
+      "{} succeeded, {} failed of {} partitions",
+      result.succeeded, result.failed, result.total
+    ),
   });
 
   Ok(result)
