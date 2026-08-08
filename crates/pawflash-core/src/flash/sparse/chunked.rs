@@ -79,6 +79,7 @@ pub(crate) async fn flash_sparse_image(
         rep.set_prefix(partition);
         rep.reset();
         rep.set_position(0);
+        rep.report(0, total_download);
     }
 
     // ---- flash each split (no erase — the flash command handles it) ----
@@ -200,6 +201,7 @@ pub(crate) async fn flash_sparse_wrapped(
         rep.set_prefix(partition);
         rep.reset();
         rep.set_position(0);
+        rep.report(0, total_sent);
     }
 
     // ---- flash each split (no erase — the flash command handles it) ----

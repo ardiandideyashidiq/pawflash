@@ -357,6 +357,13 @@ impl<T: FlashTransport> FlashExecutor<T> {
             .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "download".into() })??;
         let mut sender = sender;
 
+        // Anchor the partition at zero bytes so the UI has a per-partition
+        // start sample to compute transfer speed from (small files would
+        // otherwise emit only the final reached-end report).
+        if let Some(rep) = reporter.as_mut() {
+            rep.report(0, u64::from(size));
+        }
+
         // Read the file directly into the USB transfer buffer, avoiding the
         // intermediate copy of `extend_from_slice`. `get_mut_data` reserves
         // bytes against the download budget; `read_exact` fills the reserved

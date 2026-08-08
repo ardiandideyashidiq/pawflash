@@ -76,12 +76,55 @@ const initialState: FlashProgressData = {
   statusText: "",
 };
 
+/**
+ * Compute a smoothed transfer speed from a windowed ring of samples.
+ *
+ * Prefers a sliding-window average over the last `SPEED_WINDOW_MS`, falling
+ * back to the whole-partition average when the window is too short (e.g.
+ * small files or the first few samples). Returns 0 when there is no stable
+ * basis yet (transfers shorter than `SPEED_MIN_DT_MS`).
+ */
+function computeSpeed(
+  samples: SpeedSample[],
+  partitionStart: { at: number; bytes: number } | null,
+  currentBytes: number,
+  now: number,
+): number {
+  if (samples.length >= 2) {
+    const newest = samples[samples.length - 1];
+    const oldest = samples[0];
+    const dt = (newest.at - oldest.at) / 1000;
+    if (dt >= SPEED_MIN_DT_MS / 1000) {
+      return Math.max(0, (newest.bytes - oldest.bytes) / dt);
+    }
+  }
+  if (partitionStart && partitionStart.at >= 0) {
+    const dt = (now - partitionStart.at) / 1000;
+    if (dt >= SPEED_MIN_DT_MS / 1000) {
+      return Math.max(0, (currentBytes - partitionStart.bytes) / dt);
+    }
+  }
+  return 0;
+}
+
+/** Sliding window over which transfer speed is averaged (ms). */
+const SPEED_WINDOW_MS = 2000;
+/** Minimum elapsed time before a windowed or partition-average speed is trusted. */
+const SPEED_MIN_DT_MS = 150;
+
+interface SpeedSample {
+  at: number;
+  bytes: number;
+}
+
 export function FlashProgressProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<FlashProgressData>(initialState);
-  const lastSampleRef = useRef<{ partition: string; bytes: number; at: number } | null>(null);
+  const speedSamplesRef = useRef<SpeedSample[]>([]);
+  const partitionStartRef = useRef<{ partition: string; at: number; bytes: number } | null>(null);
 
   const reset = useCallback(() => {
-    lastSampleRef.current = null;
+    speedSamplesRef.current = [];
+    partitionStartRef.current = null;
     setState(initialState);
   }, []);
 
@@ -105,30 +148,37 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
         break;
       case "Flashing": {
         // Compute the sample outside the updater: React runs updaters twice
-        // in dev StrictMode and commits the second result, so mutating the
-        // ref inside the updater would zero out the speed (prevSample would
-        // equal the current event). Event handlers are never double-invoked.
+        // in dev StrictMode and commits the second result, so mutating refs
+        // inside the updater would double-append. Event handlers are never
+        // double-invoked.
         const now = performance.now();
-        const prevSample = lastSampleRef.current;
-        let speedBps = 0;
-        // bytes are per-partition; a partition change (or a bytes regression)
-        // re-seeds the sample instead of computing a cross-partition delta
-        // that spans the gap between partitions (e.g. flash-write latency).
-        if (
-          prevSample &&
-          prevSample.partition === event.data.partition &&
-          event.data.bytes >= prevSample.bytes
-        ) {
-          const dt = (now - prevSample.at) / 1000;
-          if (dt > 0) {
-            speedBps = (event.data.bytes - prevSample.bytes) / dt;
-          }
+        const { partition, bytes } = event.data;
+        const partitionStart = partitionStartRef.current;
+
+        if (!partitionStart || partitionStart.partition !== partition) {
+          // New partition: reset the window and anchor the partition start.
+          speedSamplesRef.current = [];
+          partitionStartRef.current = { partition, at: now, bytes };
         }
-        lastSampleRef.current = {
-          partition: event.data.partition,
-          bytes: event.data.bytes,
-          at: now,
-        };
+
+        const samples = speedSamplesRef.current;
+        // Bytes are per-partition; ignore regressions (e.g. a re-seeded
+        // partition) so the window never slopes backwards.
+        if (bytes >= (samples[samples.length - 1]?.bytes ?? 0)) {
+          samples.push({ at: now, bytes });
+        } else {
+          samples.length = 0;
+          samples.push({ at: now, bytes });
+          partitionStartRef.current = { partition, at: now, bytes };
+        }
+        const cutoff = now - SPEED_WINDOW_MS;
+        let drop = 0;
+        while (drop < samples.length - 1 && samples[drop].at < cutoff) drop += 1;
+        if (drop > 0) samples.splice(0, drop);
+
+        const start = partitionStartRef.current;
+        const speedBps = computeSpeed(samples, start, bytes, now);
+
         setState((prev) => ({
           ...prev,
           phase: "flashing",
