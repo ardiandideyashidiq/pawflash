@@ -17,25 +17,51 @@ const SCROLL_PIN_TOLERANCE = 120;
 
 const SLIDE_DURATION_MS = 300;
 
-function levelColor(level: ConsoleLevel): string {
-  switch (level) {
-    case "success":
-      return "text-signal-green";
-    case "error":
-      return "text-signal-red";
-    case "warning":
-      return "text-signal-amber";
-    case "command":
-      return "text-trace-copper";
-    case "response":
-      return "text-foreground/70";
-    default:
-      return "text-muted-foreground";
-  }
+interface LevelStyle {
+  text: string;
+  bg: string;
+  border: string;
 }
 
-function levelTag(level: ConsoleLevel): string {
-  return level.toUpperCase();
+function levelStyle(level: ConsoleLevel): LevelStyle {
+  switch (level) {
+    case "success":
+      return {
+        text: "text-signal-green font-semibold",
+        bg: "bg-success/15",
+        border: "border-success/30",
+      };
+    case "error":
+      return {
+        text: "text-signal-red font-semibold",
+        bg: "bg-error/15",
+        border: "border-error/30",
+      };
+    case "warning":
+      return {
+        text: "text-signal-amber font-semibold",
+        bg: "bg-warning/15",
+        border: "border-warning/30",
+      };
+    case "command":
+      return {
+        text: "text-trace-copper font-semibold",
+        bg: "bg-trace-copper/15",
+        border: "border-trace-copper/30",
+      };
+    case "response":
+      return {
+        text: "text-foreground/90 font-medium",
+        bg: "bg-muted/60",
+        border: "border-border/50",
+      };
+    default:
+      return {
+        text: "text-muted-foreground font-medium",
+        bg: "bg-muted/40",
+        border: "border-border/40",
+      };
+  }
 }
 
 export function LogPanel() {
@@ -75,7 +101,7 @@ export function LogPanel() {
       return;
     }
     const text = entries
-      .map((e) => `[${e.time}] [${levelTag(e.level)}] ${e.text}`)
+      .map((e) => `[${e.time}] [${e.level.toUpperCase()}] ${e.text}`)
       .join("\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -116,16 +142,10 @@ export function LogPanel() {
     const applyWidth = (clientX: number) => {
       const clamped = clampWidth(clientX);
       panelWidthRef.current = clamped;
-      // Live width lives in a CSS variable React does not own, so incoming
-      // log entries re-rendering this component can never overwrite it.
       panelRef.current?.style.setProperty("--panel-width", `${clamped}px`);
     };
 
     const handlePointerMove = (e: PointerEvent) => {
-      // Coalesce to one style write per animation frame. Every width change
-      // forces a synchronous layout of the whole panel subtree (the log
-      // list), so applying it at pointer rate (often >60Hz) causes multiple
-      // reflows per frame and feels laggy.
       dragXRef.current = e.clientX;
       if (resizeRafRef.current != null) return;
       resizeRafRef.current = requestAnimationFrame(() => {
@@ -135,25 +155,11 @@ export function LogPanel() {
     };
 
     const endResize = () => {
-      const container = logsContainerRef.current;
-      if (container) {
-        container.style.width = "";
-        container.style.overflowX = "";
-      }
       panelWidthRef.current = clampWidth(dragXRef.current);
       setLogPanelWidth(panelWidthRef.current);
       setIsDragging(false);
     };
 
-    // Freeze the log list at its starting width so text doesn't re-wrap on
-    // every frame while resizing — only the panel chrome moves.
-    const container = logsContainerRef.current;
-    if (container) {
-      container.style.width = `${container.offsetWidth}px`;
-      container.style.overflowX = "hidden";
-    }
-
-    // Suppress text selection and cursor flicker while dragging.
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     document.addEventListener("pointermove", handlePointerMove);
@@ -180,7 +186,7 @@ export function LogPanel() {
         type="button"
         aria-label="Close logs"
         className={cn(
-          "fixed inset-0 z-40 cursor-default bg-black/50 backdrop-blur-md transition-opacity duration-300",
+          "fixed inset-0 z-40 cursor-default bg-stone-950/25 backdrop-blur-sm transition-opacity duration-300",
           shown ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={closeLogPanel}
@@ -189,10 +195,9 @@ export function LogPanel() {
       <div
         ref={panelRef}
         className={cn(
-          "fixed top-0 right-0 z-50 flex h-full flex-col border-l border-border bg-card shadow-2xl",
+          "fixed top-0 right-0 z-50 flex h-full flex-col border-l border-border bg-card/95 backdrop-blur-md shadow-2xl",
           shown ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-full opacity-0",
-          !isDragging && "transition-all duration-300 ease-out",
-          isDragging && "overflow-hidden",
+          isDragging ? "transition-none select-none" : "transition-all duration-300 ease-out",
         )}
         style={{ width: `var(--panel-width, ${logPanelWidth}px)` }}
         role="dialog"
@@ -201,7 +206,7 @@ export function LogPanel() {
         <button
           type="button"
           aria-label="Resize logs panel"
-          className="absolute top-1/2 left-0 flex h-16 w-3 -translate-y-1/2 touch-none cursor-col-resize items-center justify-center rounded-r-md bg-muted transition-colors hover:bg-trace-copper"
+          className="absolute top-1/2 left-0 flex h-16 w-3 -translate-y-1/2 touch-none cursor-col-resize items-center justify-center rounded-r-md bg-muted/80 transition-colors hover:bg-trace-copper group"
           onPointerDown={(e) => {
             e.preventDefault();
             dragXRef.current = e.clientX;
@@ -210,44 +215,46 @@ export function LogPanel() {
           }}
           title="Drag to resize"
         >
-          <span className="h-8 w-0.5 rounded-full bg-muted-foreground/60" />
+          <span className="h-8 w-0.5 rounded-full bg-muted-foreground/60 group-hover:bg-white transition-colors" />
         </button>
 
-        <div className="ml-2 flex items-center justify-between border-b border-border p-4">
-          <div className="flex items-center gap-2">
-            <Terminal className="h-5 w-5 text-trace-copper" />
-            <h2 className="text-base font-semibold text-foreground">Operation Logs</h2>
+        <div className="ml-2 flex items-center justify-between border-b border-border/80 p-3.5">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-sm font-semibold text-foreground tracking-tight">Operation Logs</h2>
             {isLive && (
-              <span className="flex items-center gap-1.5 rounded-full border border-success/40 bg-success/10 px-2 py-0.5">
-                <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                <span className="text-xs font-medium text-signal-green">Live</span>
+              <span className="flex items-center gap-1.5 rounded-full border border-success/40 bg-success/15 px-2.5 py-0.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+                </span>
+                <span className="text-[11px] font-bold text-signal-green tracking-wide uppercase">Live</span>
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {entries.length > 0 && (
               <button
                 onClick={clearConsole}
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent-soft hover:text-foreground"
                 title="Clear logs"
               >
-                <Trash2 className="h-5 w-5" />
+                <Trash2 className="h-4 w-4" />
               </button>
             )}
             <button
               onClick={() => void copyLogs()}
               disabled={entries.length === 0}
-              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent-soft hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               title="Copy logs"
             >
-              <Copy className="h-5 w-5" />
+              <Copy className="h-4 w-4" />
             </button>
             <button
               onClick={closeLogPanel}
-              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent-soft hover:text-foreground"
               title="Close"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -256,20 +263,41 @@ export function LogPanel() {
 
         <div
           ref={logsContainerRef}
-          className="ml-2 flex-1 space-y-1 overflow-y-auto p-4 font-mono text-xs"
+          className="ml-2 flex-1 space-y-1 overflow-y-auto p-3.5 font-mono text-xs"
         >
           {entries.length === 0 ? (
-            <div className="mt-8 text-center text-muted-foreground/60">No logs yet</div>
+            <div className="flex h-64 flex-col items-center justify-center gap-2 text-center text-muted-foreground select-none">
+              <Terminal className="h-8 w-8 text-muted-foreground/30" />
+              <p className="text-xs font-medium">No operation logs recorded yet</p>
+              <p className="text-[11px] text-muted-foreground/60">Flashing and device logs will stream here</p>
+            </div>
           ) : (
-            entries.map((entry) => (
-              <div key={entry.id} className="flex gap-2 leading-relaxed">
-                <span className="shrink-0 text-muted-foreground/50 tabular-nums">
-                  {entry.time}
-                </span>
-                <span className={levelColor(entry.level)}>[{levelTag(entry.level)}]</span>
-                <span className="min-w-0 break-all text-foreground/90">{entry.text}</span>
-              </div>
-            ))
+            entries.map((entry) => {
+              const style = levelStyle(entry.level);
+              return (
+                <div
+                  key={entry.id}
+                  className="group flex items-start gap-2.5 rounded px-2 py-1 transition-colors hover:bg-accent-soft/40 leading-relaxed"
+                >
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground tabular-nums select-none pt-0.5">
+                    {entry.time}
+                  </span>
+                  <span
+                    className={cn(
+                      "inline-flex shrink-0 items-center rounded border px-1.5 py-0.2 text-[10px] tracking-wider select-none uppercase",
+                      style.text,
+                      style.bg,
+                      style.border,
+                    )}
+                  >
+                    {entry.level}
+                  </span>
+                  <span className="min-w-0 flex-1 break-all text-foreground/95 font-mono text-xs leading-relaxed">
+                    {entry.text}
+                  </span>
+                </div>
+              );
+            })
           )}
           <div ref={logsEndRef} />
         </div>
@@ -277,3 +305,4 @@ export function LogPanel() {
     </>
   );
 }
+

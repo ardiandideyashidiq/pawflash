@@ -58,39 +58,46 @@ export const ProgressWidget = memo(function ProgressWidget() {
       : 0;
 
   return (
-    <div className="border-b border-border bg-muted/20 px-4 py-3">
+    <div className="border-b border-border/80 bg-card/50 backdrop-blur-sm px-3.5 py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           {forceActive ? (
-            <p className="truncate text-sm font-semibold text-foreground">Forcing fastboot…</p>
+            <p className="truncate text-xs font-semibold text-foreground">Forcing fastboot mode…</p>
           ) : (
-            <p className="truncate text-sm font-semibold text-foreground">
-              Writing <span className="font-mono text-trace-copper">'{flash.partition || "…"}'</span>
+            <p className="truncate text-xs font-semibold text-foreground">
+              Writing <span className="font-mono text-trace-copper font-bold">'{flash.partition || "…"}'</span>
               {flash.total > 0 && (
-                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
                   ({formatBytes(flash.total)})
                 </span>
               )}
             </p>
           )}
         </div>
-        <span className="text-xl text-trace-copper animate-pulse">
-          {SPINNER_FRAMES[spinnerIndex]}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {flashActive && flash.total > 0 && (
+            <span className="rounded border border-trace-copper/30 bg-trace-copper/10 px-1.5 py-0.5 font-mono text-[11px] font-bold text-trace-copper">
+              {overallPct}%
+            </span>
+          )}
+          <span className="font-mono text-base text-trace-copper animate-pulse">
+            {SPINNER_FRAMES[spinnerIndex]}
+          </span>
+        </div>
       </div>
 
       {flashActive && flash.total > 0 && (
-        <div className="mt-3">
+        <div className="mt-2.5">
           <Progress
             value={overallPct}
             indicatorClassName="progress-gradient"
-            className="gap-0"
+            className="h-1.5 gap-0"
           />
-          <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+          <div className="mt-1.5 flex items-center justify-between gap-3 font-mono text-[11px]">
             <span className="text-muted-foreground tabular-nums">
               {formatBytes(flash.bytes)} / {formatBytes(flash.total)}
             </span>
-            <span className="text-muted-foreground tabular-nums">
+            <span className="text-trace-copper font-semibold tabular-nums">
               {formatSpeed(flash.speedBps)}
             </span>
           </div>
@@ -98,13 +105,16 @@ export const ProgressWidget = memo(function ProgressWidget() {
       )}
 
       {forceActive && (
-        <p className="mt-2 text-xs text-muted-foreground">{force.message || "Waiting for preloader…"}</p>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{force.message || "Waiting for preloader…"}</p>
       )}
 
-      <div className="mt-2 flex items-center gap-1.5 text-xs">
-        <span className="inline-block size-1.5 rounded-full bg-success animate-pulse" />
+      <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+        </span>
         <span className="text-muted-foreground font-medium">Elapsed:</span>
-        <span className="font-mono text-foreground font-semibold">{elapsed}</span>
+        <span className="font-mono text-foreground font-bold">{elapsed}</span>
         {flashActive && <LoaderCircle className="ml-auto h-3.5 w-3.5 animate-spin text-trace-copper" />}
       </div>
     </div>
