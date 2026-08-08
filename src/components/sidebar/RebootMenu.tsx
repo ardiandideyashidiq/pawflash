@@ -3,12 +3,8 @@ import { Menu } from "@base-ui/react/menu";
 import {
   Check,
   ChevronDown,
-  Cpu,
   Loader2,
   RotateCcw,
-  ShieldAlert,
-  Smartphone,
-  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
@@ -17,42 +13,7 @@ import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/types/api";
-
-export type RebootTarget = "system" | "bootloader" | "fastbootd" | "recovery";
-
-interface RebootTargetMeta {
-  label: string;
-  description: string;
-  icon: React.ComponentType<{ className?: string }>;
-  iconColor: string;
-}
-
-const targetMeta: Record<RebootTarget, RebootTargetMeta> = {
-  system: {
-    label: "System",
-    description: "Reboot normally to Android OS",
-    icon: Smartphone,
-    iconColor: "text-emerald-400",
-  },
-  bootloader: {
-    label: "Bootloader",
-    description: "Reboot into Fastboot BL mode",
-    icon: Cpu,
-    iconColor: "text-amber-400",
-  },
-  fastbootd: {
-    label: "Fastbootd",
-    description: "Reboot into Userspace Fastboot",
-    icon: Zap,
-    iconColor: "text-trace-copper",
-  },
-  recovery: {
-    label: "Recovery",
-    description: "Reboot into Android Recovery",
-    icon: ShieldAlert,
-    iconColor: "text-rose-400",
-  },
-};
+import { rebootTargets, targetMeta, type RebootTarget } from "@/lib/reboot";
 
 const successLabels: Record<RebootTarget, string> = {
   system: "Rebooted to system",
@@ -186,7 +147,9 @@ export const RebootMenu = memo(function RebootMenu({
             </div>
 
             <div className="space-y-0.5">
-              {(["system"] as RebootTarget[]).map((t) => renderMenuItem(t))}
+              {rebootTargets
+                .filter((t) => t === "system")
+                .map((t) => renderMenuItem(t))}
             </div>
 
             <Separator className="my-1.5 bg-border/60" />
@@ -196,9 +159,9 @@ export const RebootMenu = memo(function RebootMenu({
             </div>
 
             <div className="space-y-0.5">
-              {(["bootloader", "fastbootd", "recovery"] as RebootTarget[]).map((t) =>
-                renderMenuItem(t),
-              )}
+              {rebootTargets
+                .filter((t) => t !== "system")
+                .map((t) => renderMenuItem(t))}
             </div>
           </Menu.Popup>
         </Menu.Positioner>

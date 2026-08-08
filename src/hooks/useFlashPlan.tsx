@@ -17,12 +17,13 @@ import type {
 } from "@/types/api";
 import { buildFlashPlanOptions } from "@/lib/plan";
 import { errorMessage } from "@/types/api";
+import type { RebootTarget } from "@/lib/reboot";
 
 const SCATTER_STORAGE_KEY = "last-scatter-path";
 
 interface PlanOptions {
   includePreloader: boolean;
-  rebootRecovery: boolean;
+  rebootTarget: RebootTarget | null;
 }
 
 export interface FlashPlanState {
@@ -34,7 +35,7 @@ export interface FlashPlanState {
   loadScatter: (path: string) => void;
   clearScatter: () => void;
   setIncludePreloader: (v: boolean) => void;
-  setRebootRecovery: (v: boolean) => void;
+  setRebootTarget: (v: RebootTarget | null) => void;
   togglePartition: (name: string) => void;
   toggleAllPartitions: () => void;
   allSelected: boolean;
@@ -86,7 +87,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [includePreloader, setIncludePreloader] = useState(false);
-  const [rebootRecovery, setRebootRecovery] = useState(false);
+  const [rebootTarget, setRebootTarget] = useState<RebootTarget | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   const requestRef = useRef(0);
@@ -171,7 +172,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
     setLoading(false);
     setScatterPath("");
     setIncludePreloader(false);
-    setRebootRecovery(false);
+    setRebootTarget(null);
     lastScatterPathRef.current = "";
     lastRowsRef.current = new Set();
     window.localStorage.removeItem(SCATTER_STORAGE_KEY);
@@ -224,11 +225,11 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       plan,
       loading,
       error,
-      options: { includePreloader, rebootRecovery },
+      options: { includePreloader, rebootTarget },
       loadScatter,
       clearScatter,
       setIncludePreloader,
-      setRebootRecovery,
+      setRebootTarget,
       togglePartition,
       toggleAllPartitions,
       allSelected,
@@ -244,9 +245,11 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       includePreloader,
-      rebootRecovery,
+      rebootTarget,
       loadScatter,
       clearScatter,
+      setIncludePreloader,
+      setRebootTarget,
       togglePartition,
       toggleAllPartitions,
       allSelected,

@@ -29,7 +29,7 @@ function FlashTabInner({
     error,
     options,
     setIncludePreloader,
-    setRebootRecovery,
+    setRebootTarget,
     togglePartition,
     toggleAllPartitions,
     allSelected,
@@ -45,8 +45,8 @@ function FlashTabInner({
       <FlashOptions
         includePreloader={options.includePreloader}
         onIncludePreloaderChange={setIncludePreloader}
-        rebootRecovery={options.rebootRecovery}
-        onRebootRecoveryChange={setRebootRecovery}
+        rebootTarget={options.rebootTarget}
+        onRebootTargetChange={setRebootTarget}
         onClear={clearScatter}
         clearDisabled={!scatterPath}
       />

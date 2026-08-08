@@ -3,29 +3,35 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { createDismissibleDialogRootHandler } from "@/components/shared/dialogBehavior";
 import type { PartitionRow } from "@/types/api";
+import type { RebootTarget } from "@/lib/reboot";
 
 interface FlashPlanConfirmDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void | Promise<void>;
   selectedPartitions: PartitionRow[];
-  rebootRecoveryAfter: boolean;
+  rebootTargetAfter?: RebootTarget | null;
   skippedCount?: number;
   isPending?: boolean;
 }
+
+const rebootNotices: Record<RebootTarget, string> = {
+  system: "The device will reboot to the system after flashing completes.",
+  bootloader: "The device will reboot to the bootloader after flashing completes.",
+  fastbootd: "The device will reboot to fastbootd after flashing completes.",
+  recovery: "The device will reboot into recovery after flashing completes.",
+};
 
 export const FlashPlanConfirmDialog = memo(function FlashPlanConfirmDialog({
   open,
   onOpenChange,
   onConfirm,
   selectedPartitions,
-  rebootRecoveryAfter,
+  rebootTargetAfter = null,
   skippedCount = 0,
   isPending = false,
 }: FlashPlanConfirmDialogProps) {
-  const rebootNotice = rebootRecoveryAfter
-    ? "The device will reboot into recovery after flashing completes."
-    : "";
+  const rebootNotice = rebootTargetAfter ? rebootNotices[rebootTargetAfter] : "";
   const selectedCount = selectedPartitions.length;
 
   return (

@@ -10,7 +10,8 @@ import { LogPanel } from "@/components/console/LogPanel";
 import { FlashPlanConfirmDialog } from "@/components/flash/FlashPlanConfirmDialog";
 import { FlashDialog } from "@/components/flash/FlashDialog";
 import { ForceFastbootDialog } from "@/components/flash/ForceFastbootDialog";
-import { RebootMenu, type RebootTarget } from "@/components/sidebar/RebootMenu";
+import { RebootMenu } from "@/components/sidebar/RebootMenu";
+import type { RebootTarget } from "@/lib/reboot";
 import { UIProvider, useUI } from "@/hooks/useUI";
 import { SimulationProvider, useSimulation } from "@/hooks/useSimulation";
 import { ConsoleProvider } from "@/components/console/ConsoleContext";
@@ -221,11 +222,12 @@ function AppRoot() {
       });
       if (result.cancelled) {
         addEntry({ text: "FlashCancelled", level: "warning" });
-      } else if (result.failed === 0 && planState.options.rebootRecovery) {
-        addEntry({ text: "Rebooting into recovery after flash", level: "info" });
-        toast.info("Rebooting into recovery...");
+      } else if (result.failed === 0 && planState.options.rebootTarget) {
+        const rebootTarget = planState.options.rebootTarget;
+        addEntry({ text: `Rebooting to ${rebootTarget} after flash`, level: "info" });
+        toast.info(`Rebooting to ${rebootTarget}...`);
         try {
-          await invoke("reboot_device", { target: "recovery", simulate });
+          await invoke("reboot_device", { target: rebootTarget, simulate });
         } catch (error) {
           toast.error(`Reboot failed: ${errorMessage(error)}`);
         }
@@ -437,7 +439,7 @@ function AppRoot() {
         onOpenChange={setFlashConfirmOpen}
         onConfirm={startFlash}
         selectedPartitions={planState.selectedRows}
-        rebootRecoveryAfter={planState.options.rebootRecovery}
+        rebootTargetAfter={planState.options.rebootTarget}
         skippedCount={planState.plan?.skippedCount ?? 0}
         isPending={isStartingFlash || planState.loading || activeFlashSession || activeForceSession}
       />
