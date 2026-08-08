@@ -1,7 +1,9 @@
-//! Linux udev rule management for mtkclient DA devices.
+//! USB device detection and (on Linux) udev rule management for mtkclient DA
+//! devices.
 //!
-//! Gate the whole module behind `target_os = "linux"`; on other platforms the
-//! entry points become no-ops so the rest of the codebase needs no `cfg`.
+//! Udev installation is gated behind `target_os = "linux"`; on other platforms
+//! the rule entry points become no-ops so the rest of the codebase needs no
+//! `cfg`. Device detection works on both Linux and Windows via `nusb`.
 
 /// USB vendor IDs that mtkclient treats as DA-capable devices
 /// (`mtkclient/config/usb_ids.py`): `MediaTek`, LG, OPPO, Sony.
@@ -94,16 +96,16 @@ pub fn ensure_udev_rules() -> bool {
 /// Whether any DA-capable USB device is present.
 ///
 /// Enumerates devices via `nusb::list_devices()` and matches against
-/// [`DEVICE_VENDOR_IDS`].
+/// [`DEVICE_VENDOR_IDS`]. Works on Linux (usbfs) and Windows (`WinUSB`).
 pub async fn device_visible() -> bool {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     {
         match nusb::list_devices().await {
             Ok(mut devices) => devices.any(|d| DEVICE_VENDOR_IDS.contains(&d.vendor_id())),
             Err(_) => false,
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         let _ = DEVICE_VENDOR_IDS;
         false

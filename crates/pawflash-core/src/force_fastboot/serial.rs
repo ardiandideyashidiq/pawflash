@@ -5,6 +5,7 @@ use super::{permissions, udev};
 use inquire::Confirm;
 use std::collections::HashSet;
 use std::io::IsTerminal;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info, trace, warn};
 
@@ -212,6 +213,37 @@ pub async fn wait_for_preloader(
             old = new;
         }
 
+        sleep(POLL_INTERVAL).await;
+    }
+}
+
+/// Wait for a preloader serial port to be openable again after the current one
+/// was lost, up to `timeout`.
+///
+/// Candidates that cannot actually be opened are skipped, so stale or phantom
+/// COM entries on Windows (left over while a device re-enumerates) never
+/// match. Returns `None` once `timeout` elapses or the operation is cancelled.
+///
+/// # Errors
+///
+/// Returns an error if serial port enumeration fails.
+pub async fn wait_for_reconnect(
+    timeout: Duration,
+    cancel: Option<&AtomicBool>,
+) -> Result<Option<String>> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Ok(None);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+        for port in serial_ports() {
+            if open_serial(&port).is_ok() {
+                return Ok(Some(port));
+            }
+        }
         sleep(POLL_INTERVAL).await;
     }
 }

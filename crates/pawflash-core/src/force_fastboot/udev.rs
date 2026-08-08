@@ -144,7 +144,8 @@ pub fn print_manual_guidance() {
     {
         tracing::warn!(
             "Permission denied opening serial port on Windows.\n\
-             Install the WinUSB driver using Zadig (https://zadig.akeo.ie)."
+             Ensure the preloader is enumerated as a COM port (MediaTek USB VCOM / usbser driver),\
+             not as a WinUSB device — this flow talks to the preloader over a serial port."
         );
     }
 

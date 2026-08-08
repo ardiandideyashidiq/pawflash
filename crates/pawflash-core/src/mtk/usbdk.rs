@@ -32,11 +32,13 @@ mod platform {
         if installed() {
             return Ok(());
         }
-        let ok = Command::new("msiexec")
+        // Ignore the msiexec exit code: a successful driver install commonly
+        // returns 3010 (ERROR_SUCCESS_REBOOT_REQUIRED) rather than 0. Probe
+        // the service instead, which is authoritative regardless of the code.
+        let _ = Command::new("msiexec")
             .args(["/i", super::USBDK_MSI_URL, "/qn", "/norestart"])
-            .status()
-            .is_ok_and(|s| s.success());
-        if ok && installed() {
+            .status();
+        if installed() {
             return Ok(());
         }
         Err(MtkError::Prerequisite(format!(

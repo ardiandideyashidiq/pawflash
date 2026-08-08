@@ -13,7 +13,7 @@ use crate::mtk::install::install_root;
 use crate::mtk::Result;
 use fs4::FileExt;
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Seek, Write};
 use std::path::PathBuf;
 use tracing::debug;
 
@@ -29,17 +29,20 @@ fn lock_path() -> PathBuf {
 
 /// Acquire the lock on `path`.
 fn acquire_at(path: &std::path::Path) -> Result<DeviceLock> {
-    let file = OpenOptions::new()
+    let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
         .open(path)
         .map_err(|source| MtkError::DeviceLock { source })?;
-
-    match FileExt::try_lock(&file) {        Ok(()) => {
-            let mut w = file.try_clone().map_err(|source| MtkError::DeviceLock { source })?;
-            let _ = writeln!(w, "{}", std::process::id());
+    match FileExt::try_lock(&file) {
+        Ok(()) => {
+            // Write through the handle that owns the lock: on Windows a
+            // LockFileEx lock blocks I/O from every other handle, so a clone
+            // would fail with a sharing violation and record nothing.
+            let _ = file.seek(std::io::SeekFrom::Start(0));
+            let _ = writeln!(file, "{}", std::process::id());
             debug!(lock = %path.display(), "device lock acquired");
             Ok(DeviceLock { _file: file })
         }

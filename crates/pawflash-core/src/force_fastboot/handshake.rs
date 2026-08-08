@@ -12,12 +12,16 @@ use tokio::io::AsyncWriteExt;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, warn};
 
-use super::error::Result;
+use super::error::{Error, Result};
 use super::fastboot::in_fastboot_mode;
-use super::serial::{open_with_permission_recovery, wait_for_preloader};
+use super::serial::{open_with_permission_recovery, wait_for_reconnect};
 
 /// Delay between FASTBOOT writes.
 const WRITE_INTERVAL: Duration = Duration::from_millis(500);
+
+/// How long to wait for the preloader port to reappear after it drops before
+/// assuming the device has left preloader (entered fastboot mode).
+const RECONNECT_WINDOW: Duration = Duration::from_secs(10);
 
 /// Progress events emitted during the handshake, so UIs can render progress
 /// without duplicating the loop logic.
@@ -33,14 +37,14 @@ pub enum HandshakeEvent {
 
 /// Drive the FASTBOOT preloader handshake until the device enters fastboot
 /// mode. Repeatedly writes `FASTBOOT` to `dev`, polls USB fastboot mode, and
-/// reconnects via [`wait_for_preloader`] if the port drops.
+/// reconnects via [`wait_for_reconnect`] if the port drops.
 ///
 /// Returns the number of `FASTBOOT` writes sent.
 ///
 /// # Errors
 ///
-/// Returns an error if the preloader port cannot be reopened after a drop, or
-/// if [`wait_for_preloader`] fails.
+/// Returns an error if the preloader port cannot be reopened after a drop, if
+/// it was lost before any write completed, or if serial enumeration fails.
 pub async fn handshake(
     mut dev: tokio_serial::SerialStream,
     initial_port: &str,
@@ -75,14 +79,17 @@ pub async fn handshake(
                 }
 
                 drop(dev);
-                if let Some(new_port) = wait_for_preloader(true).await? {
+                if let Some(new_port) = wait_for_reconnect(RECONNECT_WINDOW, cancel).await? {
                     debug!(port = %new_port, "reconnected after port loss");
                     port = new_port;
                     on_event(HandshakeEvent::PortReconnected { port: port.clone() });
                     dev = open_with_permission_recovery(&port)?;
                     continue;
                 }
-                debug!("preloader wait returned None — fastboot detected");
+                if count == 0 {
+                    return Err(Error::PortLostBeforeWrite { port: port.clone() });
+                }
+                debug!(sends = count, "preloader port did not reappear — device left preloader");
                 break;
             }
         }

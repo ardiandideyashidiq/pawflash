@@ -379,6 +379,12 @@ async fn force_fastboot(
 
   send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "confirmed".into(), message: "Fastboot mode confirmed.".into() });
   info!(sends, "device now in fastboot mode");
+  #[cfg(target_os = "windows")]
+  if !pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
+    send_progress(&on_event, ProgressEvent::Warning {
+      message: "Device left preloader. If it does not appear in fastboot, install the WinUSB driver via Zadig for the fastboot VID:PID.".into(),
+    });
+  }
   send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Device now in fastboot mode".into() });
   Ok(())
 }
@@ -858,7 +864,10 @@ fn gui_da_bytes(simulate: bool) -> Result<Vec<u8>, AppError> {
 #[tracing::instrument(skip_all)]
 #[tauri::command]
 async fn penumbra_status(simulate: bool) -> Result<PenumbraStatusPayload, AppError> {
-  let platform = if cfg!(target_os = "windows") { "windows-x86_64" } else { "linux-x86_64" }.to_string();
+  let platform = match pawflash_core::mtk::current_platform() {
+    Ok(p) => p,
+    Err(e) => return Err(AppError::Other { message: e.to_string() }),
+  };
   let device_visible = if simulate {
     false
   } else {

@@ -17,6 +17,10 @@ pub enum Error {
     #[error("timed out waiting for preloader serial port")]
     #[diagnostic(help("ensure the device is in preloader mode (hold volume buttons while connecting USB)"))]
     PreloaderTimeout,
+
+    #[error("preloader port `{port}` was lost before any FASTBOOT write completed")]
+    #[diagnostic(help("unplug and reconnect the device, then retry force fastboot"))]
+    PortLostBeforeWrite { port: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
