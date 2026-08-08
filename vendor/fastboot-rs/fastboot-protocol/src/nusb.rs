@@ -12,6 +12,115 @@ use tracing::{instrument, trace};
 use crate::protocol::FastBootResponse;
 use crate::protocol::{FastBootCommand, FastBootResponseParseError};
 
+/// USB interface class byte for Android USB function interfaces.
+const ANDROID_IFACE_CLASS: u8 = 0xff;
+/// USB interface subclass byte for Android USB function interfaces.
+const ANDROID_IFACE_SUBCLASS: u8 = 0x42;
+/// Fastboot protocol byte (ADB uses `0x01`).
+const FASTBOOT_IFACE_PROTOCOL: u8 = 0x03;
+/// ADB protocol byte.
+const ADB_IFACE_PROTOCOL: u8 = 0x01;
+
+/// How a USB interface is recognized by the app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterfaceKind {
+    Fastboot,
+    Adb,
+    Other,
+}
+
+impl InterfaceKind {
+    fn classify(class: u8, subclass: u8, protocol: u8) -> Self {
+        if class != ANDROID_IFACE_CLASS || subclass != ANDROID_IFACE_SUBCLASS {
+            return Self::Other;
+        }
+        match protocol {
+            FASTBOOT_IFACE_PROTOCOL => Self::Fastboot,
+            ADB_IFACE_PROTOCOL => Self::Adb,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// Summary of a connected USB device, used for detection diagnostics.
+///
+/// Unlike [`devices`], [`probe`] returns every enumerated device (not just
+/// those exposing a fastboot interface), so callers can distinguish "device in
+/// ADB mode" and "device present but not openable" from "nothing connected".
+#[derive(Debug, Clone)]
+pub struct Probe {
+    pub vid: u16,
+    pub pid: u16,
+    pub serial: Option<String>,
+    #[cfg(target_os = "windows")]
+    pub driver: Option<String>,
+    pub kind: InterfaceKind,
+    pub iface_count: usize,
+}
+
+impl Probe {
+    fn from_info(info: &DeviceInfo) -> Self {
+        let mut kind = InterfaceKind::Other;
+        let mut iface_count = 0usize;
+        for iface in info.interfaces() {
+            iface_count += 1;
+            let k = InterfaceKind::classify(iface.class(), iface.subclass(), iface.protocol());
+            if k == InterfaceKind::Fastboot {
+                kind = InterfaceKind::Fastboot;
+            } else if kind != InterfaceKind::Fastboot && k == InterfaceKind::Adb {
+                kind = InterfaceKind::Adb;
+            }
+        }
+        Self {
+            vid: info.vendor_id(),
+            pid: info.product_id(),
+            serial: info.serial_number().map(str::to_owned),
+            #[cfg(target_os = "windows")]
+            driver: info.driver().map(str::to_owned),
+            kind,
+            iface_count,
+        }
+    }
+
+    /// Whether the device exposes a fastboot interface.
+    #[must_use]
+    pub fn is_fastboot(&self) -> bool {
+        self.kind == InterfaceKind::Fastboot
+    }
+
+    /// Whether the device exposes an ADB interface but no fastboot interface.
+    #[must_use]
+    pub fn is_adb(&self) -> bool {
+        self.kind == InterfaceKind::Adb
+    }
+
+    /// Human-readable `vid:pid` string.
+    #[must_use]
+    pub fn vidpid(&self) -> String {
+        format!("{:04x}:{:04x}", self.vid, self.pid)
+    }
+}
+
+/// Enumerate all connected USB devices with detection metadata.
+///
+/// # Errors
+///
+/// Returns an error if USB enumeration fails.
+pub async fn probe() -> Result<Vec<Probe>, nusb::Error> {
+    let all: Vec<_> = nusb::list_devices().await?.collect();
+    let probes: Vec<_> = all.iter().map(Probe::from_info).collect();
+    debug!(count = probes.len(), "probed USB devices");
+    for p in &probes {
+        debug!(
+            vidpid = p.vidpid(),
+            kind = ?p.kind,
+            serial = p.serial.as_deref().unwrap_or("?"),
+            "usb device probe",
+        );
+    }
+    Ok(probes)
+}
+
 /// List fastboot devices
 pub async fn devices() -> Result<impl Iterator<Item = DeviceInfo>, nusb::Error> {
     let all: Vec<_> = nusb::list_devices().await?.collect();
@@ -75,7 +184,10 @@ impl NusbFastBoot {
     #[must_use]
     pub fn find_fastboot_interface(info: &DeviceInfo) -> Option<u8> {
         info.interfaces().find_map(|i| {
-            if i.class() == 0xff && i.subclass() == 0x42 && i.protocol() == 0x3 {
+            if i.class() == ANDROID_IFACE_CLASS
+                && i.subclass() == ANDROID_IFACE_SUBCLASS
+                && i.protocol() == FASTBOOT_IFACE_PROTOCOL
+            {
                 Some(i.interface_number())
             } else {
                 None
@@ -521,5 +633,44 @@ impl DataDownload<'_> {
 
         self.fastboot.handle_responses().await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InterfaceKind, ADB_IFACE_PROTOCOL, ANDROID_IFACE_CLASS, ANDROID_IFACE_SUBCLASS, FASTBOOT_IFACE_PROTOCOL};
+
+    #[test]
+    fn classify_fastboot_triple() {
+        assert_eq!(
+            InterfaceKind::classify(ANDROID_IFACE_CLASS, ANDROID_IFACE_SUBCLASS, FASTBOOT_IFACE_PROTOCOL),
+            InterfaceKind::Fastboot,
+        );
+    }
+
+    #[test]
+    fn classify_adb_triple() {
+        assert_eq!(
+            InterfaceKind::classify(ANDROID_IFACE_CLASS, ANDROID_IFACE_SUBCLASS, ADB_IFACE_PROTOCOL),
+            InterfaceKind::Adb,
+        );
+    }
+
+    #[test]
+    fn classify_other_triple() {
+        assert_eq!(
+            InterfaceKind::classify(ANDROID_IFACE_CLASS, ANDROID_IFACE_SUBCLASS, 0x02),
+            InterfaceKind::Other,
+        );
+        assert_eq!(InterfaceKind::classify(0xff, 0x00, 0x00), InterfaceKind::Other);
+        assert_eq!(InterfaceKind::classify(0x00, 0x42, 0x03), InterfaceKind::Other);
+    }
+
+    #[test]
+    fn fastboot_interface_bytes_match_aosp() {
+        assert_eq!(ANDROID_IFACE_CLASS, 0xff);
+        assert_eq!(ANDROID_IFACE_SUBCLASS, 0x42);
+        assert_eq!(FASTBOOT_IFACE_PROTOCOL, 0x03);
+        assert_eq!(ADB_IFACE_PROTOCOL, 0x01);
     }
 }

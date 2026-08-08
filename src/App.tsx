@@ -106,6 +106,8 @@ function AppRoot() {
         if (notify) {
           if (info.connected) {
             toast.success(`Connected: ${info.serial || info.vars.product || "device"}`);
+          } else if (info.hint) {
+            toast.warning(info.hint);
           } else {
             toast.info("No fastboot device connected");
           }
@@ -347,6 +349,7 @@ function AppRoot() {
 
   const deviceConnected = deviceInfo?.connected === true;
   const deviceLabel = deviceInfo?.serial || deviceInfo?.vars.product || "device";
+  const deviceHint = deviceInfo?.hint || null;
 
   const flashDisabled =
     !planState.plan ||
@@ -376,8 +379,8 @@ function AppRoot() {
             "animate-pulse border-success/50 bg-success/10 text-signal-green hover:bg-success/15 hover:text-signal-green",
         )}
         disabled={isCheckingDevice || activeFlashSession || activeForceSession}
-        aria-label={deviceConnected ? `Connected: ${deviceLabel}` : "Check Device"}
-        title={deviceConnected ? `Connected: ${deviceLabel}` : "Check Device"}
+        aria-label={deviceConnected ? `Connected: ${deviceLabel}` : (deviceHint ?? "Check Device")}
+        title={deviceConnected ? `Connected: ${deviceLabel}` : (deviceHint ?? "Check Device")}
         onClick={checkDevice}
       >
         <PlugZap className="h-4 w-4 shrink-0" />

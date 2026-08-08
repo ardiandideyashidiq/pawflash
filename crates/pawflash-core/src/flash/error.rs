@@ -8,6 +8,29 @@ pub enum FlashError {
     #[diagnostic(help("connect your device via USB and check that it is in fastboot mode"))]
     NoDevice,
 
+    #[error("device is in ADB mode, not fastboot{}", adb_suffix(.serials))]
+    #[diagnostic(help("reboot the device to the bootloader (adb reboot bootloader) to enter fastboot mode"))]
+    DeviceInAdb { serials: Vec<String> },
+
+    #[error("USB devices found but none expose a fastboot or ADB interface ({})", vids.join(", "))]
+    #[diagnostic(help("connect your device via USB and check that it is in fastboot mode"))]
+    NoUsbInterface { vids: Vec<String> },
+
+    #[error("fastboot device detected (VID:PID {vidpid}) but its USB driver is not supported: {}", .driver.as_deref().unwrap_or("unknown"))]
+    #[cfg_attr(
+        target_os = "windows",
+        diagnostic(help("install the Google 'Android Bootloader' / WinUSB driver for the device using Zadig (https://zadig.akeo.ie) or Device Manager"))
+    )]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        diagnostic(help("ensure a functional USB driver is associated with the device serial"))
+    )]
+    WindowsDriver {
+        vidpid: String,
+        driver: Option<String>,
+        serial: Option<String>,
+    },
+
     #[error("device mismatch: expected {expected}, got {actual}")]
     #[diagnostic(help("use --serial SERIAL to target the correct device"))]
     DeviceMismatch { expected: String, actual: String },
@@ -63,3 +86,12 @@ impl serde::Serialize for FlashError {
 }
 
 pub type Result<T> = std::result::Result<T, FlashError>;
+
+/// Render a trailing serial-list suffix for the ADB-mode error message.
+#[must_use]
+fn adb_suffix(serials: &[String]) -> String {
+    if serials.is_empty() {
+        return String::new();
+    }
+    format!(" (device serial(s): {})", serials.join(", "))
+}

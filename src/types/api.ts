@@ -37,6 +37,7 @@ export interface DeviceInfo {
   connected: boolean;
   serial: string | null;
   vars: Record<string, string>;
+  hint?: string | null;
 }
 
 export interface ScatterFile {

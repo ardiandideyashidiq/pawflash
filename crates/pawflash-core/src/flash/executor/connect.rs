@@ -1,12 +1,43 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use fastboot_protocol::nusb::NusbFastBoot;
+use fastboot_protocol::nusb::{InterfaceKind, NusbFastBoot};
+#[cfg(target_os = "windows")]
+use fastboot_protocol::nusb::NusbFastBootOpenError;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::flash::error::{FlashError, Result};
 use super::{BootTarget, expected_serial, FlashExecutor};
+
+/// Classify why no fastboot device matched: ADB mode, unknown USB devices, or
+/// nothing connected at all.
+async fn no_device_error(expected: Option<&str>) -> FlashError {
+    let Ok(probes) = fastboot_protocol::nusb::probe().await else {
+        return FlashError::NoDevice;
+    };
+    classify_no_device(&probes, expected)
+}
+
+/// Decide the detection diagnostic from a set of USB device probes.
+fn classify_no_device(probes: &[fastboot_protocol::nusb::Probe], expected: Option<&str>) -> FlashError {
+    let adb_serials: Vec<String> = probes
+        .iter()
+        .filter(|p| p.kind == InterfaceKind::Adb)
+        .filter(|p| expected.is_none_or(|exp| p.serial.as_deref() == Some(exp)))
+        .filter_map(|p| p.serial.clone())
+        .collect();
+    if !adb_serials.is_empty() {
+        return FlashError::DeviceInAdb { serials: adb_serials };
+    }
+
+    let vids: Vec<String> = probes.iter().map(fastboot_protocol::nusb::Probe::vidpid).collect();
+    if !vids.is_empty() {
+        return FlashError::NoUsbInterface { vids };
+    }
+
+    FlashError::NoDevice
+}
 
 impl FlashExecutor<NusbFastBoot> {
     /// # Errors
@@ -27,13 +58,27 @@ impl FlashExecutor<NusbFastBoot> {
                 .collect();
             return Err(FlashError::MultipleDevices { serials });
         }
-        let info = all.into_iter().next().ok_or(FlashError::NoDevice)?;
+        let Some(info) = all.into_iter().next() else {
+            return Err(no_device_error(expected).await);
+        };
         debug!(
             vidpid = format_args!("{:04x}:{:04x}", info.vendor_id(), info.product_id()),
             serial = info.serial_number().unwrap_or("?"),
             "connecting to fastboot device"
         );
-        let mut fb = NusbFastBoot::from_info(&info).await?;
+        let mut fb = match NusbFastBoot::from_info(&info).await {
+            Ok(fb) => fb,
+            Err(e) => {
+                #[cfg(target_os = "windows")]
+                if matches!(e, NusbFastBootOpenError::Interface(_)) {
+                    let vidpid = format!("{:04x}:{:04x}", info.vendor_id(), info.product_id());
+                    let driver = info.driver().map(str::to_owned);
+                    let serial = info.serial_number().map(str::to_owned);
+                    return Err(FlashError::WindowsDriver { vidpid, driver, serial });
+                }
+                return Err(FlashError::Open(e));
+            }
+        };
         let device_vars = match tokio::time::timeout(
             std::time::Duration::from_secs(10),
             fb.get_all_vars(),
@@ -151,5 +196,71 @@ impl FlashExecutor<NusbFastBoot> {
         }
         info!("device is in bootloader mode, rebooting to fastbootd");
         self.reboot_and_wait(BootTarget::Fastboot).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use fastboot_protocol::nusb::{InterfaceKind, Probe};
+
+    use super::classify_no_device;
+    use crate::flash::error::FlashError;
+
+    fn probe(vid: u16, pid: u16, serial: Option<&str>, kind: InterfaceKind) -> Probe {
+        Probe {
+            vid,
+            pid,
+            serial: serial.map(str::to_owned),
+            kind,
+            iface_count: 1,
+            #[cfg(target_os = "windows")]
+            driver: None,
+        }
+    }
+
+    #[test]
+    fn no_devices_is_no_device() {
+        assert!(matches!(
+            classify_no_device(&[], None),
+            FlashError::NoDevice
+        ));
+    }
+
+    #[test]
+    fn adb_device_yields_adb_error_with_serial() {
+        let probes = vec![probe(0x18d1, 0x4ee2, Some("abcd1234"), InterfaceKind::Adb)];
+        assert!(matches!(
+            classify_no_device(&probes, None),
+            FlashError::DeviceInAdb { ref serials } if serials == &["abcd1234".to_string()]
+        ));
+    }
+
+    #[test]
+    fn adb_device_filtered_by_expected_serial_drops_to_vids() {
+        let probes = vec![probe(0x18d1, 0x4ee2, Some("abcd1234"), InterfaceKind::Adb)];
+        assert!(matches!(
+            classify_no_device(&probes, Some("other")),
+            FlashError::NoUsbInterface { ref vids } if vids == &["18d1:4ee2".to_string()]
+        ));
+    }
+
+    #[test]
+    fn unknown_usb_device_yields_no_interface_error() {
+        let probes = vec![probe(0x0e8d, 0x2000, None, InterfaceKind::Other)];
+        assert!(matches!(
+            classify_no_device(&probes, None),
+            FlashError::NoUsbInterface { ref vids } if vids == &["0e8d:2000".to_string()]
+        ));
+    }
+
+    #[test]
+    fn present_devices_yield_interface_diagnostics() {
+        // classify_no_device is only consulted when fastboot enumeration found
+        // nothing, so any present probe is reported via NoUsbInterface.
+        let probes = vec![probe(0x18d1, 0x4ee0, Some("fastserial"), InterfaceKind::Fastboot)];
+        assert!(matches!(
+            classify_no_device(&probes, None),
+            FlashError::NoUsbInterface { .. }
+        ));
     }
 }

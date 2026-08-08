@@ -75,6 +75,8 @@ pub struct DeviceInfo {
   pub connected: bool,
   pub serial: Option<String>,
   pub vars: HashMap<String, String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub hint: Option<String>,
 }
 
 /// Serializable error DTO for the Tauri boundary. Core `FlashError` variants
@@ -246,7 +248,7 @@ async fn get_device_info(simulate: bool) -> Result<DeviceInfo, AppError> {
   if simulate {
     info!("simulated device info requested");
     let vars = simulated_vars();
-    return Ok(DeviceInfo { connected: true, serial: Some("SIM000001".into()), vars });
+    return Ok(DeviceInfo { connected: true, serial: Some("SIM000001".into()), vars, hint: None });
   }
 
   match FlashExecutor::connect().await {
@@ -258,18 +260,28 @@ async fn get_device_info(simulate: bool) -> Result<DeviceInfo, AppError> {
       let serial = vars.get("serialno").cloned();
       let connected = true;
       info!(connected, serial = serial.as_deref().unwrap_or("?"), "device info retrieved");
-      Ok(DeviceInfo { connected, serial, vars })
+      Ok(DeviceInfo { connected, serial, vars, hint: None })
     }
-    Err(pawflash_core::flash::FlashError::NoDevice) => {
-      info!("no fastboot device found");
-      Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new() })
-    }
-    Err(e) => {
-      // Permissions, open failures, protocol errors — report them so the GUI
-      // does not silently present "not connected".
-      warn!(error = %e, "get_device_info: connect failed");
-      Err(AppError::from(e))
-    }
+    Err(e) => match e {
+      pawflash_core::flash::FlashError::NoDevice => {
+        info!("no fastboot device found");
+        Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new(), hint: None })
+      }
+      pawflash_core::flash::FlashError::DeviceInAdb { .. }
+      | pawflash_core::flash::FlashError::NoUsbInterface { .. }
+      | pawflash_core::flash::FlashError::WindowsDriver { .. } => {
+        // Detection diagnostics: report the reason as a hint so the GUI can
+        // guide the user, but stay "not connected".
+        warn!(error = %e, "get_device_info: no connectable fastboot device");
+        Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new(), hint: Some(e.to_string()) })
+      }
+      other => {
+        // Permissions, open failures, protocol errors — report them so the GUI
+        // does not silently present "not connected".
+        warn!(error = %other, "get_device_info: connect failed");
+        Err(AppError::from(other))
+      }
+    },
   }
 }
 
