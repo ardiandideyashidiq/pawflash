@@ -343,6 +343,9 @@ function AppRoot() {
   const menuActionDisabled =
     isStartingFlash || isCheckingDevice || activeFlashSession || activeForceSession;
 
+  const deviceConnected = deviceInfo?.connected === true;
+  const deviceLabel = deviceInfo?.serial || deviceInfo?.vars.product || "device";
+
   const flashDisabled =
     !planState.plan ||
     planState.loading ||
@@ -366,15 +369,22 @@ function AppRoot() {
         className={cn(
           "w-full overflow-hidden",
           sidebarOpen ? "justify-start gap-2" : "justify-center",
+          deviceConnected &&
+            !isCheckingDevice &&
+            "animate-pulse border-success/50 bg-success/10 text-signal-green hover:bg-success/15 hover:text-signal-green",
         )}
         disabled={isCheckingDevice || activeFlashSession || activeForceSession}
-        aria-label="Check Device"
-        title="Check Device"
+        aria-label={deviceConnected ? `Connected: ${deviceLabel}` : "Check Device"}
+        title={deviceConnected ? `Connected: ${deviceLabel}` : "Check Device"}
         onClick={checkDevice}
       >
         <PlugZap className="h-4 w-4 shrink-0" />
         <span className={cn("truncate", !sidebarOpen && "sr-only")}>
-          {isCheckingDevice ? "Checking device..." : "Check Device"}
+          {isCheckingDevice
+            ? "Checking device..."
+            : deviceConnected
+              ? "Connected"
+              : "Check Device"}
         </span>
       </Button>
     </div>
