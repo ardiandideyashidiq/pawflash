@@ -107,7 +107,7 @@ export default function AppLayout({
           )}
         >
           {sidebarOpen && (
-            <span className="font-display text-sm font-medium tracking-[0.2em] text-trace-copper">
+            <span className="font-display text-sm font-bold tracking-[0.22em] text-trace-copper">
               PAWFLASH
             </span>
           )}
@@ -137,15 +137,15 @@ export default function AppLayout({
                   aria-label={item.label}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-[background-color,color,box-shadow] duration-200 ease-out",
+                    "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-[background-color,color,box-shadow,border-color] duration-200 ease-out",
                     sidebarOpen ? "w-full justify-start" : "w-11 justify-center px-0",
                     active
-                      ? "border border-trace-copper/60 bg-trace-copper/15 text-trace-copper shadow-[var(--panel-shadow)]"
-                      : "text-muted-foreground hover:bg-accent-soft/70 hover:text-foreground",
+                      ? "border border-trace-copper/70 bg-trace-copper/15 text-trace-copper font-semibold shadow-[var(--panel-shadow)]"
+                      : "text-foreground/80 font-medium hover:bg-accent-soft/80 hover:text-foreground",
                   )}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {sidebarOpen && <span className="truncate">{item.label}</span>}
+                  <Icon className={cn("h-4 w-4 shrink-0", active ? "text-trace-copper" : "text-foreground/70")} />
+                  {sidebarOpen && <span className="truncate font-semibold">{item.label}</span>}
                 </button>
                 {notLast && (
                   <Separator className={cn(sidebarOpen ? "w-full" : "mx-auto w-8")} />

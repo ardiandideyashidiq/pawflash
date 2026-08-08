@@ -181,7 +181,7 @@ export const RebootMenu = memo(function RebootMenu({
         <Menu.Backdrop className="fixed inset-0 z-50 bg-stone-950/18 backdrop-blur-sm transition-opacity duration-150 data-closed:opacity-0 data-open:opacity-100" />
         <Menu.Positioner side="right" align="start" sideOffset={8} className="isolate z-50">
           <Menu.Popup className="z-50 w-64 rounded-lg border border-border/80 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-md outline-none">
-            <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground/70 uppercase select-none">
+            <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
               Standard Reboot
             </div>
 
@@ -191,7 +191,7 @@ export const RebootMenu = memo(function RebootMenu({
 
             <Separator className="my-1.5 bg-border/60" />
 
-            <div className="px-2.5 pt-1 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground/70 uppercase select-none">
+            <div className="px-2.5 pt-1 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
               Advanced Modes
             </div>
 
