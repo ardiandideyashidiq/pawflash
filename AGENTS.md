@@ -88,7 +88,7 @@ Single 2-phase workflow (matrix build → one combined release):
 |----------|---------|---------------|-------------|
 | `release.yml` | push to main | CLI `pawflash` linux + windows, Tauri bundles linux + windows | `release-YYYYMMDD-HHMMSS` |
 
-Shared setup: `.github/actions/setup/`. Linux build deps via `deps: all`: `libudev-dev` (CLI), `libwebkit2gtk-4.1-dev` + `patchelf` (GUI).
+Everything is inlined in `release.yml` (no composite setup action, no separate check job — CI builds only, it does not run tests/clippy/lint/typecheck). Linux build deps: `libwebkit2gtk-4.1-dev libgtk-3-dev libglib2.0-dev libxdo-dev libssl-dev librsvg2-dev patchelf libudev-dev`.
 
 ## Vendored dep notes
 
