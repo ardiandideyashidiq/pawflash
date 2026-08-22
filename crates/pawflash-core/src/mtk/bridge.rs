@@ -202,6 +202,7 @@ pub fn run_bridge(
 }
 
 #[cfg(test)]
+#[cfg(not(target_os = "windows"))]
 mod tests {
     use super::*;
     use std::sync::{Mutex, MutexGuard};

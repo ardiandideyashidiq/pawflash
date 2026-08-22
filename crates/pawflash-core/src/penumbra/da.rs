@@ -103,7 +103,8 @@ fn write_da_bytes(entry: &DAEntry, root: &Path, bytes: &[u8]) -> Result<PathBuf>
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    let staging = parent.join(format!(".da-stage-{stamp}"));
+    let rand_suffix: u32 = rand::random();
+    let staging = parent.join(format!(".da-stage-{stamp}-{rand_suffix}"));
     let _guard = StageCleanup(staging.clone());
     fs::write(&staging, bytes).map_err(|source| PenumbraError::Cache(source.to_string()))?;
     fs::rename(&staging, &final_path).map_err(|source| PenumbraError::Cache(source.to_string()))?;

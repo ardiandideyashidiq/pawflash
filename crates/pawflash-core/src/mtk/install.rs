@@ -137,7 +137,8 @@ fn install_from_bytes(manifest: &Manifest, root: &Path, bytes: &[u8]) -> crate::
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    let staging = parent.join(format!(".mtk-bridge-stage-{stamp}"));
+    let rand_suffix: u32 = rand::random();
+    let staging = parent.join(format!(".mtk-bridge-stage-{stamp}-{rand_suffix}"));
     let _guard = StageCleanup(staging.clone());
     fs::create_dir_all(&staging).map_err(|source| MtkError::Install(source.to_string()))?;
     extract_archive(bytes, &staging)?;
@@ -160,10 +161,8 @@ fn install_from_bytes(manifest: &Manifest, root: &Path, bytes: &[u8]) -> crate::
         {
             let entry = entry.map_err(|source| MtkError::Install(source.to_string()))?;
             let target = final_dir.join(entry.file_name());
-            if entry.file_type().is_ok_and(|t| t.is_dir()) {
-                fs::rename(entry.path(), &target)
-                    .map_err(|source| MtkError::Install(source.to_string()))?;
-            }
+            fs::rename(entry.path(), &target)
+                .map_err(|source| MtkError::Install(source.to_string()))?;
         }
     }
     let _ = fs::remove_dir_all(&old_dir);

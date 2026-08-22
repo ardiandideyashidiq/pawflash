@@ -57,9 +57,13 @@ pub(crate) fn base_data_dir_with(override_dir: Option<&std::ffi::OsStr>) -> Path
 }
 
 /// The penumbra data directory (DA cache, state, etc.).
+///
+/// Ensures the directory exists before returning the path.
 #[must_use]
 pub fn penumbra_dir() -> PathBuf {
-    base_data_dir().join("penumbra")
+    let dir = base_data_dir().join("penumbra");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
 }
 
 #[cfg(test)]

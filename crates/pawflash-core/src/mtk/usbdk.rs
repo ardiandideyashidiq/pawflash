@@ -16,6 +16,7 @@ pub const USBDK_MSI_URL: &str =
 mod platform {
     use crate::mtk::error::MtkError;
     use crate::mtk::Result;
+    use std::io::Read;
     use std::process::Command;
 
     /// Probe for the USBDK driver/service via `sc query UsbDk`.
@@ -32,12 +33,52 @@ mod platform {
         if installed() {
             return Ok(());
         }
-        // Ignore the msiexec exit code: a successful driver install commonly
-        // returns 3010 (ERROR_SUCCESS_REBOOT_REQUIRED) rather than 0. Probe
-        // the service instead, which is authoritative regardless of the code.
+
+        // Download MSI to temp file first (msiexec may not handle HTTPS URLs
+        // directly on all Windows configurations).
+        let temp_dir = std::env::temp_dir();
+        let msi_path = temp_dir.join("UsbDk_1.0.22_x64.msi");
+
+        if !msi_path.exists() {
+            let mut response = ureq::get(super::USBDK_MSI_URL)
+                .call()
+                .map_err(|e| MtkError::Prerequisite(format!("failed to download USBDK: {e}")))?;
+
+            let mut file = std::fs::File::create(&msi_path)
+                .map_err(|e| MtkError::Prerequisite(format!("failed to create temp file: {e}")))?;
+
+            let mut body = response.body_mut();
+            let mut reader = body.as_reader();
+            let mut buf = [0u8; 8192];
+            loop {
+                let n = reader.read(&mut buf).map_err(|e| {
+                    MtkError::Prerequisite(format!("failed to read USBDK download: {e}"))
+                })?;
+                if n == 0 {
+                    break;
+                }
+                std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| {
+                    MtkError::Prerequisite(format!("failed to write USBDK installer: {e}"))
+                })?;
+            }
+        }
+
+        // Install from local file. Ignore the msiexec exit code: a successful
+        // driver install commonly returns 3010 (ERROR_SUCCESS_REBOOT_REQUIRED)
+        // rather than 0. Probe the service instead, which is authoritative
+        // regardless of the code.
         let _ = Command::new("msiexec")
-            .args(["/i", super::USBDK_MSI_URL, "/qn", "/norestart"])
+            .args([
+                "/i",
+                msi_path.to_str().unwrap_or_default(),
+                "/qn",
+                "/norestart",
+            ])
             .status();
+
+        // Clean up temp file.
+        let _ = std::fs::remove_file(&msi_path);
+
         if installed() {
             return Ok(());
         }

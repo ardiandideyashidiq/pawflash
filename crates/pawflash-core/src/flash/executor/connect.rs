@@ -70,7 +70,7 @@ impl FlashExecutor<NusbFastBoot> {
             Ok(fb) => fb,
             Err(e) => {
                 #[cfg(target_os = "windows")]
-                if matches!(e, NusbFastBootOpenError::Interface(_)) {
+                if matches!(e, NusbFastBootOpenError::Interface(_) | NusbFastBootOpenError::Device(_)) {
                     let vidpid = format!("{:04x}:{:04x}", info.vendor_id(), info.product_id());
                     let driver = info.driver().map(str::to_owned);
                     let serial = info.serial_number().map(str::to_owned);

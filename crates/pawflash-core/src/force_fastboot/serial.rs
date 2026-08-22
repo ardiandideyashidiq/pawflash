@@ -47,15 +47,12 @@ fn is_candidate_serial_port(name: &str) -> bool {
 }
 
 /// A port is a candidate if its name looks like a preloader port AND, for
-/// `ttyUSB` adapters, it reports a `MediaTek` VID when one is present. This
+/// USB serial adapters, it reports a `MediaTek` VID when one is present. This
 /// keeps unrelated USB-serial adapters (`FTDI`, `CP210x`, `CH340`) from being
 /// hammered with FASTBOOT handshakes.
 fn is_candidate_port(info: &tokio_serial::SerialPortInfo) -> bool {
     if !is_candidate_serial_port(&info.port_name) {
         return false;
-    }
-    if info.port_name.starts_with("/dev/ttyACM") || cfg!(target_os = "windows") {
-        return true;
     }
     match &info.port_type {
         tokio_serial::SerialPortType::UsbPort(usb) if usb.vid != 0x0e8d => {
