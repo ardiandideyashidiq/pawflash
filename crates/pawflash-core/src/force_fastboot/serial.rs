@@ -2,6 +2,7 @@ use super::error::Error;
 use super::error::Result;
 use super::fastboot::in_fastboot_mode;
 use super::{permissions, udev};
+#[cfg(not(target_os = "windows"))]
 use inquire::Confirm;
 use std::collections::HashSet;
 use std::io::IsTerminal;
@@ -55,15 +56,35 @@ fn is_candidate_port(info: &tokio_serial::SerialPortInfo) -> bool {
         return false;
     }
     match &info.port_type {
-        tokio_serial::SerialPortType::UsbPort(usb) if usb.vid != 0x0e8d => {
+        tokio_serial::SerialPortType::UsbPort(usb) => {
+            if usb.vid != 0x0e8d {
+                trace!(
+                    port = %info.port_name,
+                    vid = format_args!("{:04x}", usb.vid),
+                    "skipping non-MediaTek USB serial adapter",
+                );
+                return false;
+            }
+            true
+        }
+        // On Windows, Unknown type ports may be MediaTek devices using usbser driver.
+        // Accept them as candidates (they'll be verified during reconnect or handshake).
+        tokio_serial::SerialPortType::Unknown => {
             trace!(
                 port = %info.port_name,
-                vid = format_args!("{:04x}", usb.vid),
-                "skipping non-MediaTek USB serial adapter",
+                "accepting unknown-type port as candidate"
+            );
+            true
+        }
+        // Reject other types (ParallelPort, etc.)
+        _ => {
+            trace!(
+                port = %info.port_name,
+                kind = ?info.port_type,
+                "skipping non-USB serial port"
             );
             false
         }
-        _ => true,
     }
 }
 
@@ -88,7 +109,8 @@ pub fn open_serial(port: &str) -> Result<tokio_serial::SerialStream> {
 /// Open a serial port with automatic permission recovery.
 ///
 /// On permission denied, attempts to install udev rules and add the user
-/// to the dialout group before retrying.
+/// to the dialout group before retrying. On Windows, skips Linux-specific
+/// prompts and shows `WinUSB` guidance directly.
 ///
 /// # Errors
 ///
@@ -115,6 +137,23 @@ pub fn open_with_permission_recovery(port: &str) -> Result<tokio_serial::SerialS
         return open_serial(port);
     }
 
+    // On Windows, skip Linux-specific prompts and show WinUSB guidance directly.
+    // The udev/dialout prompts are irrelevant on Windows.
+    recover_with_platform_guidance(port)
+}
+
+/// Platform-specific permission recovery. On Windows, shows WinUSB guidance.
+/// On Linux, prompts for udev rules and dialout group.
+#[cfg(target_os = "windows")]
+fn recover_with_platform_guidance(port: &str) -> Result<tokio_serial::SerialStream> {
+    udev::print_manual_guidance();
+    open_serial(port)
+}
+
+/// Platform-specific permission recovery. On Linux, prompts for udev rules
+/// and dialout group.
+#[cfg(not(target_os = "windows"))]
+fn recover_with_platform_guidance(port: &str) -> Result<tokio_serial::SerialStream> {
     // Prompt before installing udev rules (default no — opt-in).
     if Confirm::new("Permission denied. Install udev rules for MediaTek preloader? (requires sudo)")
         .with_default(false)
@@ -219,7 +258,9 @@ pub async fn wait_for_preloader(
 ///
 /// Candidates that cannot actually be opened are skipped, so stale or phantom
 /// COM entries on Windows (left over while a device re-enumerates) never
-/// match. Returns `None` once `timeout` elapses or the operation is cancelled.
+/// match. On Windows, non-MediaTek ports are also skipped to prevent
+/// returning the wrong device. Returns `None` once `timeout` elapses or the
+/// operation is cancelled.
 ///
 /// # Errors
 ///
@@ -237,6 +278,27 @@ pub async fn wait_for_reconnect(
             return Ok(None);
         }
         for port in serial_ports() {
+            // On Windows, verify the port is a MediaTek device before returning.
+            // This prevents returning a non-MediaTek port that happens to be openable
+            // (e.g., GPS receiver, Arduino, barcode scanner).
+            #[cfg(target_os = "windows")]
+            {
+                if let Ok(all_ports) = tokio_serial::available_ports() {
+                    if let Some(info) = all_ports.iter().find(|p| p.port_name == port) {
+                        if let tokio_serial::SerialPortType::UsbPort(usb) = &info.port_type {
+                            if usb.vid != 0x0e8d {
+                                trace!(
+                                    port = %port,
+                                    vid = format_args!("{:04x}", usb.vid),
+                                    "skipping non-MediaTek port in reconnect"
+                                );
+                                continue;
+                            }
+                        }
+                        // Unknown type: accept (handles usbser driver case on Windows)
+                    }
+                }
+            }
             if open_serial(&port).is_ok() {
                 return Ok(Some(port));
             }

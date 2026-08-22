@@ -47,7 +47,7 @@ mod platform {
             let mut file = std::fs::File::create(&msi_path)
                 .map_err(|e| MtkError::Prerequisite(format!("failed to create temp file: {e}")))?;
 
-            let mut body = response.body_mut();
+            let body = response.body_mut();
             let mut reader = body.as_reader();
             let mut buf = [0u8; 8192];
             loop {

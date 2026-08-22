@@ -78,6 +78,14 @@ pub async fn run(simulate: bool) -> Result<()> {
     debug!(sends = count, elapsed_secs = elapsed, "handshake succeeded");
 
     fastboot::list_fastboot_devices().await;
+
+    // On Windows, warn if nusb can't detect the device (missing WinUSB driver).
+    // The Tauri GUI has this check; CLI users need the same guidance.
+    #[cfg(target_os = "windows")]
+    if !fastboot::in_fastboot_mode().await {
+        output::status::warn("[!]", "Device left preloader. If it does not appear in fastboot, install the WinUSB driver via Zadig for the fastboot VID:PID.");
+    }
+
     info!(total_secs = start_all.elapsed().as_secs_f32(), sends = count, "force-fastboot complete");
     Ok(())
 }
