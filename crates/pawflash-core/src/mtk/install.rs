@@ -207,7 +207,7 @@ pub fn ensure_installed_at(
 
 /// Path to the bridge executable under `root`.
 fn bridge_binary_path(root: &Path) -> PathBuf {
-    let exe = if cfg!(target_os = "windows") { "bridge.exe" } else { "bridge" };
+    let exe = crate::platform::CURRENT.bridge_binary_name();
     root.join("bridge").join(exe)
 }
 

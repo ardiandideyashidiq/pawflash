@@ -586,8 +586,10 @@ fn run_doctor(simulate: bool) {
         output::status::fail("device", "not visible (is it in BROM/preloader/DA mode?)");
     }
 
-    #[cfg(target_os = "windows")]
-    output::status::data("hint: install a WinUSB driver via Zadig for the MTK device");
+    let hint = pawflash_core::platform::CURRENT.post_handshake_hint();
+    if !hint.is_empty() {
+        output::status::data(hint);
+    }
 
     output::status::ok("doctor", "checks complete");
 }

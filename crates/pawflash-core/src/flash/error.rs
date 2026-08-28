@@ -17,15 +17,8 @@ pub enum FlashError {
     NoUsbInterface { vids: Vec<String> },
 
     #[error("fastboot device detected (VID:PID {vidpid}) but its USB driver is not supported: {}", .driver.as_deref().unwrap_or("unknown"))]
-    #[cfg_attr(
-        target_os = "windows",
-        diagnostic(help("install the Google 'Android Bootloader' / WinUSB driver for the device using Zadig (https://zadig.akeo.ie) or Device Manager"))
-    )]
-    #[cfg_attr(
-        not(target_os = "windows"),
-        diagnostic(help("ensure a functional USB driver is associated with the device serial"))
-    )]
-    WindowsDriver {
+    #[diagnostic(help("install the correct USB driver for the device (Zadig/WinUSB on Linux, WinUSB on Windows)"))]
+    UnsupportedDriver {
         vidpid: String,
         driver: Option<String>,
         serial: Option<String>,

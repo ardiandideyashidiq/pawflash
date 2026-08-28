@@ -18,6 +18,8 @@ pub mod mtk;
 /// Native DA-mode integration via the penumbra library.
 pub mod penumbra;
 
+/// Cross-platform abstraction for OS-varying behavior.
+pub mod platform;
 /// User-facing output formatting, status lines, and tables.
 pub mod output;
 /// MediaTek scatter manifest parser and flash-plan builder.

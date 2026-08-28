@@ -42,18 +42,12 @@ impl Manifest {
 ///
 /// # Errors
 ///
-/// Returns [`MtkError::UnsupportedPlatform`] for non-`linux-x86_64` /
-/// `windows-x86_64` hosts.
+/// Returns [`MtkError::UnsupportedPlatform`] for unsupported hosts.
 pub fn current_platform() -> Result<String> {
-    let os = if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else {
-        return Err(MtkError::UnsupportedPlatform(std::env::consts::OS.to_string()));
-    };
-    let arch = if cfg!(target_arch = "x86_64") { "x86_64" } else { return Err(MtkError::UnsupportedPlatform(std::env::consts::ARCH.to_string())) };
-    Ok(format!("{os}-{arch}"))
+    crate::platform::CURRENT
+        .manifest_platform_key()
+        .map(str::to_owned)
+        .map_err(MtkError::UnsupportedPlatform)
 }
 
 /// Fetch and parse the release manifest.

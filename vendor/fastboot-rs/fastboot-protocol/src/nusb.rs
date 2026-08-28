@@ -52,7 +52,6 @@ pub struct Probe {
     pub vid: u16,
     pub pid: u16,
     pub serial: Option<String>,
-    #[cfg(target_os = "windows")]
     pub driver: Option<String>,
     pub kind: InterfaceKind,
     pub iface_count: usize,
@@ -85,6 +84,8 @@ impl Probe {
             serial: info.serial_number().map(str::to_owned),
             #[cfg(target_os = "windows")]
             driver: info.driver().map(str::to_owned),
+            #[cfg(not(target_os = "windows"))]
+            driver: None,
             kind,
             iface_count,
         }
@@ -109,13 +110,18 @@ impl Probe {
     }
 }
 
+/// Shared helper: enumerate all USB devices once.
+async fn all_devices() -> Result<Vec<DeviceInfo>, nusb::Error> {
+    nusb::list_devices().await.map(|iter| iter.collect())
+}
+
 /// Enumerate all connected USB devices with detection metadata.
 ///
 /// # Errors
 ///
 /// Returns an error if USB enumeration fails.
 pub async fn probe() -> Result<Vec<Probe>, nusb::Error> {
-    let all: Vec<_> = nusb::list_devices().await?.collect();
+    let all = all_devices().await?;
     let probes: Vec<_> = all.iter().map(Probe::from_info).collect();
     debug!(count = probes.len(), "probed USB devices");
     for p in &probes {
@@ -131,7 +137,7 @@ pub async fn probe() -> Result<Vec<Probe>, nusb::Error> {
 
 /// List fastboot devices
 pub async fn devices() -> Result<impl Iterator<Item = DeviceInfo>, nusb::Error> {
-    let all: Vec<_> = nusb::list_devices().await?.collect();
+    let all = all_devices().await?;
     debug!(total = all.len(), "nusb raw devices");
     for d in &all {
         debug!(
@@ -347,9 +353,10 @@ impl NusbFastBoot {
     }
 
     fn allocate(&self) -> Buffer {
-        // Allocate about 1Mb of buffer ensuring it's always a multiple of the maximum out packet
-        // size
-        let size = (1024usize * 1024).next_multiple_of(self.max_out);
+        // Scale buffer with endpoint packet size: 8x the max packet size,
+        // capped at 1 MiB, rounded up to a multiple of max_out.
+        let target = (self.max_out * 8).min(1024 * 1024).max(self.max_out);
+        let size = target.next_multiple_of(self.max_out);
         self.ep_out.allocate(size)
     }
 

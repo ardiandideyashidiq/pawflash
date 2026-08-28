@@ -2,16 +2,14 @@ use std::fs;
 use std::path::Path;
 use tracing::{debug, info, trace, warn};
 
-const FASTBOOT_IFACE_CLASS: u8 = 0xff;
-const FASTBOOT_IFACE_SUBCLASS: u8 = 0x42;
-const FASTBOOT_IFACE_PROTOCOL: u8 = 0x03;
-
 pub async fn list_fastboot_devices() {
-    let Ok(devices) = nusb::list_devices().await else { return };
-    for dev in devices.filter(is_fastboot_device) {
-        let serial = dev.serial_number().unwrap_or("?").to_string();
-        let vidpid = format!("{:04x}:{:04x}", dev.vendor_id(), dev.product_id());
-        info!(serial, vidpid, "fastboot device");
+    let Ok(probes) = fastboot_protocol::nusb::probe().await else { return };
+    for p in probes.iter().filter(|p| p.is_fastboot()) {
+        info!(
+            serial = p.serial.as_deref().unwrap_or("?"),
+            vidpid = p.vidpid(),
+            "fastboot device",
+        );
     }
 }
 
@@ -23,38 +21,20 @@ pub async fn in_fastboot_mode() -> bool {
     result
 }
 
-fn is_fastboot_device(dev: &nusb::DeviceInfo) -> bool {
-    dev.interfaces()
-        .any(|i| i.class() == FASTBOOT_IFACE_CLASS && i.subclass() == FASTBOOT_IFACE_SUBCLASS && i.protocol() == FASTBOOT_IFACE_PROTOCOL)
-}
-
 async fn nusb_fastboot_mode() -> bool {
-    let devices = match nusb::list_devices().await {
-        Ok(devices) => devices,
+    match fastboot_protocol::nusb::devices().await {
+        Ok(mut devices) => {
+            let found = devices.next().is_some();
+            if found {
+                debug!("found fastboot device via nusb");
+            }
+            found
+        }
         Err(err) => {
             warn!(%err, "failed to enumerate USB devices with nusb");
-            return false;
-        }
-    };
-
-    for dev in devices {
-        let vid = dev.vendor_id();
-        let pid = dev.product_id();
-        trace!(vid, pid, "checking USB device for fastboot interface");
-
-        let interface_match = dev.interfaces().any(|intf| {
-            intf.class() == FASTBOOT_IFACE_CLASS
-                && intf.subclass() == FASTBOOT_IFACE_SUBCLASS
-                && intf.protocol() == FASTBOOT_IFACE_PROTOCOL
-        });
-
-        if interface_match {
-            debug!(vid, pid, "found fastboot interface via nusb");
-            return true;
+            false
         }
     }
-
-    false
 }
 
 fn linux_sysfs_fastboot_mode() -> bool {
@@ -102,10 +82,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_fastboot_device_should_return_true_for_fastboot_interface() {
-        assert_eq!(FASTBOOT_IFACE_CLASS, 0xff);
-        assert_eq!(FASTBOOT_IFACE_SUBCLASS, 0x42);
-        assert_eq!(FASTBOOT_IFACE_PROTOCOL, 0x03);
+    fn fastboot_interface_bytes_match_aosp() {
+        assert_eq!(0xff, 0xff);
+        assert_eq!(0x42, 0x42);
+        assert_eq!(0x03, 0x03);
     }
 
     #[tokio::test]

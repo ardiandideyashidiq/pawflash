@@ -2,13 +2,25 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use fastboot_protocol::nusb::{InterfaceKind, NusbFastBoot};
-#[cfg(target_os = "windows")]
-use fastboot_protocol::nusb::NusbFastBootOpenError;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::flash::error::{FlashError, Result};
 use super::{BootTarget, expected_serial, FlashExecutor};
+
+/// Extract the USB driver name from a device info.
+/// Returns `Some(driver_name)` on Windows, `None` on other platforms.
+const fn probe_driver(info: &fastboot_protocol::nusb::DeviceInfo) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        info.driver().map(str::to_owned)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = info;
+        None
+    }
+}
 
 /// Classify why no fastboot device matched: ADB mode, unknown USB devices, or
 /// nothing connected at all.
@@ -69,12 +81,11 @@ impl FlashExecutor<NusbFastBoot> {
         let mut fb = match NusbFastBoot::from_info(&info).await {
             Ok(fb) => fb,
             Err(e) => {
-                #[cfg(target_os = "windows")]
-                if matches!(e, NusbFastBootOpenError::Interface(_) | NusbFastBootOpenError::Device(_)) {
+                let driver = probe_driver(&info);
+                if driver.is_some() {
                     let vidpid = format!("{:04x}:{:04x}", info.vendor_id(), info.product_id());
-                    let driver = info.driver().map(str::to_owned);
                     let serial = info.serial_number().map(str::to_owned);
-                    return Err(FlashError::WindowsDriver { vidpid, driver, serial });
+                    return Err(FlashError::UnsupportedDriver { vidpid, driver, serial });
                 }
                 return Err(FlashError::Open(e));
             }
@@ -213,7 +224,6 @@ mod tests {
             serial: serial.map(str::to_owned),
             kind,
             iface_count: 1,
-            #[cfg(target_os = "windows")]
             driver: None,
         }
     }

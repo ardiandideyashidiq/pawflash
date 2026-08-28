@@ -269,7 +269,7 @@ async fn get_device_info(simulate: bool) -> Result<DeviceInfo, AppError> {
       }
       pawflash_core::flash::FlashError::DeviceInAdb { .. }
       | pawflash_core::flash::FlashError::NoUsbInterface { .. }
-      | pawflash_core::flash::FlashError::WindowsDriver { .. } => {
+      | pawflash_core::flash::FlashError::UnsupportedDriver { .. } => {
         // Detection diagnostics: report the reason as a hint so the GUI can
         // guide the user, but stay "not connected".
         warn!(error = %e, "get_device_info: no connectable fastboot device");
@@ -379,10 +379,10 @@ async fn force_fastboot(
 
   send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "confirmed".into(), message: "Fastboot mode confirmed.".into() });
   info!(sends, "device now in fastboot mode");
-  #[cfg(target_os = "windows")]
-  if !pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
+  let hint = pawflash_core::platform::CURRENT.post_handshake_hint();
+  if !hint.is_empty() && !pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
     send_progress(&on_event, ProgressEvent::Warning {
-      message: "Device left preloader. If it does not appear in fastboot, install the WinUSB driver via Zadig for the fastboot VID:PID.".into(),
+      message: hint.into(),
     });
   }
   send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Device now in fastboot mode".into() });
@@ -592,7 +592,7 @@ async fn mtk_status(simulate: bool) -> Result<MtkStatusPayload, AppError> {
   let version = if simulate { None } else { pawflash_core::mtk::current_version() };
   let installed = version.is_some();
   let path = version.as_ref().map(|_| {
-    let exe = if cfg!(target_os = "windows") { "bridge.exe" } else { "bridge" };
+    let exe = pawflash_core::platform::CURRENT.bridge_binary_name();
     pawflash_core::mtk::install_root().join("bridge").join(exe).display().to_string()
   });
   Ok(MtkStatusPayload {
@@ -675,20 +675,13 @@ async fn mtk_doctor(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<
     Some(v) => send_progress(&on_event, ProgressEvent::MtkPhase { phase: "bridge".into(), message: format!("bridge installed ({v})") }),
     None => send_progress(&on_event, ProgressEvent::MtkPhase { phase: "bridge".into(), message: "bridge not installed".into() }),
   }
-  #[cfg(target_os = "linux")]
-  {
-    if pawflash_core::udev::ensure_udev_rules() {
-      send_progress(&on_event, ProgressEvent::MtkPhase { phase: "udev".into(), message: "udev rules installed".into() });
-    } else {
-      send_progress(&on_event, ProgressEvent::Error { message: "udev rules not installed".into() });
-    }
+  if pawflash_core::platform::CURRENT.install_udev_rules() {
+    send_progress(&on_event, ProgressEvent::MtkPhase { phase: "udev".into(), message: "udev rules installed".into() });
+  } else {
+    send_progress(&on_event, ProgressEvent::Error { message: "udev rules not installed".into() });
   }
-  #[cfg(target_os = "windows")]
-  {
-    match pawflash_core::mtk::ensure_usbdk() {
-      Ok(()) => send_progress(&on_event, ProgressEvent::MtkPhase { phase: "usbdk".into(), message: "usbdk present".into() }),
-      Err(e) => send_progress(&on_event, ProgressEvent::Error { message: e.to_string() }),
-    }
+  if let Err(e) = pawflash_core::platform::CURRENT.ensure_driver() {
+    send_progress(&on_event, ProgressEvent::Error { message: e });
   }
   if !simulate {
     let visible = pawflash_core::udev::device_visible().await;
@@ -975,8 +968,10 @@ async fn penumbra_doctor(on_event: Channel<ProgressEvent>, simulate: bool) -> Re
     let visible = pawflash_core::udev::device_visible().await;
     send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "device".into(), message: if visible { "DA-capable device visible".into() } else { "no DA-capable device visible".into() } });
   }
-  #[cfg(target_os = "windows")]
-  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "hint".into(), message: "install a WinUSB driver via Zadig for the MTK device".into() });
+  let hint = pawflash_core::platform::CURRENT.post_handshake_hint();
+  if !hint.is_empty() {
+    send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "hint".into(), message: hint.into() });
+  }
   send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "doctor complete".into() });
   Ok(())
 }

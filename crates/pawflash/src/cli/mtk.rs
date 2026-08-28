@@ -201,21 +201,14 @@ fn run_doctor(simulate: bool) -> Result<()> {
         Err(e) => output::status::fail("manifest", format!("{e}")),
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        if pawflash_core::udev::ensure_udev_rules() {
-            output::status::ok("udev", "rules installed");
-        } else {
-            output::status::fail("udev", "rules not installed (run as root or install manually)");
-        }
+    if pawflash_core::platform::CURRENT.install_udev_rules() {
+        output::status::ok("udev", "rules installed");
+    } else {
+        output::status::fail("udev", "rules not installed (run as root or install manually)");
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        match pawflash_core::mtk::ensure_usbdk() {
-            Ok(()) => output::status::ok("usbdk", "present"),
-            Err(e) => output::status::fail("usbdk", format!("{e}")),
-        }
+    if let Err(e) = pawflash_core::platform::CURRENT.ensure_driver() {
+        output::status::fail("usbdk", e);
     }
 
     output::status::ok("doctor", "checks complete");
@@ -282,6 +275,6 @@ fn run_erase(partition: &str, parttype: PartType, simulate: bool) -> Result<()> 
     Ok(())
 }
 
-const fn bridge_exe() -> &'static str {
-    if cfg!(target_os = "windows") { "bridge.exe" } else { "bridge" }
+fn bridge_exe() -> &'static str {
+    pawflash_core::platform::CURRENT.bridge_binary_name()
 }

@@ -2,17 +2,15 @@
 
 /// Returns `true` if the error message indicates a permission-denied error.
 ///
-/// Works by checking if any error in the source chain contains
-/// "permission denied", "access is denied", or "access denied".
+/// Works by checking if any error in the source chain matches platform-specific
+/// permission error patterns.
 #[must_use]
 pub fn is_permission_error(err: &dyn std::error::Error) -> bool {
+    let patterns = crate::platform::CURRENT.permission_error_patterns();
     let mut current: Option<&dyn std::error::Error> = Some(err);
     while let Some(e) = current {
         let msg = e.to_string().to_lowercase();
-        if msg.contains("permission denied")
-            || msg.contains("access is denied")
-            || msg.contains("access denied")
-        {
+        if patterns.iter().any(|p| msg.contains(p)) {
             return true;
         }
         current = e.source();
