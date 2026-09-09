@@ -4,7 +4,9 @@
 //! driver management, udev rules) is routed through the [`Platform`]
 //! trait. A single `const CURRENT` instance is selected at compile time.
 
+#[cfg(not(target_os = "windows"))]
 mod linux;
+#[cfg(target_os = "windows")]
 mod windows;
 
 /// Platform-specific behavior contract.
@@ -56,6 +58,17 @@ pub trait Platform {
     /// Windows-specific hint text after fastboot handshake.
     /// Empty string on Linux.
     fn post_handshake_hint(&self) -> &'static str;
+
+    /// Whether nusb can open this device's fastboot interface.
+    ///
+    /// Always `true` on Linux. On Windows nusb requires the interface's
+    /// child PDO driver to be `WinUSB`; any other driver means the interface
+    /// cannot be used for fastboot I/O.
+    fn fastboot_interface_openable(&self, info: &fastboot_protocol::nusb::DeviceInfo) -> bool;
+
+    /// USB driver name for the unsupported-driver diagnostic.
+    /// `Some` on Windows, `None` elsewhere.
+    fn fastboot_driver_name(&self, info: &fastboot_protocol::nusb::DeviceInfo) -> Option<String>;
 }
 
 /// Compile-time selected platform implementation.

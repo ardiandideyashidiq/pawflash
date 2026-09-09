@@ -70,13 +70,6 @@ impl Probe {
                 kind = InterfaceKind::Adb;
             }
         }
-        
-        if kind == InterfaceKind::Other {
-            let k = InterfaceKind::classify(info.class(), info.subclass(), info.protocol());
-            if k != InterfaceKind::Other {
-                kind = k;
-            }
-        }
 
         Self {
             vid: info.vendor_id(),
@@ -197,7 +190,7 @@ impl NusbFastBoot {
     /// Find fastboot interface within a USB device
     #[must_use]
     pub fn find_fastboot_interface(info: &DeviceInfo) -> Option<u8> {
-        if let Some(iface) = info.interfaces().find_map(|i| {
+        info.interfaces().find_map(|i| {
             if i.class() == ANDROID_IFACE_CLASS
                 && i.subclass() == ANDROID_IFACE_SUBCLASS
                 && i.protocol() == FASTBOOT_IFACE_PROTOCOL
@@ -206,18 +199,7 @@ impl NusbFastBoot {
             } else {
                 None
             }
-        }) {
-            return Some(iface);
-        }
-
-        if info.class() == ANDROID_IFACE_CLASS
-            && info.subclass() == ANDROID_IFACE_SUBCLASS
-            && info.protocol() == FASTBOOT_IFACE_PROTOCOL
-        {
-            return Some(0);
-        }
-
-        None
+        })
     }
 
     /// Create a fastboot client based on a USB interface. Interface is assumed to be a fastboot

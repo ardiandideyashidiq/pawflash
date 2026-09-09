@@ -123,4 +123,15 @@ impl Platform for Impl {
     fn post_handshake_hint(&self) -> &'static str {
         "Device left preloader. If it does not appear in fastboot, install the WinUSB driver via Zadig for the fastboot VID:PID."
     }
+
+    fn fastboot_interface_openable(&self, info: &fastboot_protocol::nusb::DeviceInfo) -> bool {
+        info.driver().is_some_and(|d| d.eq_ignore_ascii_case("winusb"))
+    }
+
+    fn fastboot_driver_name(
+        &self,
+        info: &fastboot_protocol::nusb::DeviceInfo,
+    ) -> Option<String> {
+        info.driver().map(str::to_owned)
+    }
 }

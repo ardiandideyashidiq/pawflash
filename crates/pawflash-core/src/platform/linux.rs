@@ -158,4 +158,17 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0e8d", MODE="0666", TAG+="uaccess"
     fn post_handshake_hint(&self) -> &'static str {
         ""
     }
+
+    fn fastboot_interface_openable(&self, info: &fastboot_protocol::nusb::DeviceInfo) -> bool {
+        let _ = info;
+        true
+    }
+
+    fn fastboot_driver_name(
+        &self,
+        info: &fastboot_protocol::nusb::DeviceInfo,
+    ) -> Option<String> {
+        let _ = info;
+        None
+    }
 }

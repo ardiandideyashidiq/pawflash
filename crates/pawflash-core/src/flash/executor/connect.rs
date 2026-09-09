@@ -6,21 +6,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::flash::error::{FlashError, Result};
+use crate::platform;
 use super::{BootTarget, expected_serial, FlashExecutor};
-
-/// Extract the USB driver name from a device info.
-/// Returns `Some(driver_name)` on Windows, `None` on other platforms.
-const fn probe_driver(info: &fastboot_protocol::nusb::DeviceInfo) -> Option<String> {
-    #[cfg(target_os = "windows")]
-    {
-        info.driver().map(str::to_owned)
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = info;
-        None
-    }
-}
 
 /// Classify why no fastboot device matched: ADB mode, unknown USB devices, or
 /// nothing connected at all.
@@ -81,10 +68,10 @@ impl FlashExecutor<NusbFastBoot> {
         let mut fb = match NusbFastBoot::from_info(&info).await {
             Ok(fb) => fb,
             Err(e) => {
-                let driver = probe_driver(&info);
-                if driver.is_some() {
+                if !platform::CURRENT.fastboot_interface_openable(&info) {
                     let vidpid = format!("{:04x}:{:04x}", info.vendor_id(), info.product_id());
                     let serial = info.serial_number().map(str::to_owned);
+                    let driver = platform::CURRENT.fastboot_driver_name(&info);
                     return Err(FlashError::UnsupportedDriver { vidpid, driver, serial });
                 }
                 return Err(FlashError::Open(e));
