@@ -1,8 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { Toaster, toast } from "sonner";
 import { PlugZap } from "lucide-react";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import AppLayout from "@/components/layout/AppLayout";
@@ -27,7 +26,6 @@ import {
 import { FlashPlanProvider, useFlashPlan } from "@/hooks/useFlashPlan";
 import { buildFlashPlanOptions } from "@/lib/plan";
 import { useDevice } from "@/hooks/useDevice";
-import { applyDismissibleDialogChange } from "@/components/shared/dialogBehavior";
 import { errorMessage } from "@/types/api";
 import type { DeviceInfo, FlashResult } from "@/types/api";
 import type { ProgressEvent } from "@/types/progress";
@@ -83,17 +81,6 @@ function AppRoot() {
   const [flashConfirmOpen, setFlashConfirmOpen] = useState(false);
   const [flashOpen, setFlashOpen] = useState(false);
   const [forceOpen, setForceOpen] = useState(false);
-
-  const flashPhaseRef = useRef(flash.phase);
-  const forcePhaseRef = useRef(force.phase);
-
-  useEffect(() => {
-    flashPhaseRef.current = flash.phase;
-  }, [flash.phase]);
-
-  useEffect(() => {
-    forcePhaseRef.current = force.phase;
-  }, [force.phase]);
 
   const activeFlashSession = flash.phase === "waiting" || flash.phase === "flashing";
   const activeForceSession = force.phase === "waiting";
@@ -171,8 +158,8 @@ function AppRoot() {
   }, [force.phase]);
 
   const checkDevice = useCallback(async () => {
-    const sessionLive = flashPhaseRef.current === "waiting" || flashPhaseRef.current === "flashing";
-    if (isCheckingDevice || sessionLive || forcePhaseRef.current === "waiting") {
+    const sessionLive = flash.phase === "waiting" || flash.phase === "flashing";
+    if (isCheckingDevice || sessionLive || force.phase === "waiting") {
       return;
     }
     setIsCheckingDevice(true);
@@ -184,10 +171,10 @@ function AppRoot() {
       addEntry({ text: "DeviceCheck NoDevice", level: "warning" });
     }
     setIsCheckingDevice(false);
-  }, [addEntry, fetchDevice, isCheckingDevice]);
+  }, [addEntry, fetchDevice, isCheckingDevice, flash.phase, force.phase]);
 
   const startFlash = useCallback(async () => {
-    const sessionLive = flashPhaseRef.current === "waiting" || flashPhaseRef.current === "flashing";
+    const sessionLive = flash.phase === "waiting" || flash.phase === "flashing";
     const plan = planState.plan;
     if (
       isStartingFlash ||
@@ -195,7 +182,7 @@ function AppRoot() {
       !plan ||
       planState.selectedFlashCount === 0 ||
       sessionLive ||
-      forcePhaseRef.current === "waiting"
+      force.phase === "waiting"
     ) {
       return;
     }
@@ -246,11 +233,12 @@ function AppRoot() {
     isStartingFlash,
     planState,
     simulate,
+    force.phase,
   ]);
 
   const startForceFastboot = useCallback(async () => {
-    const sessionLive = flashPhaseRef.current === "waiting" || flashPhaseRef.current === "flashing";
-    if (sessionLive || forcePhaseRef.current === "waiting") {
+    const sessionLive = flash.phase === "waiting" || flash.phase === "flashing";
+    if (sessionLive || force.phase === "waiting") {
       return;
     }
 
@@ -273,12 +261,12 @@ function AppRoot() {
       force.reset();
       setForceOpen(false);
     }
-  }, [addEntry, addProgressEvent, force, simulate]);
+  }, [addEntry, addProgressEvent, force, simulate, flash.phase]);
 
   const startManualFlash = useCallback(
     async (partition: string, image: string) => {
-      const sessionLive = flashPhaseRef.current === "waiting" || flashPhaseRef.current === "flashing";
-      if (isStartingFlash || sessionLive || forcePhaseRef.current === "waiting") {
+      const sessionLive = flash.phase === "waiting" || flash.phase === "flashing";
+      if (isStartingFlash || sessionLive || force.phase === "waiting") {
         return;
       }
 
@@ -306,11 +294,11 @@ function AppRoot() {
         setIsStartingFlash(false);
       }
     },
-    [addProgressEvent, flash, isStartingFlash, simulate],
+    [addProgressEvent, flash, force, isStartingFlash, simulate],
   );
 
   const cancelFlash = useCallback(async () => {
-    const sessionLive = flashPhaseRef.current === "waiting" || flashPhaseRef.current === "flashing";
+    const sessionLive = flash.phase === "waiting" || flash.phase === "flashing";
     if (!sessionLive || isCancellingFlash) return;
 
     addEntry({ text: "FlashCancelRequested", level: "warning" });
@@ -324,7 +312,7 @@ function AppRoot() {
   }, [addEntry, flash, isCancellingFlash]);
 
   const cancelForceFastboot = useCallback(async () => {
-    if (forcePhaseRef.current !== "waiting" || isCancellingForceFastboot) return;
+    if (force.phase !== "waiting" || isCancellingForceFastboot) return;
 
     addEntry({ text: "ForceFastboot CancelRequested", level: "warning" });
     setIsCancellingForceFastboot(true);
@@ -334,7 +322,7 @@ function AppRoot() {
       setIsCancellingForceFastboot(false);
       toast.error(errorMessage(error));
     }
-  }, [addEntry, isCancellingForceFastboot]);
+  }, [addEntry, isCancellingForceFastboot, force.phase]);
 
   const hideFlashDialog = useCallback(() => {
     setFlashOpen(false);
@@ -396,7 +384,7 @@ function AppRoot() {
   );
 
   return (
-    <TooltipProvider>
+    <>
       <Toaster richColors position="top-center" theme={theme} />
       <AppLayout
         sidebarActions={sidebarActions}
@@ -414,7 +402,6 @@ function AppRoot() {
             >
               {tab === "flasher" && (
                 <FlasherTab
-                  connected={deviceInfo?.connected ?? false}
                   onStartFlash={() => setFlashConfirmOpen(true)}
                   flashDisabled={flashDisabled}
                 />
@@ -423,7 +410,7 @@ function AppRoot() {
                 <MenuTab onForceFastboot={startForceFastboot} menuActionDisabled={menuActionDisabled} />
               )}
               {tab === "mtk" && <MtkTab />}
-        {tab === "penumbra" && <PenumbraTab />}
+              {tab === "penumbra" && <PenumbraTab />}
               {tab === "extras" && (
                 <ExtrasTab
                   menuActionDisabled={menuActionDisabled}
@@ -448,21 +435,17 @@ function AppRoot() {
       />
       <FlashDialog
         open={flashOpen}
-        onOpenChange={(nextOpen, reason) => {
-          applyDismissibleDialogChange(nextOpen, reason, hideFlashDialog, () => setFlashOpen(true));
-        }}
+        onOpenChange={hideFlashDialog}
         onCancel={cancelFlash}
         canCancel={activeFlashSession}
       />
       <ForceFastbootDialog
         open={forceOpen}
-        onOpenChange={(nextOpen, reason) => {
-          applyDismissibleDialogChange(nextOpen, reason, hideForceDialog, () => setForceOpen(true));
-        }}
+        onOpenChange={hideForceDialog}
         onCancel={cancelForceFastboot}
       />
       <LogPanel />
-    </TooltipProvider>
+    </>
   );
 }
 

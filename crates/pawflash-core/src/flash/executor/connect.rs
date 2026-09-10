@@ -7,7 +7,7 @@ use tracing::{debug, info, warn};
 
 use crate::flash::error::{FlashError, Result};
 use crate::platform;
-use super::{BootTarget, expected_serial, FlashExecutor};
+use super::{expected_serial, FlashExecutor};
 
 /// Classify why no fastboot device matched: ADB mode, unknown USB devices, or
 /// nothing connected at all.
@@ -173,28 +173,6 @@ impl FlashExecutor<NusbFastBoot> {
         }
     }
 
-    /// # Errors
-    /// Returns an error if the device does not reappear within 120 seconds.
-    pub async fn reboot_and_wait(mut self, target: BootTarget) -> Result<Self> {
-        debug!(?target, "rebooting device and waiting for reconnect");
-        if let Err(e) = self.fb.reboot_to(target.as_str()).await {
-            warn!(?target, error = %e, "reboot command error (device may have disconnected)");
-        }
-        drop(self);
-        Self::wait_for_device(Duration::from_secs(120), CancellationToken::default()).await
-    }
-
-    /// # Errors
-    /// Returns an error if the device cannot transition to fastbootd.
-    pub async fn ensure_fastbootd(mut self) -> Result<Self> {
-        let is_fastbootd = self.fb.get_var("is-userspace").await.is_ok_and(|v| v == "yes");
-        if is_fastbootd {
-            debug!("already in fastbootd mode");
-            return Ok(self);
-        }
-        info!("device is in bootloader mode, rebooting to fastbootd");
-        self.reboot_and_wait(BootTarget::Fastboot).await
-    }
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@
 
 use crate::penumbra::manifest::DAEntry;
 use crate::penumbra::{PenumbraError, Result, penumbra_dir};
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -18,19 +18,6 @@ const READ_CHUNK: usize = 64 * 1024;
 #[must_use]
 pub fn da_cache_path(brand: &str, chipset: &str) -> PathBuf {
     penumbra_dir().join("da").join(format!("{brand}-{chipset}.bin"))
-}
-
-/// SHA-256 hex digest of `bytes`.
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let digest = hasher.finalize();
-    let mut out = String::with_capacity(64);
-    for byte in digest {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
 }
 
 /// Download and cache a DA entry, verifying its SHA-256.
@@ -87,7 +74,7 @@ fn download_da_bytes(entry: &DAEntry, on_progress: &mut dyn FnMut(u64, u64)) -> 
 /// Returns [`PenumbraError::HashMismatch`] on a bad digest and
 /// [`PenumbraError::Cache`] on write failure.
 fn write_da_bytes(entry: &DAEntry, root: &Path, bytes: &[u8]) -> Result<PathBuf> {
-    let actual = sha256_hex(bytes);
+    let actual = hex::encode(sha2::Sha256::digest(bytes));
     if actual != entry.sha256 {
         return Err(PenumbraError::HashMismatch {
             expected: entry.sha256.clone(),
@@ -120,7 +107,7 @@ fn write_da_bytes(entry: &DAEntry, root: &Path, bytes: &[u8]) -> Result<PathBuf>
 /// [`PenumbraError::HashMismatch`] on a bad digest.
 pub fn verify_da(path: &Path, sha256: &str) -> Result<()> {
     let bytes = fs::read(path).map_err(|source| PenumbraError::Cache(source.to_string()))?;
-    let actual = sha256_hex(&bytes);
+    let actual = hex::encode(sha2::Sha256::digest(&bytes));
     if actual != sha256 {
         return Err(PenumbraError::HashMismatch { expected: sha256.to_string(), actual });
     }
@@ -177,7 +164,7 @@ mod tests {
 
     #[test]
     fn sha256_hex_matches_expectation() {
-        assert_eq!(sha256_hex(BLOB), EXPECTED_SHA);
+        assert_eq!(hex::encode(sha2::Sha256::digest(BLOB)), EXPECTED_SHA);
     }
 
     #[test]

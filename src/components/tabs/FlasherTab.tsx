@@ -9,17 +9,11 @@ import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 interface FlasherTabProps {
-  connected: boolean;
   onStartFlash: () => void;
   flashDisabled: boolean;
 }
 
-function FlashTabInner({
-  connected,
-  onStartFlash,
-  flashDisabled,
-}: FlasherTabProps) {
-  void connected;
+export default function FlasherTab({ onStartFlash, flashDisabled }: FlasherTabProps) {
   const {
     scatterPath,
     loadScatter,
@@ -160,8 +154,4 @@ function SummaryCard({
       </div>
     </div>
   );
-}
-
-export default function FlasherTab(props: FlasherTabProps) {
-  return <FlashTabInner {...props} />;
 }

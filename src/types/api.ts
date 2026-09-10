@@ -40,45 +40,8 @@ export interface DeviceInfo {
   hint?: string | null;
 }
 
-export interface ScatterFile {
-  path: string;
-  format: string;
-  text_hash: string;
-  platform: string | null;
-  project: string | null;
-  general: unknown;
-  layouts: Record<string, ScatterPartition[]>;
-  warnings: string[];
-  errors: string[];
-}
-
-export type StorageSelect = "auto" | "all" | "ufs" | "emmc";
-
-export interface ScatterPartition {
-  source: string;
-  layout: string;
-  index: string | null;
-  name: string;
-  file_name: string | null;
-  is_download: boolean;
-  type: string | null;
-  linear_start: number;
-  physical_start: number;
-  size: number;
-  region: string;
-  storage: string | null;
-  boundary_check: boolean;
-  is_reserved: boolean;
-  operation_type: string | null;
-  is_upgradable: boolean | null;
-  empty_boot_needed: boolean | null;
-  combo_partsize_check: boolean | null;
-  safety_class: string;
-  raw: unknown;
-}
-
 export interface FlashPlanOptions {
-  storage: StorageSelect;
+  storage: "auto" | "all" | "ufs" | "emmc";
   exclude: string[];
   firmware_dir: string | null;
   package_root: string | null;
@@ -165,7 +128,6 @@ export interface FlashPlanView {
   rows: PartitionRow[];
   warnings: string[];
   errors: string[];
-  flashCount: number;
   skippedCount: number;
 }
 

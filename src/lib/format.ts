@@ -14,12 +14,6 @@ export function formatSpeed(bytesPerSecond: number): string {
   return `${formatBytes(bytesPerSecond)}/s`;
 }
 
-export function formatGiB(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 GiB";
-  // Binary GiB, not decimal GB.
-  return `${(bytes / 1024 ** 3).toFixed(2)} GiB`;
-}
-
 export function formatClockTime(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, { hour12: false });
 }

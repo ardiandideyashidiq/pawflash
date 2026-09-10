@@ -2,16 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Terminal, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useUI } from "@/hooks/useUI";
+import { clampPanelWidth } from "@/hooks/useUI";
 import { useConsole } from "@/hooks/useConsole";
 import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
-import { useMountAnimation } from "@/hooks/useMountAnimation";
 import { ProgressWidget } from "@/components/console/ProgressWidget";
 import { cn } from "@/lib/utils";
 import type { ConsoleLevel } from "@/types/progress";
-
-const MIN_WIDTH = 300;
-const MAX_WIDTH_FACTOR = 0.9;
 
 const SCROLL_PIN_TOLERANCE = 120;
 
@@ -78,7 +75,24 @@ export function LogPanel() {
   // Latest pointer X + pending frame id for coalescing resize updates.
   const dragXRef = useRef(0);
   const resizeRafRef = useRef<number | null>(null);
-  const { mounted, shown } = useMountAnimation(logPanelOpen, SLIDE_DURATION_MS);
+
+  // Inlined from useMountAnimation — keeps element mounted through exit transition.
+  const [mounted, setMounted] = useState(logPanelOpen);
+  const [shown, setShown] = useState(logPanelOpen);
+
+  useEffect(() => {
+    if (logPanelOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMounted(true);
+      const raf = requestAnimationFrame(() =>
+        requestAnimationFrame(() => setShown(true)),
+      );
+      return () => cancelAnimationFrame(raf);
+    }
+    setShown(false);
+    const timeoutId = window.setTimeout(() => setMounted(false), SLIDE_DURATION_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [logPanelOpen]);
 
   const isLive =
     flash.phase === "waiting" || flash.phase === "flashing" || force.phase === "waiting";
@@ -133,11 +147,7 @@ export function LogPanel() {
   useEffect(() => {
     if (!isDragging) return;
 
-    const clampWidth = (clientX: number) => {
-      const min = MIN_WIDTH;
-      const max = Math.max(window.innerWidth * MAX_WIDTH_FACTOR, min);
-      return Math.min(Math.max(window.innerWidth - clientX, min), max);
-    };
+    const clampWidth = (clientX: number) => clampPanelWidth(window.innerWidth - clientX);
 
     const applyWidth = (clientX: number) => {
       const clamped = clampWidth(clientX);

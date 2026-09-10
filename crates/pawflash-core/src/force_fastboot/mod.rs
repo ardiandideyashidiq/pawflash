@@ -18,5 +18,3 @@ pub mod handshake;
 pub mod serial;
 /// Permission-checking helpers for serial port access.
 pub mod permissions;
-/// Linux udev rule management and group-adding helpers.
-pub mod udev;

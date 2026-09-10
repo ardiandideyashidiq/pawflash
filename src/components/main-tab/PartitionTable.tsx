@@ -97,7 +97,6 @@ export const PartitionTable = memo(function PartitionTable({
                 key={partition.partition}
                 className={cn(
                   partition.action === "flash" && "row-tint-flash",
-                  partition.action === "wipe" && "row-tint-wipe",
                 )}
               >
                 <TableCell className="px-0 text-center">

@@ -7,7 +7,7 @@
 use crate::mtk::error::MtkError;
 use crate::mtk::Manifest;
 use crate::penumbra::platform::base_data_dir;
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -87,19 +87,6 @@ pub fn download_bytes(
     }
 }
 
-/// SHA-256 hex digest of `bytes`.
-fn sha256_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let digest = hasher.finalize();
-    let mut out = String::with_capacity(64);
-    for byte in digest {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
-}
-
 /// Extract the archive `bytes` (a gzipped tar rooted at `bridge/`) into `root`.
 fn extract_archive(bytes: &[u8], root: &Path) -> Result<(), MtkError> {
     let decoder = flate2::read::GzDecoder::new(bytes);
@@ -124,7 +111,7 @@ fn extract_archive(bytes: &[u8], root: &Path) -> Result<(), MtkError> {
 fn install_from_bytes(manifest: &Manifest, root: &Path, bytes: &[u8]) -> crate::mtk::Result<PathBuf> {
     let asset = manifest.asset_for(&crate::mtk::manifest::current_platform()?)?;
 
-    let actual = sha256_hex(bytes);
+    let actual = hex::encode(sha2::Sha256::digest(bytes));
     if actual != asset.sha256 {
         return Err(MtkError::HashMismatch { expected: asset.sha256.clone(), actual });
     }
@@ -252,7 +239,7 @@ mod tests {
     }
 
     fn sample_manifest_sha256() -> String {
-        sha256_hex(&sample_archive_bytes())
+        hex::encode(sha2::Sha256::digest(sample_archive_bytes()))
     }
 
     fn make_manifest(version: &str, sha256: String, platform: Option<String>) -> Manifest {
@@ -378,7 +365,7 @@ mod tests {
 
     #[test]
     fn sha256_hex_matches() {
-        let hex = sha256_hex(b"hello");
+        let hex = hex::encode(sha2::Sha256::digest(b"hello"));
         assert_eq!(
             hex,
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"

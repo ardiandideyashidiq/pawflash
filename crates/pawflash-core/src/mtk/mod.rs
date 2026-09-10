@@ -26,8 +26,6 @@ pub mod bridge;
 pub mod ops;
 /// Cross-process device contention lock.
 pub mod lock;
-/// Windows USBDK prerequisite check.
-pub mod usbdk;
 /// Serde types mirroring the bridge protocol.
 pub mod types;
 
@@ -38,5 +36,4 @@ pub use manifest::{current_platform, fetch_manifest, Manifest, PlatformAsset};
 pub use ops::{
     read_partition, write_partition, erase_partition, BridgeRunner, RealBridge, SimulatedMtkRunner,
 };
-pub use usbdk::{ensure_usbdk, usbdk_installed, USBDK_MSI_URL};
 pub use types::{MtkCommand, MtkEvent, MtkOutcome, PartType};

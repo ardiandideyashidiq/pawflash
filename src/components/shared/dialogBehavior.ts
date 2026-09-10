@@ -23,20 +23,3 @@ export function createDismissibleDialogRootHandler(
   };
 }
 
-export function applyDismissibleDialogChange(
-  nextOpen: boolean,
-  reason: DialogChangeReason | undefined,
-  onClose: () => void,
-  onOpen: () => void,
-) {
-  if (!nextOpen) {
-    if (isOutsidePressReason(reason)) {
-      return;
-    }
-
-    onClose();
-    return;
-  }
-
-  onOpen();
-}

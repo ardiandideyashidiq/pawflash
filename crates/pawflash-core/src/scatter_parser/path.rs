@@ -63,18 +63,7 @@ pub fn resolve_image_path(
                         ));
                         continue;
                     }
-                    return resolved_path_result(ResolvedPathParts {
-                        original: meta.original,
-                        normalized: meta.normalized,
-                        resolved_path: Some(found),
-                        resolved_via: Some("image_search_unique_basename"),
-                        exists: Some(true),
-                        is_absolute_input: meta.absolute_input,
-                        input_style: meta.input_style,
-                        contains_parent_reference: meta.contains_parent,
-                        outside_package_root: outside,
-                        warning,
-                    });
+                    return make_resolved(&meta, Some(found), Some("image_search_unique_basename"), Some(true), outside, warning);
                 }
                 Ok(None) => {}
                 Err(err) => {
@@ -86,31 +75,9 @@ pub fn resolve_image_path(
     }
 
     if let Some((via, candidate, outside)) = first_allowed {
-        return resolved_path_result(ResolvedPathParts {
-            original: meta.original,
-            normalized: meta.normalized,
-            resolved_path: Some(candidate),
-            resolved_via: Some(via),
-            exists: Some(false),
-            is_absolute_input: meta.absolute_input,
-            input_style: meta.input_style,
-            contains_parent_reference: meta.contains_parent,
-            outside_package_root: outside,
-            warning,
-        });
+        return make_resolved(&meta, Some(candidate), Some(via), Some(false), outside, warning);
     }
-    resolved_path_result(ResolvedPathParts {
-        original: meta.original,
-        normalized: meta.normalized,
-        resolved_path: None,
-        resolved_via: None,
-        exists: Some(false),
-        is_absolute_input: meta.absolute_input,
-        input_style: meta.input_style,
-        contains_parent_reference: meta.contains_parent,
-        outside_package_root: package_root.as_ref().map(|_| true),
-        warning: warning.or_else(|| Some("no allowed image path candidate".to_string())),
-    })
+    make_resolved(&meta, None, None, Some(false), package_root.as_ref().map(|_| true), warning.or_else(|| Some("no allowed image path candidate".to_string())))
 }
 
 const fn empty_resolved_path() -> ResolvedPath {
@@ -174,18 +141,7 @@ fn check_existing_candidates(
             continue;
         }
         if candidate.exists() {
-            return Some(resolved_path_result(ResolvedPathParts {
-                original: meta.original,
-                normalized: meta.normalized,
-                resolved_path: Some(candidate),
-                resolved_via: Some(via),
-                exists: Some(true),
-                is_absolute_input: meta.absolute_input,
-                input_style: meta.input_style,
-                contains_parent_reference: meta.contains_parent,
-                outside_package_root: outside,
-                warning: warning.clone(),
-            }));
+            return Some(make_resolved(meta, Some(candidate), Some(via), Some(true), outside, warning.clone()));
         }
     }
     None
@@ -206,33 +162,25 @@ fn find_first_allowed<'a>(
     })
 }
 
-struct ResolvedPathParts<'a> {
-    original: &'a str,
-    normalized: &'a str,
+fn make_resolved(
+    meta: &ResolveMeta<'_>,
     resolved_path: Option<PathBuf>,
-    resolved_via: Option<&'a str>,
+    resolved_via: Option<&str>,
     exists: Option<bool>,
-    is_absolute_input: bool,
-    input_style: &'a str,
-    contains_parent_reference: bool,
     outside_package_root: Option<bool>,
     warning: Option<String>,
-}
-
-fn resolved_path_result(parts: ResolvedPathParts<'_>) -> ResolvedPath {
+) -> ResolvedPath {
     ResolvedPath {
-        original: Some(parts.original.to_string()),
-        normalized: Some(parts.normalized.to_string()),
-        resolved_path: parts
-            .resolved_path
-            .map(|p| p.to_string_lossy().into_owned()),
-        resolved_via: parts.resolved_via.map(ToString::to_string),
-        exists: parts.exists,
-        is_absolute_input: parts.is_absolute_input,
-        input_style: Some(parts.input_style.to_string()),
-        contains_parent_reference: parts.contains_parent_reference,
-        outside_package_root: parts.outside_package_root,
-        warning: parts.warning,
+        original: Some(meta.original.to_string()),
+        normalized: Some(meta.normalized.to_string()),
+        resolved_path: resolved_path.map(|p| p.to_string_lossy().into_owned()),
+        resolved_via: resolved_via.map(ToString::to_string),
+        exists,
+        is_absolute_input: meta.absolute_input,
+        input_style: Some(meta.input_style.to_string()),
+        contains_parent_reference: meta.contains_parent,
+        outside_package_root,
+        warning,
     }
 }
 

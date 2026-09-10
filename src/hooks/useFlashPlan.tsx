@@ -73,7 +73,6 @@ function toPlanView(dto: FlashPlanDto): FlashPlanView {
     rows,
     warnings: dto.warnings,
     errors: dto.errors,
-    flashCount: dto.summary.flash_count,
     skippedCount: dto.summary.skipped_count,
   };
 }

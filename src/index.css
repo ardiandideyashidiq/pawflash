@@ -41,7 +41,6 @@
   --color-signal-green: oklch(0.60 0.16 150);
   --color-signal-red: oklch(0.55 0.22 25);
   --color-signal-amber: oklch(0.70 0.18 70);
-  --color-signal-blue: oklch(0.60 0.15 240);
 }
 
 /* ── CSS variable–backed tokens (theme-aware) ───────────────────────── */
@@ -50,16 +49,6 @@
   --font-sans: 'Inter Variable', system-ui, sans-serif;
   --font-display: 'DM Mono', ui-monospace, monospace;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
-
-  --text-caption: 0.75rem;
-  --text-label: 0.8125rem;
-  --text-body: 0.875rem;
-  --text-title: 1rem;
-  --text-heading: 1.25rem;
-  --text-display: 1.5rem;
-
-  --tracking-label: 0.12em;
-  --tracking-overline: 0.2em;
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -112,7 +101,6 @@
 
 :root {
   --panel-shadow: 0 14px 34px color-mix(in srgb, var(--color-trace-copper) 12%, transparent);
-  --button-shadow: 0 10px 24px color-mix(in srgb, var(--color-trace-copper) 25%, transparent);
   --overlay-shadow: 0 26px 70px rgba(24, 28, 38, 0.22);
   --background: oklch(0.96 0.008 48);
   --foreground: oklch(0.09 0.005 48);
@@ -159,7 +147,6 @@
 
 .dark {
   --panel-shadow: 0 18px 44px rgba(5, 8, 18, 0.44);
-  --button-shadow: 0 12px 26px color-mix(in srgb, var(--color-trace-copper) 22%, transparent);
   --overlay-shadow: 0 32px 88px rgba(3, 6, 14, 0.60);
   --background: oklch(0.115 0.005 48);
   --foreground: oklch(0.99 0.002 48);
@@ -234,24 +221,12 @@
     @apply rounded-sm border border-border/70 bg-muted/40 text-foreground;
   }
 
-  .panel-chip {
-    @apply inline-flex rounded-sm bg-trace-copper/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-trace-copper;
-  }
-
-  .panel-meta {
-    @apply text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground;
-  }
-
   .status-shell {
     @apply rounded-md border border-border/80 bg-card/82 shadow-[var(--panel-shadow)];
   }
 
   .row-tint-flash {
     background-color: color-mix(in oklch, var(--success) 6%, transparent);
-  }
-
-  .row-tint-wipe {
-    background-color: color-mix(in oklch, var(--warning) 6%, transparent);
   }
 
   .progress-gradient {

@@ -14,12 +14,12 @@ export type Theme = "light" | "dark";
 const THEME_STORAGE_KEY = "app-theme";
 const PANEL_WIDTH_KEY = "log-panel-width";
 
-// Mirror the LogPanel drag constraints so a persisted width can never open
-// the panel outside the viewport.
-const PANEL_MIN_WIDTH = 300;
-const PANEL_MAX_FACTOR = 0.9;
+// Panel width constraints shared with the LogPanel resize drag so a persisted
+// width can never open the panel outside the viewport.
+export const PANEL_MIN_WIDTH = 300;
+export const PANEL_MAX_FACTOR = 0.9;
 
-function clampPanelWidth(width: number): number {
+export function clampPanelWidth(width: number): number {
   const max = Math.max(window.innerWidth * PANEL_MAX_FACTOR, PANEL_MIN_WIDTH);
   return Math.min(Math.max(width, PANEL_MIN_WIDTH), max);
 }
@@ -43,7 +43,6 @@ export interface UIState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   logPanelOpen: boolean;
-  openLogPanel: () => void;
   closeLogPanel: () => void;
   toggleLogPanel: () => void;
   logPanelWidth: number;
@@ -64,7 +63,6 @@ export function UIProvider({ children }: { children: ReactNode }) {
   }, [theme]);
 
   const setTheme = useCallback((next: Theme) => setThemeState(next), []);
-  const openLogPanel = useCallback(() => setLogPanelOpen(true), []);
   const closeLogPanel = useCallback(() => setLogPanelOpen(false), []);
   const toggleLogPanel = useCallback(() => setLogPanelOpen((v) => !v), []);
 
@@ -80,13 +78,12 @@ export function UIProvider({ children }: { children: ReactNode }) {
       theme,
       setTheme,
       logPanelOpen,
-      openLogPanel,
       closeLogPanel,
       toggleLogPanel,
       logPanelWidth,
       setLogPanelWidth,
     }),
-    [theme, setTheme, logPanelOpen, openLogPanel, closeLogPanel, toggleLogPanel, logPanelWidth, setLogPanelWidth],
+    [theme, setTheme, logPanelOpen, closeLogPanel, toggleLogPanel, logPanelWidth, setLogPanelWidth],
   );
 
   return <UIContext.Provider value={value}>{children}</UIContext.Provider>;
