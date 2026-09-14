@@ -254,6 +254,70 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
             : null,
         }));
         break;
+      case "PenumbraPhase":
+      case "MtkPhase":
+        setState((prev) => ({
+          ...prev,
+          phase: prev.phase === "idle" ? "waiting" : prev.phase,
+          statusText: event.data.message,
+        }));
+        break;
+      case "PenumbraProgress":
+      case "MtkProgress": {
+        const now = performance.now();
+        const { bytes, total } = event.data;
+        const partition = event.event === "PenumbraProgress" ? "penumbra" : "mtk";
+        const partitionStart = partitionStartRef.current;
+
+        if (!partitionStart || partitionStart.partition !== partition) {
+          speedSamplesRef.current = [];
+          partitionStartRef.current = { partition, at: now, bytes };
+        }
+
+        const samples = speedSamplesRef.current;
+        if (bytes >= (samples[samples.length - 1]?.bytes ?? 0)) {
+          samples.push({ at: now, bytes });
+        } else {
+          samples.length = 0;
+          samples.push({ at: now, bytes });
+          partitionStartRef.current = { partition, at: now, bytes };
+        }
+        const cutoff = now - SPEED_WINDOW_MS;
+        let drop = 0;
+        while (drop < samples.length - 1 && samples[drop].at < cutoff) drop += 1;
+        if (drop > 0) samples.splice(0, drop);
+
+        const start = partitionStartRef.current;
+        const speedBps = computeSpeed(samples, start, bytes, now);
+
+        setState((prev) => ({
+          ...prev,
+          phase: "flashing",
+          operation: "flash",
+          partition,
+          bytes,
+          total,
+          speedBps,
+          overallBytes: bytes,
+          overallTotal: total,
+          statusText: "",
+        }));
+        break;
+      }
+      case "PenumbraDone":
+      case "MtkDone":
+        setState((prev) => ({
+          ...prev,
+          phase: "complete",
+          statusText: "",
+          summary: {
+            flashed: event.data.ok ? 1 : 0,
+            failed: event.data.ok ? 0 : 1,
+            skipped: 0,
+            totalBytes: prev.total,
+          },
+        }));
+        break;
       default:
         break;
     }

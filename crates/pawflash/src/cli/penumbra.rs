@@ -326,7 +326,8 @@ pub fn run(action: PenumbraAction, simulate: bool) -> Result<()> {
 
 fn run_download(partition: &str, file: &Path, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new(partition);
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::download_flash(&da, partition, file, simulate, &mut ev)
         .context("penumbra download failed")?;
     output::status::ok("download complete", partition);
@@ -335,7 +336,8 @@ fn run_download(partition: &str, file: &Path, simulate: bool) -> Result<()> {
 
 fn run_write(partition: &str, file: &Path, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new(partition);
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     let bytes = pawflash_core::penumbra::write_partition(&da, partition, file, simulate, &mut ev)
         .context("penumbra write failed")?;
     output::status::ok("write complete", format!("{bytes} bytes"));
@@ -344,7 +346,8 @@ fn run_write(partition: &str, file: &Path, simulate: bool) -> Result<()> {
 
 fn run_read(partition: &str, file: &Path, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new(partition);
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     let bytes = pawflash_core::penumbra::read_partition(&da, partition, file, simulate, &mut ev)
         .context("penumbra read failed")?;
     output::status::ok("read complete", format!("{bytes} bytes"));
@@ -353,7 +356,8 @@ fn run_read(partition: &str, file: &Path, simulate: bool) -> Result<()> {
 
 fn run_upload(partition: &str, file: &Path, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new(partition);
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::upload(&da, partition, file, simulate, &mut ev)
         .context("penumbra upload failed")?;
     output::status::ok("upload complete", partition);
@@ -362,7 +366,8 @@ fn run_upload(partition: &str, file: &Path, simulate: bool) -> Result<()> {
 
 fn run_erase(partition: &str, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new(partition);
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::erase_partition(&da, partition, simulate, &mut ev)
         .context("penumbra erase failed")?;
     output::status::ok("erase complete", partition);
@@ -371,7 +376,8 @@ fn run_erase(partition: &str, simulate: bool) -> Result<()> {
 
 fn run_format(partition: &str, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new(partition);
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::format(&da, partition, simulate, &mut ev)
         .context("penumbra format failed")?;
     output::status::ok("format complete", partition);
@@ -382,7 +388,8 @@ fn run_read_offset(address: &str, length: &str, file: &Path, simulate: bool) -> 
     let da = resolve_da(simulate)?;
     let addr = parse_num(address)?;
     let len = parse_num(length)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new("offset");
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::read_offset(&da, addr, len, file, simulate, &mut ev)
         .context("penumbra read-offset failed")?;
     output::status::ok("read-offset complete", format!("{len} bytes"));
@@ -392,7 +399,8 @@ fn run_read_offset(address: &str, length: &str, file: &Path, simulate: bool) -> 
 fn run_write_offset(address: &str, file: &Path, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
     let addr = parse_num(address)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new("offset");
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     let section = pawflash_core::penumbra::PartitionKind::Unknown;
     pawflash_core::penumbra::write_offset(&da, addr, section, file, simulate, &mut ev)
         .context("penumbra write-offset failed")?;
@@ -404,7 +412,8 @@ fn run_erase_offset(address: &str, length: &str, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
     let addr = parse_num(address)?;
     let len = parse_num(length)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new("offset");
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::erase_offset(&da, addr, len, simulate, &mut ev)
         .context("penumbra erase-offset failed")?;
     output::status::ok("erase-offset complete", "");
@@ -413,7 +422,8 @@ fn run_erase_offset(address: &str, length: &str, simulate: bool) -> Result<()> {
 
 fn run_read_all(dir: &Path, skip: &[String], simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new("read-all");
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::read_all(&da, dir, skip, simulate, &mut ev)
         .context("penumbra read-all failed")?;
     output::status::ok("read-all complete", dir.display().to_string());
@@ -422,7 +432,8 @@ fn run_read_all(dir: &Path, skip: &[String], simulate: bool) -> Result<()> {
 
 fn run_write_all(dir: &Path, skip: &[String], ignore_missing: bool, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new("write-all");
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::write_all(&da, dir, skip, ignore_missing, simulate, &mut ev)
         .context("penumbra write-all failed")?;
     output::status::ok("write-all complete", dir.display().to_string());
@@ -460,7 +471,8 @@ fn run_peek(address: &str, length: &str, file: &Path, simulate: bool) -> Result<
     let da = resolve_da(simulate)?;
     let addr = parse_num::<u32>(address)?;
     let len = parse_num(length)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new("peek");
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::peek(&da, addr, len, file, simulate, &mut ev)
         .context("penumbra peek failed")?;
     output::status::ok("peek complete", format!("{len} bytes"));
@@ -470,7 +482,8 @@ fn run_peek(address: &str, length: &str, file: &Path, simulate: bool) -> Result<
 fn run_poke(address: &str, file: &Path, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
     let addr = parse_num::<u32>(address)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new("poke");
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     pawflash_core::penumbra::poke(&da, addr, file, simulate, &mut ev)
         .context("penumbra poke failed")?;
     output::status::ok("poke complete", "");
@@ -479,7 +492,8 @@ fn run_poke(address: &str, file: &Path, simulate: bool) -> Result<()> {
 
 fn run_rpmb(command: RpmbAction, simulate: bool) -> Result<()> {
     let da = resolve_da(simulate)?;
-    let mut ev = |e: &PenumbraEvent| forward_event(e);
+    let mut prog = PenumbraProgress::new("rpmb");
+    let mut ev = |e: &PenumbraEvent| prog.handle(e);
     match command {
         RpmbAction::Read { region, start_sector, sectors, file } => {
             pawflash_core::penumbra::rpmb_read(&da, region, start_sector, sectors, &file, simulate, &mut ev)
@@ -736,7 +750,87 @@ fn device_visible_blocking() -> bool {
         .is_ok_and(|rt| rt.block_on(udev::device_visible()))
 }
 
-/// Forward `on_event` to the console (progress lines).
+/// State-managed progress tracker for penumbra CLI operations.
+/// Renders an animated progress bar with transfer speed and ETA for byte-level
+/// progress updates, while dimming phase and log transitions.
+pub(crate) struct PenumbraProgress {
+    pb: Option<output::spinner::ProgressBar>,
+    prefix: String,
+}
+
+impl PenumbraProgress {
+    #[must_use]
+    pub(crate) fn new(prefix: impl Into<String>) -> Self {
+        Self {
+            pb: None,
+            prefix: prefix.into(),
+        }
+    }
+
+    pub(crate) fn handle(&mut self, ev: &PenumbraEvent) {
+        match ev {
+            PenumbraEvent::Phase { phase, message } => {
+                info!(phase = %phase, message = %message, "penumbra phase");
+                if let Some(pb) = self.pb.take() {
+                    pb.finish_and_clear();
+                }
+                if let Some(name) = message
+                    .strip_prefix("reading ")
+                    .or_else(|| message.strip_prefix("flashing "))
+                    .or_else(|| message.strip_prefix("writing "))
+                    .or_else(|| message.strip_prefix("erasing "))
+                    .or_else(|| message.strip_prefix("formatting "))
+                {
+                    let target = name.split_whitespace().next().unwrap_or(name);
+                    if !target.is_empty() {
+                        self.prefix = target.to_string();
+                    }
+                }
+                output::status::dim(format!("[{phase}] {message}"));
+            }
+            PenumbraEvent::Progress { bytes, total } => {
+                if *total > 0 {
+                    let pb = self.pb.get_or_insert_with(|| {
+                        let pb = output::spinner::partition_progress_bar(&self.prefix);
+                        pb.set_length(*total);
+                        pb
+                    });
+                    if pb.length() != Some(*total) {
+                        pb.set_length(*total);
+                    }
+                    pb.set_position(*bytes);
+                    if *bytes >= *total {
+                        pb.finish_and_clear();
+                        self.pb = None;
+                    }
+                }
+            }
+            PenumbraEvent::Log { level, message } => {
+                debug!(level = %level, message = %message, "penumbra log");
+            }
+            PenumbraEvent::Done { ok, detail } => {
+                if let Some(pb) = self.pb.take() {
+                    pb.finish_and_clear();
+                }
+                if *ok {
+                    output::status::ok("done", detail);
+                } else {
+                    output::status::fail("done", detail);
+                }
+            }
+        }
+    }
+}
+
+impl Drop for PenumbraProgress {
+    fn drop(&mut self) {
+        if let Some(pb) = self.pb.take() {
+            pb.finish_and_clear();
+        }
+    }
+}
+
+/// Forward `on_event` to the console (fallback for simple operations).
 fn forward_event(ev: &PenumbraEvent) {
     match ev {
         PenumbraEvent::Phase { phase, message } => {

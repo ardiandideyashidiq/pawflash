@@ -360,14 +360,6 @@ impl NusbFastBoot {
         self.handle_responses().await
     }
 
-    fn allocate(&self) -> Buffer {
-        // Scale buffer with endpoint packet size: 8x the max packet size,
-        // capped at 1 MiB, rounded up to a multiple of max_out.
-        let target = (self.max_out * 8).min(1024 * 1024).max(self.max_out);
-        let size = target.next_multiple_of(self.max_out);
-        self.ep_out.allocate(size)
-    }
-
     /// Allocate a buffer of at most `bytes`, rounded up to the endpoint packet
     /// size. Used for the first download buffer so tiny transfers (e.g. a
     /// 512-byte vbmeta) do not allocate a full 1 MiB.
@@ -621,7 +613,7 @@ impl DataDownload<'_> {
 
     async fn next_buffer(&mut self) -> Result<(), DownloadError> {
         let mut next = if self.fastboot.ep_out.pending() < 3 {
-            self.fastboot.allocate()
+            self.fastboot.allocate_sized(self.size as usize)
         } else {
             let mut completion = self.fastboot.ep_out.next_complete().await;
             completion.status.map_err(NusbFastBootError::from)?;

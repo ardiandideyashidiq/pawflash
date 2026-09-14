@@ -1,7 +1,8 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressStyle};
+pub use indicatif::ProgressBar;
 
 fn multi() -> &'static MultiProgress {
     static MP: OnceLock<MultiProgress> = OnceLock::new();
