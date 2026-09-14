@@ -193,7 +193,7 @@ const fn should_match_existing(check_fastboot: bool, in_fastboot: bool) -> bool 
     !(check_fastboot && in_fastboot)
 }
 
-/// Wait for a new preloader serial port to appear.
+/// Wait for a new preloader serial port to appear, checking for cancellation.
 ///
 /// An already-present candidate port (in the set at entry) is matched
 /// immediately, unless the device is detected to already be in fastboot.
@@ -202,8 +202,9 @@ const fn should_match_existing(check_fastboot: bool, in_fastboot: bool) -> bool 
 ///
 /// Returns an error if serial port enumeration fails or the timeout (120s)
 /// is exceeded.
-pub async fn wait_for_preloader(
+pub async fn wait_for_preloader_with_cancel(
     check_fastboot: bool,
+    cancel: Option<&AtomicBool>,
 ) -> Result<Option<String>> {
     info!(check_fastboot, "waiting for preloader serial port (max 120s)");
     let initial = serial_ports();
@@ -213,6 +214,11 @@ pub async fn wait_for_preloader(
     let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
 
     loop {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            debug!("wait_for_preloader cancelled");
+            return Ok(None);
+        }
+
         if tokio::time::Instant::now() >= deadline {
             warn!("timed out waiting for preloader serial port after 120s");
             return Err(Error::PreloaderTimeout);
@@ -248,6 +254,21 @@ pub async fn wait_for_preloader(
 
         sleep(POLL_INTERVAL).await;
     }
+}
+
+/// Wait for a new preloader serial port to appear.
+///
+/// An already-present candidate port (in the set at entry) is matched
+/// immediately, unless the device is detected to already be in fastboot.
+///
+/// # Errors
+///
+/// Returns an error if serial port enumeration fails or the timeout (120s)
+/// is exceeded.
+pub async fn wait_for_preloader(
+    check_fastboot: bool,
+) -> Result<Option<String>> {
+    wait_for_preloader_with_cancel(check_fastboot, None).await
 }
 
 /// Wait for a preloader serial port to be openable again after the current one

@@ -86,6 +86,10 @@ pub async fn handshake(
                     dev = open_with_permission_recovery(&port)?;
                     continue;
                 }
+                if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                    debug!(sends = count, "handshake cancelled during wait for reconnect");
+                    break;
+                }
                 if count == 0 {
                     return Err(Error::PortLostBeforeWrite { port: port.clone() });
                 }

@@ -18,6 +18,25 @@ async fn no_device_error(expected: Option<&str>) -> FlashError {
     classify_no_device(&probes, expected)
 }
 
+const fn is_candidate_mobile_device(vid: u16) -> bool {
+    matches!(
+        vid,
+        0x18d1 // Google
+        | 0x2717 // Xiaomi
+        | 0x0e8d // MediaTek
+        | 0x05c6 // Qualcomm
+        | 0x04e8 // Samsung
+        | 0x12d1 // Huawei
+        | 0x22d9 // OPPO / OnePlus / Realme
+        | 0x2d95 // Vivo
+        | 0x22b8 // Motorola
+        | 0x1004 // LG
+        | 0x0b05 // Asus
+        | 0x17ef // Lenovo
+        | 0x1782 // Spreadtrum / Unisoc
+    )
+}
+
 /// Decide the detection diagnostic from a set of USB device probes.
 fn classify_no_device(probes: &[fastboot_protocol::nusb::Probe], expected: Option<&str>) -> FlashError {
     let adb_serials: Vec<String> = probes
@@ -30,7 +49,11 @@ fn classify_no_device(probes: &[fastboot_protocol::nusb::Probe], expected: Optio
         return FlashError::DeviceInAdb { serials: adb_serials };
     }
 
-    let vids: Vec<String> = probes.iter().map(fastboot_protocol::nusb::Probe::vidpid).collect();
+    let vids: Vec<String> = probes
+        .iter()
+        .filter(|p| is_candidate_mobile_device(p.vid))
+        .map(fastboot_protocol::nusb::Probe::vidpid)
+        .collect();
     if !vids.is_empty() {
         return FlashError::NoUsbInterface { vids };
     }
@@ -236,6 +259,15 @@ mod tests {
         assert!(matches!(
             classify_no_device(&probes, None),
             FlashError::NoUsbInterface { .. }
+        ));
+    }
+
+    #[test]
+    fn unrelated_peripheral_yields_no_device() {
+        let probes = vec![probe(0x046d, 0xc539, None, InterfaceKind::Other)];
+        assert!(matches!(
+            classify_no_device(&probes, None),
+            FlashError::NoDevice
         ));
     }
 }

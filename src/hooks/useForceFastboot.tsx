@@ -15,6 +15,7 @@ export interface ForceFastbootState {
   phase: "idle" | "waiting" | "complete" | "cancelled" | "error";
   stage: ForceStage;
   message: string;
+  start: () => void;
   reset: () => void;
   onEvent: (event: ProgressEvent) => void;
 }
@@ -58,6 +59,12 @@ export function ForceFastbootProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const start = useCallback(() => {
+    setPhase("waiting");
+    setStage("waiting_preloader");
+    setMessage("Waiting for MediaTek preloader serial port...");
+  }, []);
+
   const reset = useCallback(() => {
     setPhase("idle");
     setStage(null);
@@ -65,8 +72,8 @@ export function ForceFastbootProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ phase, stage, message, reset, onEvent }),
-    [phase, stage, message, reset, onEvent],
+    () => ({ phase, stage, message, start, reset, onEvent }),
+    [phase, stage, message, start, reset, onEvent],
   );
 
   return (

@@ -121,11 +121,17 @@ impl Platform for Impl {
     }
 
     fn post_handshake_hint(&self) -> &'static str {
-        "Device left preloader. If it does not appear in fastboot, install the WinUSB driver via Zadig for the fastboot VID:PID."
+        "Device left preloader. If it does not appear in fastboot, verify Android Bootloader Interface or WinUSB driver is installed for the device."
     }
 
     fn fastboot_interface_openable(&self, info: &fastboot_protocol::nusb::DeviceInfo) -> bool {
-        info.driver().is_some_and(|d| d.eq_ignore_ascii_case("winusb"))
+        info.driver().is_some_and(|d| {
+            d.eq_ignore_ascii_case("winusb")
+                || d.eq_ignore_ascii_case("androidwinusb")
+                || d.eq_ignore_ascii_case("androidwinusb86")
+                || d.eq_ignore_ascii_case("androidusb")
+                || d.eq_ignore_ascii_case("usbccgp")
+        })
     }
 
     fn fastboot_driver_name(

@@ -132,6 +132,34 @@ function AppRoot() {
   }, [fetchDevice]);
 
   useEffect(() => {
+    const isBusy =
+      activeFlashSession ||
+      activeForceSession ||
+      isCheckingDevice ||
+      isStartingFlash ||
+      isCancellingFlash ||
+      isCancellingForceFastboot;
+
+    if (isBusy) return;
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void fetchDevice(false);
+      }
+    }, 2500);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    activeFlashSession,
+    activeForceSession,
+    isCheckingDevice,
+    isStartingFlash,
+    isCancellingFlash,
+    isCancellingForceFastboot,
+    fetchDevice,
+  ]);
+
+  useEffect(() => {
     if (rebootTarget) {
       window.localStorage.setItem(REBOOT_TARGET_STORAGE_KEY, rebootTarget);
     } else {
@@ -242,7 +270,8 @@ function AppRoot() {
       return;
     }
 
-    force.reset();
+    force.start();
+    setIsCancellingForceFastboot(false);
     setForceOpen(true);
     addEntry({ text: "ForceFastboot StartRequested", level: "command" });
 
@@ -254,14 +283,17 @@ function AppRoot() {
 
     try {
       await invoke("force_fastboot", { simulate, onEvent: channel });
+      void fetchDevice(false);
     } catch (error) {
       const message = errorMessage(error);
       addEntry({ text: `ForceFastboot StartError ${message}`, level: "error" });
       toast.error(message);
       force.reset();
       setForceOpen(false);
+    } finally {
+      setIsCancellingForceFastboot(false);
     }
-  }, [addEntry, addProgressEvent, force, simulate, flash.phase]);
+  }, [addEntry, addProgressEvent, force, simulate, flash.phase, fetchDevice]);
 
   const startManualFlash = useCallback(
     async (partition: string, image: string) => {
@@ -443,6 +475,7 @@ function AppRoot() {
         open={forceOpen}
         onOpenChange={hideForceDialog}
         onCancel={cancelForceFastboot}
+        isCancelling={isCancellingForceFastboot}
       />
       <LogPanel />
     </>

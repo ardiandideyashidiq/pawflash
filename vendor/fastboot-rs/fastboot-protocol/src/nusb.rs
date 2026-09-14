@@ -71,6 +71,10 @@ impl Probe {
             }
         }
 
+        if kind == InterfaceKind::Other && NusbFastBoot::find_fastboot_interface(info).is_some() {
+            kind = InterfaceKind::Fastboot;
+        }
+
         Self {
             vid: info.vendor_id(),
             pid: info.product_id(),
@@ -190,7 +194,7 @@ impl NusbFastBoot {
     /// Find fastboot interface within a USB device
     #[must_use]
     pub fn find_fastboot_interface(info: &DeviceInfo) -> Option<u8> {
-        info.interfaces().find_map(|i| {
+        if let Some(iface) = info.interfaces().find_map(|i| {
             if i.class() == ANDROID_IFACE_CLASS
                 && i.subclass() == ANDROID_IFACE_SUBCLASS
                 && i.protocol() == FASTBOOT_IFACE_PROTOCOL
@@ -199,7 +203,29 @@ impl NusbFastBoot {
             } else {
                 None
             }
-        })
+        }) {
+            return Some(iface);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let driver_matches = info.driver().is_some_and(|d| {
+                d.eq_ignore_ascii_case("winusb")
+                    || d.eq_ignore_ascii_case("androidwinusb")
+                    || d.eq_ignore_ascii_case("androidwinusb86")
+                    || d.eq_ignore_ascii_case("androidusb")
+            });
+            let string_matches = info.product_string().is_some_and(|s| {
+                let lower = s.to_ascii_lowercase();
+                lower.contains("fastboot") || lower.contains("bootloader")
+            });
+
+            if driver_matches || string_matches {
+                return Some(0);
+            }
+        }
+
+        None
     }
 
     /// Create a fastboot client based on a USB interface. Interface is assumed to be a fastboot

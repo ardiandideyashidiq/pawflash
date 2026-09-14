@@ -285,14 +285,6 @@ async fn get_device_info(simulate: bool) -> Result<DeviceInfo, AppError> {
   }
 }
 
-/// Poll the cancellation flag until it is set, so a long wait can be aborted
-/// by `cancel_force_fastboot`.
-async fn wait_for_cancel(flag: &AtomicBool) {
-  while !flag.load(Ordering::Relaxed) {
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-  }
-}
-
 #[tracing::instrument(skip(on_event, cancel), fields(simulate))]
 #[tauri::command]
 async fn force_fastboot(
@@ -301,12 +293,18 @@ async fn force_fastboot(
   simulate: bool,
 ) -> Result<(), AppError> {
   cancel.force_fastboot.store(false, Ordering::Relaxed);
+  let cancel_token = fresh_cancel_token(&cancel);
   let _guard = OpGuard::new(&cancel)?;
 
   if simulate {
     info!("simulated force fastboot");
     send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
-    return run_simulated_force_fastboot(&on_event, &cancel).await;
+    return run_simulated_force_fastboot(&on_event, &cancel, &cancel_token).await;
+  }
+
+  if cancel_token.is_cancelled() || cancel.force_fastboot.load(Ordering::Relaxed) {
+    send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+    return Ok(());
   }
 
   if pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
@@ -318,14 +316,22 @@ async fn force_fastboot(
 
   send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "waiting_preloader".into(), message: "Waiting for MediaTek preloader serial port...".into() });
 
-  // Wait for the preloader, aborting early on cancel. Passing `true` makes the
-  // wait also detect a device that enters fastboot before a new serial port
-  // appears, so the user is not forced to sit out the full 120s.
   let port = tokio::select! {
-    result = pawflash_core::force_fastboot::serial::wait_for_preloader(true) => {
+    biased;
+    () = cancel_token.cancelled() => {
+      info!("force fastboot cancelled while waiting for preloader");
+      send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+      return Ok(());
+    }
+    result = pawflash_core::force_fastboot::serial::wait_for_preloader_with_cancel(true, Some(&cancel.force_fastboot)) => {
       match result {
         Ok(Some(port)) => port,
         Ok(None) => {
+          if cancel_token.is_cancelled() || cancel.force_fastboot.load(Ordering::Relaxed) {
+            info!("force fastboot cancelled while waiting for preloader");
+            send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+            return Ok(());
+          }
           info!("device entered fastboot while waiting for preloader");
           send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Device already in fastboot mode".into() });
           return Ok(());
@@ -336,15 +342,19 @@ async fn force_fastboot(
         }
       }
     }
-    _ = wait_for_cancel(&cancel.force_fastboot) => {
-      info!("force fastboot cancelled while waiting for preloader");
+  };
+
+  let dev = tokio::select! {
+    biased;
+    () = cancel_token.cancelled() => {
+      info!("force fastboot cancelled before opening serial port");
       send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
       return Ok(());
     }
+    dev_res = async { pawflash_core::force_fastboot::serial::open_with_permission_recovery(&port) } => {
+      dev_res.map_err(|e| { warn!(%port, error = %e, "open_with_permission_recovery failed"); e.to_string() })?
+    }
   };
-
-  let dev = pawflash_core::force_fastboot::serial::open_with_permission_recovery(&port)
-    .map_err(|e| { warn!(%port, error = %e, "open_with_permission_recovery failed"); e.to_string() })?;
 
   info!(%port, "preloader found, sending FASTBOOT");
   send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "sending".into(), message: format!("Found preloader on {port}, sending FASTBOOT...") });
@@ -371,7 +381,7 @@ async fn force_fastboot(
     e.to_string()
   })?;
 
-  if cancel.force_fastboot.load(Ordering::Relaxed) {
+  if cancel.force_fastboot.load(Ordering::Relaxed) || cancel_token.is_cancelled() {
     info!(sends, "force fastboot cancelled during handshake");
     send_progress(&on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
     return Ok(());
@@ -390,10 +400,11 @@ async fn force_fastboot(
 }
 
 /// Simulated force-fastboot handshake: staged progress events with realistic
-/// timing, abortable via the cancellation flag.
+/// timing, abortable via the cancellation token.
 async fn run_simulated_force_fastboot(
   on_event: &Channel<ProgressEvent>,
   cancel: &CancelState,
+  cancel_token: &tokio_util::sync::CancellationToken,
 ) -> Result<(), AppError> {
   send_progress(
     on_event,
@@ -404,12 +415,18 @@ async fn run_simulated_force_fastboot(
   );
 
   tokio::select! {
-    () = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
-    () = wait_for_cancel(&cancel.force_fastboot) => {
+    biased;
+    () = cancel_token.cancelled() => {
       info!("simulated force fastboot cancelled while waiting for preloader");
       send_progress(on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
       return Ok(());
     }
+    () = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+  }
+
+  if cancel.force_fastboot.load(Ordering::Relaxed) || cancel_token.is_cancelled() {
+    send_progress(on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+    return Ok(());
   }
 
   send_progress(
@@ -419,7 +436,21 @@ async fn run_simulated_force_fastboot(
       message: "Simulated: preloader found, sending FASTBOOT...".into(),
     },
   );
-  tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+  tokio::select! {
+    biased;
+    () = cancel_token.cancelled() => {
+      info!("simulated force fastboot cancelled while sending FASTBOOT");
+      send_progress(on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+      return Ok(());
+    }
+    () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
+  }
+
+  if cancel.force_fastboot.load(Ordering::Relaxed) || cancel_token.is_cancelled() {
+    send_progress(on_event, ProgressEvent::Cancelled { message: "Force fastboot cancelled".into() });
+    return Ok(());
+  }
 
   send_progress(
     on_event,
@@ -441,6 +472,8 @@ async fn run_simulated_force_fastboot(
 async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), AppError> {
   info!("cancel_force_fastboot requested");
   cancel.force_fastboot.store(true, Ordering::Relaxed);
+  let token = cancel.cancel_token.lock().unwrap_or_else(|p| p.into_inner()).clone();
+  token.cancel();
   Ok(())
 }
 

@@ -13,12 +13,14 @@ interface ForceFastbootDialogProps {
   open: boolean;
   onOpenChange: (open: boolean, reason?: DialogChangeReason) => void;
   onCancel: () => void | Promise<void>;
+  isCancelling?: boolean;
 }
 
 export const ForceFastbootDialog = memo(function ForceFastbootDialog({
   open,
   onOpenChange,
   onCancel,
+  isCancelling = false,
 }: ForceFastbootDialogProps) {
   const { phase, stage, message } = useForceFastboot();
   const isFinished = phase === "complete" || phase === "cancelled" || phase === "error";
@@ -58,9 +60,15 @@ export const ForceFastbootDialog = memo(function ForceFastbootDialog({
             </div>
             <div className="relative z-10 flex shrink-0 items-center gap-2">
               {phase === "waiting" && (
-                <Button variant="outline" size="sm" className="rounded-sm whitespace-nowrap" onClick={onCancel}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-sm whitespace-nowrap"
+                  onClick={onCancel}
+                  disabled={isCancelling}
+                >
                   <X className="h-3.5 w-3.5" />
-                  Cancel
+                  {isCancelling ? "Cancelling..." : "Cancel"}
                 </Button>
               )}
               {isFinished && (
