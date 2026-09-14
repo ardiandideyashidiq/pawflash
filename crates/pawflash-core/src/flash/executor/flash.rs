@@ -376,12 +376,16 @@ impl<T: FlashTransport> FlashExecutor<T> {
         mut reporter: Option<&mut TransferReporter<'_>>,
         _xbuf: &mut crate::flash::sparse::XferBuf,
     ) -> Result<String> {
-        debug!(%partition, file_size = size, "flashing raw partition");
+        info!(%partition, file_size = size, "starting raw partition download");
+        let t_total = Instant::now();
         let timeout = transfer_timeout.unwrap_or(TRANSFER_TIMEOUT);
         let mut file = tokio::fs::File::open(path).await?;
+        let t_init = Instant::now();
         let sender = tokio::time::timeout(timeout, self.fb.download(size))
             .await
             .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "download".into() })??;
+        let init_duration = t_init.elapsed();
+        debug!(%partition, ?init_duration, "download initialized with device");
         let mut sender = sender;
 
         // Anchor the partition at zero bytes so the UI has a per-partition
@@ -396,6 +400,7 @@ impl<T: FlashTransport> FlashExecutor<T> {
         // bytes against the download budget; `read_exact` fills the reserved
         // slice, and `size` (from metadata) guarantees we never reserve more
         // than the file holds.
+        let t_stream = Instant::now();
         let mut written = 0u64;
         while written < u64::from(size) {
             if reporter.as_ref().is_some_and(|r| r.cancelled()) {
@@ -412,18 +417,45 @@ impl<T: FlashTransport> FlashExecutor<T> {
                 rep.report(written, u64::from(size));
             }
         }
+        let stream_duration = t_stream.elapsed();
 
+        info!(%partition, bytes = written, ?stream_duration, "download complete, finishing USB transfer");
+        let t_finish = Instant::now();
         tokio::time::timeout(timeout, sender.finish())
             .await
             .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "finish".into() })??;
-        let resp = tokio::time::timeout(timeout, self.fb.flash(partition))
-            .await
-            .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "flash".into() })??;
+        let finish_duration = t_finish.elapsed();
+        info!(%partition, ?finish_duration, "USB finish acknowledged; executing fastboot flash command");
+        let t_flash = Instant::now();
+        let resp = match tokio::time::timeout(timeout, self.fb.flash(partition)).await {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                let flash_duration = t_flash.elapsed();
+                warn!(%partition, ?flash_duration, error = %e, "device rejected flash command");
+                return Err(e);
+            }
+            Err(_) => {
+                let flash_duration = t_flash.elapsed();
+                warn!(%partition, ?flash_duration, "flash command timed out waiting for device");
+                return Err(FlashError::Timeout { partition: partition.into(), step: "flash".into() });
+            }
+        };
+        let flash_duration = t_flash.elapsed();
+        let total_duration = t_total.elapsed();
         if let Some(rep) = reporter.as_mut() {
             rep.set_position(u64::from(size));
             rep.report(u64::from(size), u64::from(size));
         }
-        debug!(%partition, response = resp, "raw partition flash complete");
+        info!(
+            %partition,
+            response = %resp,
+            ?init_duration,
+            ?stream_duration,
+            ?finish_duration,
+            ?flash_duration,
+            ?total_duration,
+            "raw partition flash complete"
+        );
         Ok(resp)
     }
 }

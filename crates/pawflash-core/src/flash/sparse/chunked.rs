@@ -95,6 +95,7 @@ pub(crate) async fn flash_sparse_image(
     // we only need to seek when a DontCare chunk causes a jump.
     let mut file_pos: u64 = 0;
     for (i, split) in splits.iter().enumerate() {
+        let t_split = std::time::Instant::now();
         if reporter.as_ref().is_some_and(|r| r.cancelled()) {
             return Err(FlashError::Cancelled);
         }
@@ -106,9 +107,11 @@ pub(crate) async fn flash_sparse_image(
                 "sparse split size exceeds u32 range",
             )))?;
         let timeout = limits.transfer_timeout.unwrap_or(TRANSFER_TIMEOUT);
+        let t_download = std::time::Instant::now();
         let mut sender = tokio::time::timeout(timeout, fb.download(sparse_size))
             .await
             .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "download".into() })??;
+        let download_init_duration = t_download.elapsed();
 
         // file header for this split
         sender.extend_from_slice(&split.header.to_bytes()).await?;
@@ -154,8 +157,24 @@ pub(crate) async fn flash_sparse_image(
             }
         }
 
+        let t_finish = std::time::Instant::now();
         sender.finish().await?;
+        let finish_duration = t_finish.elapsed();
+        let t_flash_cmd = std::time::Instant::now();
         last_resp = fb.flash(partition).await?;
+        let flash_cmd_duration = t_flash_cmd.elapsed();
+        let split_duration = t_split.elapsed();
+        info!(
+            %partition,
+            part = i + 1,
+            total_parts = splits.len(),
+            bytes = sparse_size,
+            ?download_init_duration,
+            ?finish_duration,
+            ?flash_cmd_duration,
+            ?split_duration,
+            "sparse split completed"
+        );
     }
 
     if let Some(rep) = reporter.as_mut() {
@@ -215,90 +234,135 @@ pub(crate) async fn flash_sparse_wrapped(
     // ---- flash each split (no erase — the flash command handles it) ----
     let mut last_resp = String::new();
     let mut written: u64 = 0;
-    // Running file offset; chunk data is contiguous within a split, so only
-    // seek when a chunk target diverges (split_raw never reorders chunks, but
-    // keeping this explicit is harmless and cheap).
     let mut file_pos: u64 = 0;
+    let total_splits = splits.len();
+    let mut ctx = WrappedSplitContext {
+        fb,
+        partition,
+        file: &mut file,
+        file_pos: &mut file_pos,
+        limits,
+        reporter,
+        buf,
+        written: &mut written,
+        total_sent,
+        total_splits,
+    };
     for (i, split) in splits.iter().enumerate() {
-        if reporter.as_ref().is_some_and(|r| r.cancelled()) {
+        last_resp = ctx.flash_split(split, i).await?;
+    }
+
+    if let Some(rep) = ctx.reporter.as_mut() {
+        rep.set_position(total_sent);
+        rep.report(total_sent, total_sent);
+    }
+
+    debug!(%partition, splits = total_splits, response = last_resp, "sparse-wrapped flash complete");
+    Ok(last_resp)
+}
+
+struct WrappedSplitContext<'a, 'r, T: FlashTransport> {
+    fb: &'a mut T,
+    partition: &'a str,
+    file: &'a mut tokio::fs::File,
+    file_pos: &'a mut u64,
+    limits: &'a crate::flash::sparse::TransferLimits,
+    reporter: Option<&'a mut TransferReporter<'r>>,
+    buf: &'a mut XferBuf,
+    written: &'a mut u64,
+    total_sent: u64,
+    total_splits: usize,
+}
+
+impl<T: FlashTransport> WrappedSplitContext<'_, '_, T> {
+    async fn flash_split(
+        &mut self,
+        split: &android_sparse_image::split::Split,
+        index: usize,
+    ) -> Result<String> {
+        let t_split = std::time::Instant::now();
+        if self.reporter.as_ref().is_some_and(|r| r.cancelled()) {
             return Err(FlashError::Cancelled);
         }
-        debug!(%partition, part = i, "sending sparse-wrapped split");
+        debug!(partition = %self.partition, part = index, "sending sparse-wrapped split");
 
         let sparse_size = u32::try_from(split.sparse_size())
             .map_err(|_| FlashError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "sparse split size exceeds u32 range",
             )))?;
-        info!(%partition, part = i, sparse_size, max_download = limits.max_download, "downloading split via fb.download");
-        let timeout = limits.transfer_timeout.unwrap_or(TRANSFER_TIMEOUT);
-        let mut sender = tokio::time::timeout(timeout, fb.download(sparse_size))
+        let timeout = self.limits.transfer_timeout.unwrap_or(TRANSFER_TIMEOUT);
+        let t_download = std::time::Instant::now();
+        let mut sender = tokio::time::timeout(timeout, self.fb.download(sparse_size))
             .await
-            .map_err(|_| FlashError::Timeout { partition: partition.into(), step: "download".into() })??;
-        info!(%partition, part = i, "fb.download returned successfully");
+            .map_err(|_| FlashError::Timeout { partition: self.partition.into(), step: "download".into() })??;
+        let download_init_duration = t_download.elapsed();
 
         // file header for this split
         sender.extend_from_slice(&split.header.to_bytes()).await?;
-        if let Some(rep) = reporter.as_mut() {
+        if let Some(rep) = self.reporter.as_mut() {
             rep.inc(FILE_HEADER_BYTES_LEN as u64);
         }
-        written += FILE_HEADER_BYTES_LEN as u64;
+        *self.written += FILE_HEADER_BYTES_LEN as u64;
 
         // chunk headers + data for each chunk in this split
         for chunk in &split.chunks {
             sender.extend_from_slice(&chunk.header.to_bytes()).await?;
-            if let Some(rep) = reporter.as_mut() {
+            if let Some(rep) = self.reporter.as_mut() {
                 rep.inc(CHUNK_HEADER_BYTES_LEN as u64);
             }
-            written += CHUNK_HEADER_BYTES_LEN as u64;
+            *self.written += CHUNK_HEADER_BYTES_LEN as u64;
 
             if chunk.size > 0 {
                 let target = u64::try_from(chunk.offset).unwrap_or(0);
-                if target != file_pos {
-                    file.seek(SeekFrom::Start(target)).await?;
-                    file_pos = target;
+                if target != *self.file_pos {
+                    self.file.seek(SeekFrom::Start(target)).await?;
+                    *self.file_pos = target;
                 }
 
                 let mut remaining = chunk.size;
                 while remaining > 0 {
-                    if reporter.as_ref().is_some_and(|r| r.cancelled()) {
+                    if self.reporter.as_ref().is_some_and(|r| r.cancelled()) {
                         return Err(FlashError::Cancelled);
                     }
-                    let to_read = buf.get(1024 * 1024).len().min(remaining);
-                    // Read directly into the USB buffer, skipping the
-                    // intermediate transfer-buffer copy.
+                    let to_read = self.buf.get(1024 * 1024).len().min(remaining);
                     let direct = sender.get_mut_data(to_read).await?;
-                    // Use plain read_exact_padded here (not the truncation-check
-                    // variant) because split_raw may create chunks that extend
-                    // past the end of the file for block alignment.  Zero-filling
-                    // the tail is correct.
-                    read_exact_padded(&mut file, direct).await?;
+                    read_exact_padded(self.file, direct).await?;
                     let n = direct.len() as u64;
-                    file_pos += n;
-                    written += n;
-                    if let Some(rep) = reporter.as_mut() {
+                    *self.file_pos += n;
+                    *self.written += n;
+                    if let Some(rep) = self.reporter.as_mut() {
                         rep.inc(n);
-                        rep.report(written, total_sent);
+                        rep.report(*self.written, self.total_sent);
                     }
                     remaining = remaining.saturating_sub(direct.len());
                 }
             }
-            if let Some(rep) = reporter.as_mut() {
-                rep.report(written, total_sent);
+            if let Some(rep) = self.reporter.as_mut() {
+                rep.report(*self.written, self.total_sent);
             }
         }
 
+        let t_finish = std::time::Instant::now();
         sender.finish().await?;
-        last_resp = fb.flash(partition).await?;
+        let finish_duration = t_finish.elapsed();
+        let t_flash_cmd = std::time::Instant::now();
+        let resp = self.fb.flash(self.partition).await?;
+        let flash_cmd_duration = t_flash_cmd.elapsed();
+        let split_duration = t_split.elapsed();
+        info!(
+            partition = %self.partition,
+            part = index + 1,
+            total_parts = self.total_splits,
+            bytes = sparse_size,
+            ?download_init_duration,
+            ?finish_duration,
+            ?flash_cmd_duration,
+            ?split_duration,
+            "sparse-wrapped split completed"
+        );
+        Ok(resp)
     }
-
-    if let Some(rep) = reporter.as_mut() {
-        rep.set_position(total_sent);
-        rep.report(total_sent, total_sent);
-    }
-
-    debug!(%partition, splits = splits.len(), response = last_resp, "sparse-wrapped flash complete");
-    Ok(last_resp)
 }
 
 

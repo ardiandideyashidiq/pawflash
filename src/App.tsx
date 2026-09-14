@@ -341,14 +341,23 @@ function AppRoot() {
           simulate,
           onEvent: channel,
         });
+        addEntry({
+          text: `FlashRawImage Success partition=${partition}`,
+          level: "success",
+        });
       } catch (error) {
-        flash.fail(errorMessage(error));
+        const msg = errorMessage(error);
+        addEntry({
+          text: `FlashRawImage Error partition=${partition}: ${msg}`,
+          level: "error",
+        });
+        flash.fail(msg);
         throw error;
       } finally {
         setIsStartingFlash(false);
       }
     },
-    [addProgressEvent, flash, force, isStartingFlash, simulate],
+    [addEntry, addProgressEvent, flash, force, isStartingFlash, simulate],
   );
 
   const cancelFlash = useCallback(async () => {

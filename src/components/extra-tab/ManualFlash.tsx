@@ -56,7 +56,10 @@ export const ManualFlash = memo(function ManualFlash({
     try {
       const selected = await open({
         title: "Select image to flash",
-        filters: [{ name: "Android images", extensions: ["img"] }],
+        filters: [
+          { name: "Partition images", extensions: ["img", "bin", "sin", "iso"] },
+          { name: "All files", extensions: ["*"] },
+        ],
         multiple: false,
       });
       if (typeof selected === "string") {
@@ -79,14 +82,20 @@ export const ManualFlash = memo(function ManualFlash({
       toast.error("Partition and image are required");
       return;
     }
+    const imageName = manualImage.split(/[/\\]/).pop() || manualImage;
     addEntry({
-      text: `ManualFlash Started partition=${partition}`,
+      text: `ManualFlash Started partition=${partition} image=${imageName}`,
       level: "command",
     });
     try {
       await onManualFlash(partition, manualImage);
     } catch (error) {
-      toast.error(errorMessage(error));
+      const msg = errorMessage(error);
+      addEntry({
+        text: `ManualFlash Failed partition=${partition}: ${msg}`,
+        level: "error",
+      });
+      toast.error(msg);
     }
   };
 

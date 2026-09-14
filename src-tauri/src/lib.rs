@@ -286,45 +286,56 @@ async fn get_device_info(
     });
   }
 
+  let t0 = std::time::Instant::now();
   match FlashExecutor::connect().await {
     Ok(executor) => {
       let vars = executor.device_vars().clone();
       let serial = vars.get("serialno").cloned();
       let connected = true;
-      info!(connected, serial = serial.as_deref().unwrap_or("?"), "device info retrieved");
+      let elapsed = t0.elapsed();
+      info!(
+        connected,
+        serial = serial.as_deref().unwrap_or("?"),
+        is_userspace = vars.get("is-userspace").map_or("no", |s| s.as_str()),
+        ?elapsed,
+        "device info retrieved"
+      );
       Ok(DeviceInfo { connected, serial, vars, hint: None })
     }
-    Err(e) => match e {
-      pawflash_core::flash::FlashError::NoDevice => {
-        info!("no fastboot device found");
-        Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new(), hint: None })
-      }
-      pawflash_core::flash::FlashError::DeviceInAdb { .. }
-      | pawflash_core::flash::FlashError::NoUsbInterface { .. }
-      | pawflash_core::flash::FlashError::UnsupportedDriver { .. } => {
-        // Detection diagnostics: report the reason as a hint so the GUI can
-        // guide the user, but stay "not connected".
-        warn!(error = %e, "get_device_info: no connectable fastboot device");
-        Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new(), hint: Some(e.to_string()) })
-      }
-      other => {
-        let msg = other.to_string();
-        if msg.contains("busy") || msg.contains("16") {
-          warn!(error = %other, "get_device_info: fastboot interface busy");
-          Ok(DeviceInfo {
-            connected: false,
-            serial: None,
-            vars: HashMap::new(),
-            hint: Some("Fastboot interface busy".into()),
-          })
-        } else {
-          // Permissions, open failures, protocol errors — report them so the GUI
-          // does not silently present "not connected".
-          warn!(error = %other, "get_device_info: connect failed");
-          Err(AppError::from(other))
+    Err(e) => {
+      let elapsed = t0.elapsed();
+      match e {
+        pawflash_core::flash::FlashError::NoDevice => {
+          info!(?elapsed, "no fastboot device found");
+          Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new(), hint: None })
+        }
+        pawflash_core::flash::FlashError::DeviceInAdb { .. }
+        | pawflash_core::flash::FlashError::NoUsbInterface { .. }
+        | pawflash_core::flash::FlashError::UnsupportedDriver { .. } => {
+          // Detection diagnostics: report the reason as a hint so the GUI can
+          // guide the user, but stay "not connected".
+          warn!(?elapsed, error = %e, "get_device_info: no connectable fastboot device");
+          Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new(), hint: Some(e.to_string()) })
+        }
+        other => {
+          let msg = other.to_string();
+          if msg.contains("busy") || msg.contains("16") {
+            warn!(?elapsed, error = %other, "get_device_info: fastboot interface busy");
+            Ok(DeviceInfo {
+              connected: false,
+              serial: None,
+              vars: HashMap::new(),
+              hint: Some("Fastboot interface busy".into()),
+            })
+          } else {
+            // Permissions, open failures, protocol errors — report them so the GUI
+            // does not silently present "not connected".
+            warn!(?elapsed, error = %other, "get_device_info: connect failed");
+            Err(AppError::from(other))
+          }
         }
       }
-    },
+    }
   }
 }
 
@@ -527,36 +538,53 @@ async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), App
 #[tracing::instrument(skip_all, fields(target, simulate))]
 #[tauri::command]
 async fn reboot_device(target: String, simulate: bool) -> Result<(), AppError> {
+  let _lock = DEVICE_CHECK_LOCK.lock().await;
+  let t0 = std::time::Instant::now();
   let boot_target: BootTarget = target.parse().map_err(|e: String| e)?;
   let mut executor = AnyExecutor::connect(simulate, None).await?;
-  info!(?boot_target, %simulate, "rebooting");
+  let connect_duration = t0.elapsed();
+  info!(?boot_target, %simulate, ?connect_duration, "rebooting");
+  let t_reboot = std::time::Instant::now();
   executor.reboot_to(boot_target).await.map_err(|e| {
-    warn!(?boot_target, error = %e, "reboot failed");
+    let reboot_duration = t_reboot.elapsed();
+    warn!(?boot_target, ?reboot_duration, error = %e, "reboot failed");
     AppError::from(e)
-  })
+  })?;
+  let reboot_duration = t_reboot.elapsed();
+  let total = t0.elapsed();
+  info!(?boot_target, ?connect_duration, ?reboot_duration, ?total, "reboot command succeeded");
+  Ok(())
 }
 
 #[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
 async fn lock_bootloader(simulate: bool) -> Result<String, AppError> {
+  let _lock = DEVICE_CHECK_LOCK.lock().await;
+  let t0 = std::time::Instant::now();
   let mut executor = AnyExecutor::connect(simulate, None).await?;
+  let connect_duration = t0.elapsed();
   let resp = executor.flashing_lock().await.map_err(|e| {
     warn!(error = %e, "flashing lock failed");
     e
   })?;
-  info!(response = %resp, %simulate, "bootloader locked");
+  let total = t0.elapsed();
+  info!(response = %resp, %simulate, ?connect_duration, ?total, "bootloader locked");
   Ok(resp)
 }
 
 #[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
 async fn unlock_bootloader(simulate: bool) -> Result<String, AppError> {
+  let _lock = DEVICE_CHECK_LOCK.lock().await;
+  let t0 = std::time::Instant::now();
   let mut executor = AnyExecutor::connect(simulate, None).await?;
+  let connect_duration = t0.elapsed();
   let resp = executor.flashing_unlock().await.map_err(|e| {
     warn!(error = %e, "flashing unlock failed");
     e
   })?;
-  info!(response = %resp, %simulate, "bootloader unlocked");
+  let total = t0.elapsed();
+  info!(response = %resp, %simulate, ?connect_duration, ?total, "bootloader unlocked");
   Ok(resp)
 }
 
@@ -567,24 +595,32 @@ async fn set_active_slot(slot: String, simulate: bool) -> Result<String, AppErro
     warn!(%slot, "invalid slot");
     return Err("slot must be 'a' or 'b'".into());
   }
+  let _lock = DEVICE_CHECK_LOCK.lock().await;
+  let t0 = std::time::Instant::now();
   let mut executor = AnyExecutor::connect(simulate, None).await?;
+  let connect_duration = t0.elapsed();
   let resp = executor.set_active_slot(&slot).await.map_err(|e| {
     warn!(%slot, error = %e, "set_active_slot failed");
     e
   })?;
-  info!(%slot, response = %resp, %simulate, "active slot set");
+  let total = t0.elapsed();
+  info!(%slot, response = %resp, %simulate, ?connect_duration, ?total, "active slot set");
   Ok(resp)
 }
 
 #[tracing::instrument(skip_all, fields(name, simulate))]
 #[tauri::command]
 async fn get_var(name: String, simulate: bool) -> Result<String, AppError> {
+  let _lock = DEVICE_CHECK_LOCK.lock().await;
+  let t0 = std::time::Instant::now();
   let mut executor = AnyExecutor::connect(simulate, None).await?;
+  let connect_duration = t0.elapsed();
   let value = executor.get_var(&name).await.map_err(|e| {
     warn!(%name, error = %e, "get_var failed");
     e
   })?;
-  info!(%name, %value, %simulate, "variable retrieved");
+  let total = t0.elapsed();
+  info!(%name, %value, %simulate, ?connect_duration, ?total, "variable retrieved");
   Ok(value)
 }
 
@@ -1387,6 +1423,7 @@ async fn flash_raw_image(
   simulate: bool,
 ) -> Result<String, AppError> {
   let _guard = OpGuard::new(&cancel)?;
+  info!(%partition, %image_path, simulate, "flash_raw_image started");
   send_progress(&on_event, ProgressEvent::Phase { phase: "connecting".into(), message: "Waiting for fastboot device...".into() });
   if simulate {
     send_progress(&on_event, ProgressEvent::Warning { message: "SIMULATED MODE — no device will be touched".into() });
@@ -1401,21 +1438,81 @@ async fn flash_raw_image(
   .await
   .map_err(|e| {
     warn!(error = %e, "connect failed");
+    send_progress(&on_event, ProgressEvent::Error { message: format!("Device connection failed: {e}") });
     e
   })?;
 
   let path = Path::new(&image_path);
   if !path.exists() {
     warn!(%image_path, "image not found");
+    send_progress(&on_event, ProgressEvent::Error { message: format!("Image not found: {image_path}") });
     return Err(format!("image not found: {image_path}").into());
   }
 
-  // Resolve the target like the CLI: on an A/B device a bare partition name
-  // means "the current slot", so flash `{partition}_{current}`. A partition
-  // that already carries a slot suffix is used verbatim.
+  let metadata = tokio::fs::metadata(path).await.map_err(|e| {
+    warn!(%image_path, error = %e, "failed to stat image");
+    send_progress(&on_event, ProgressEvent::Error { message: format!("Failed to stat image: {e}") });
+    format!("failed to read image metadata: {e}")
+  })?;
+  let file_size = metadata.len();
+  info!(%partition, %image_path, file_size, "image verified");
+  send_progress(
+    &on_event,
+    ProgressEvent::DeviceAction {
+      action: "image_info".into(),
+      detail: format!("Image: {} ({} bytes)", path.file_name().unwrap_or_default().to_string_lossy(), file_size),
+    },
+  );
+
+  let current_slot = executor.device_vars().get("current-slot").cloned();
+  let has_slot_key = format!("has-slot:{partition}");
+  let has_slot = executor.device_vars().get(&has_slot_key).cloned();
+  let unlocked = executor.device_vars().get("unlocked").cloned();
+  let is_userspace = executor.device_vars().get("is-userspace").cloned();
+
+  info!(
+    partition = %partition,
+    current_slot = current_slot.as_deref().unwrap_or("none"),
+    has_slot = has_slot.as_deref().unwrap_or("unknown"),
+    unlocked = unlocked.as_deref().unwrap_or("unknown"),
+    is_userspace = is_userspace.as_deref().unwrap_or("unknown"),
+    "device status before raw flash"
+  );
+  send_progress(
+    &on_event,
+    ProgressEvent::DeviceAction {
+      action: "device_status".into(),
+      detail: format!(
+        "Mode: {} | Unlocked: {} | CurrentSlot: {} | HasSlot: {}",
+        if is_userspace.as_deref() == Some("yes") { "fastbootd" } else { "bootloader" },
+        unlocked.as_deref().unwrap_or("?"),
+        current_slot.as_deref().unwrap_or("none"),
+        has_slot.as_deref().unwrap_or("?"),
+      ),
+    },
+  );
+
+  if unlocked.as_deref() == Some("no") {
+    warn!(%partition, "bootloader is reported locked (unlocked: no)");
+    send_progress(
+      &on_event,
+      ProgressEvent::Warning {
+        message: "Device bootloader reports locked (unlocked: no). Flash may be rejected by device.".into(),
+      },
+    );
+  }
+
+  // Resolve the target partition:
+  // 1. If explicit _a/_b suffix provided, use verbatim.
+  // 2. If device reports has-slot:<partition> == "no", use bare partition.
+  // 3. If device has current-slot ("a" or "b"), append current slot suffix.
+  // 4. Otherwise use bare partition name.
   let target = if partition.ends_with("_a") || partition.ends_with("_b") {
     partition.clone()
-  } else if let Some(slot) = executor.device_vars().get("current-slot") {
+  } else if has_slot.as_deref() == Some("no") {
+    info!(%partition, "partition explicitly reported as non-A/B (has-slot: no)");
+    partition.clone()
+  } else if let Some(ref slot) = current_slot {
     if slot == "a" || slot == "b" {
       let resolved = format!("{partition}_{slot}");
       info!(partition = %partition, target = %resolved, "resolved bare partition to current slot");
@@ -1455,13 +1552,55 @@ async fn flash_raw_image(
     });
   };
 
-  let resp = executor
+  let resp = match executor
     .flash_raw_image_with_callback(&target, path, Some(&mut on_transfer))
     .await
-    .map_err(|e| {
-      warn!(%target, error = %e, "flash_raw_image failed");
-      e.to_string()
-    })?;
+  {
+    Ok(r) => r,
+    Err(e) => {
+      let err_str = e.to_string();
+      let not_found = err_str.contains("not found")
+        || err_str.contains("No such partition")
+        || err_str.contains("Partition doesn't exist")
+        || err_str.contains("does not exist")
+        || err_str.contains("not exist");
+
+      if not_found && target != partition {
+        warn!(%target, fallback = %partition, error = %e, "target with slot suffix failed with not found; retrying with bare partition");
+        send_progress(
+          &on_event,
+          ProgressEvent::Warning {
+            message: format!("Flash {target} rejected ({err_str}). Retrying bare partition {partition}..."),
+          },
+        );
+        match executor
+          .flash_raw_image_with_callback(&partition, path, Some(&mut on_transfer))
+          .await
+        {
+          Ok(r) => r,
+          Err(fallback_err) => {
+            warn!(%partition, error = %fallback_err, "fallback flash also failed");
+            send_progress(
+              &on_event,
+              ProgressEvent::Error {
+                message: format!("Flash {partition} failed: {fallback_err}"),
+              },
+            );
+            return Err(fallback_err.to_string().into());
+          }
+        }
+      } else {
+        warn!(%target, error = %e, "flash_raw_image failed");
+        send_progress(
+          &on_event,
+          ProgressEvent::Error {
+            message: format!("Flash {target} failed: {e}"),
+          },
+        );
+        return Err(e.to_string().into());
+      }
+    }
+  };
 
   info!(%target, response = %resp, "raw flash complete");
   send_progress(&on_event, ProgressEvent::FlashComplete { partition: target, success: true, response: Some(resp.clone()) });

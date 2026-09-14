@@ -61,6 +61,56 @@ fn classify_no_device(probes: &[fastboot_protocol::nusb::Probe], expected: Optio
     FlashError::NoDevice
 }
 
+/// Query essential variables needed for device identification and flashing.
+/// Fastbootd vs bootloader mode is determined by querying `is-userspace` first.
+async fn query_essential_vars(
+    fb: &mut NusbFastBoot,
+) -> (HashMap<String, String>, Vec<String>, Duration) {
+    let mut device_vars = HashMap::new();
+    let mut slow_vars = Vec::new();
+    let t_vars = std::time::Instant::now();
+    for var in [
+        "is-userspace",
+        "version",
+        "version-bootloader",
+        "product",
+        "serialno",
+        "current-slot",
+        "unlocked",
+        "secure",
+        "max-download-size",
+    ] {
+        let t_var = std::time::Instant::now();
+        match tokio::time::timeout(Duration::from_millis(500), fb.get_var(var)).await {
+            Ok(Ok(v)) => {
+                let d = t_var.elapsed();
+                if d >= Duration::from_millis(50) {
+                    slow_vars.push(format!("{var}={v} ({d:?})"));
+                    debug!(var, value = %v, ?d, "slow device var query");
+                } else {
+                    debug!(var, value = %v, ?d, "queried device var");
+                }
+                if !v.trim().is_empty() {
+                    device_vars.insert(var.to_string(), v.trim().to_string());
+                }
+            }
+            Ok(Err(e)) => {
+                let d = t_var.elapsed();
+                if d >= Duration::from_millis(50) {
+                    slow_vars.push(format!("{var}=rejected ({d:?})"));
+                }
+                debug!(var, ?d, error = %e, "device var query rejected");
+            }
+            Err(_) => {
+                let d = t_var.elapsed();
+                slow_vars.push(format!("{var}=timeout ({d:?})"));
+                warn!(var, ?d, "device var query timed out after 500ms");
+            }
+        }
+    }
+    (device_vars, slow_vars, t_vars.elapsed())
+}
+
 impl FlashExecutor<NusbFastBoot> {
     /// # Errors
     /// Returns `NoDevice` if no fastboot device is found,
@@ -88,6 +138,7 @@ impl FlashExecutor<NusbFastBoot> {
             serial = info.serial_number().unwrap_or("?"),
             "connecting to fastboot device"
         );
+        let t0 = std::time::Instant::now();
         let mut fb = match NusbFastBoot::from_info(&info).await {
             Ok(fb) => fb,
             Err(e) => {
@@ -100,40 +151,23 @@ impl FlashExecutor<NusbFastBoot> {
                 return Err(FlashError::Open(e));
             }
         };
-        let device_vars = match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            fb.get_all_vars(),
-        )
-            .await
-        {
-            Ok(Ok(vars)) => vars,
-            Ok(Err(e)) => {
-                debug!(error = %e, "getvar:all failed, falling back to individual queries");
-                HashMap::new()
+        let open_duration = t0.elapsed();
+        debug!(?open_duration, "fastboot USB device opened and interface claimed");
+
+        let (mut device_vars, slow_vars, vars_duration) = query_essential_vars(&mut fb).await;
+
+        if !device_vars.contains_key("serialno") {
+            if let Some(sn) = info.serial_number() {
+                device_vars.insert("serialno".to_string(), sn.to_string());
             }
-            Err(_) => {
-                debug!("getvar:all timed out, falling back to individual queries");
-                HashMap::new()
+        }
+
+        if !device_vars.contains_key("product") {
+            if let Some(p) = info.product_string() {
+                device_vars.insert("product".to_string(), p.to_string());
             }
-        };
-        let device_vars = if device_vars.is_empty() {
-            let mut vars: HashMap<String, String> = HashMap::new();
-            for var in ["version", "product", "serialno", "current-slot", "max-download-size"] {
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(2),
-                    fb.get_var(var),
-                )
-                    .await
-                {
-                    Ok(Ok(v)) => { vars.insert(var.to_string(), v); }
-                    Ok(Err(e)) => { debug!(%var, error = %e, "getvar failed"); }
-                    Err(_) => { debug!(%var, "getvar timed out"); }
-                }
-            }
-            vars
-        } else {
-            device_vars
-        };
+        }
+
         if let Some(expected) = expected {
             match device_vars.get("serialno").map(String::as_str) {
                 Some(s) if s == expected => {
@@ -150,12 +184,31 @@ impl FlashExecutor<NusbFastBoot> {
                 }
             }
         }
-        info!(
-            product = device_vars.get("product").map_or("?", |s| s.as_str()),
-            serial = device_vars.get("serialno").map_or("?", |s| s.as_str()),
-            version = device_vars.get("version").map_or("?", |s| s.as_str()),
-            "connected to fastboot device"
-        );
+        let is_userspace_str = device_vars.get("is-userspace").map_or("no", |s| s.as_str());
+        if slow_vars.is_empty() {
+            info!(
+                ?open_duration,
+                ?vars_duration,
+                total = ?t0.elapsed(),
+                product = device_vars.get("product").map_or("?", |s| s.as_str()),
+                serial = device_vars.get("serialno").map_or("?", |s| s.as_str()),
+                version = device_vars.get("version").map_or("?", |s| s.as_str()),
+                is_userspace = is_userspace_str,
+                "connected to fastboot device"
+            );
+        } else {
+            info!(
+                ?open_duration,
+                ?vars_duration,
+                total = ?t0.elapsed(),
+                product = device_vars.get("product").map_or("?", |s| s.as_str()),
+                serial = device_vars.get("serialno").map_or("?", |s| s.as_str()),
+                version = device_vars.get("version").map_or("?", |s| s.as_str()),
+                is_userspace = is_userspace_str,
+                slow_vars = ?slow_vars,
+                "connected to fastboot device (slow/unsupported queries noted)"
+            );
+        }
         Ok(Self { fb, device_vars, max_download: None })
     }
 

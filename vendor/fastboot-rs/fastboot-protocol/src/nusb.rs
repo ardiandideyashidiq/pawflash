@@ -318,26 +318,31 @@ impl NusbFastBoot {
 
     /// Create a fastboot client based on a USB device. Interface number must be the fastboot
     /// interface
-    #[tracing::instrument(skip_all, err)]
+    #[tracing::instrument(skip_all, err(level = tracing::Level::DEBUG))]
     pub async fn from_device(device: Device, interface: u8) -> Result<Self, NusbFastBootOpenError> {
         let mut last_err = None;
         let mut claimed = None;
 
         for attempt in 0..5 {
+            let t_claim = std::time::Instant::now();
             match device.claim_interface(interface).await {
                 Ok(iface) => {
+                    let d = t_claim.elapsed();
+                    debug!(attempt, ?d, "fastboot interface claimed successfully");
                     claimed = Some(iface);
                     break;
                 }
                 Err(e) => {
+                    let d = t_claim.elapsed();
                     let err_msg = e.to_string();
                     let is_busy = err_msg.contains("busy") || err_msg.contains("16");
                     if is_busy && attempt < 4 {
-                        debug!(attempt, error = %e, "interface busy, retrying claim after brief delay");
+                        debug!(attempt, ?d, error = %e, "interface busy, retrying claim after brief delay");
                         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                         last_err = Some(e);
                         continue;
                     }
+                    debug!(attempt, ?d, error = %e, "failed to claim fastboot interface");
                     return Err(NusbFastBootOpenError::Interface(e));
                 }
             }
@@ -351,12 +356,14 @@ impl NusbFastBoot {
 
     /// Create a fastboot client based on device info. The correct interface will automatically be
     /// determined
-    #[tracing::instrument(skip_all, err)]
+    #[tracing::instrument(skip_all, err(level = tracing::Level::DEBUG))]
     pub async fn from_info(info: &DeviceInfo) -> Result<Self, NusbFastBootOpenError> {
+        let t0 = std::time::Instant::now();
         let interface =
             Self::find_fastboot_interface(info).ok_or(NusbFastBootOpenError::MissingInterface)?;
         let device = info.open().await.map_err(NusbFastBootOpenError::Device)?;
-        debug!(speed = ?device.speed(), "fastboot device opened");
+        let open_duration = t0.elapsed();
+        debug!(speed = ?device.speed(), ?open_duration, "fastboot device opened");
         Self::from_device(device, interface).await
     }
 
@@ -399,13 +406,16 @@ impl NusbFastBoot {
             let resp = self.read_response().await?;
             trace!("Response: {:?}", resp);
             match resp {
-                FastBootResponse::Info(_) => (),
-                FastBootResponse::Text(_) => (),
+                FastBootResponse::Info(msg) => {
+                    debug!(info = %msg, "fastboot info response");
+                }
+                FastBootResponse::Text(t) => info!("Text: {}", t),
                 FastBootResponse::Data(_) => {
                     return Err(NusbFastBootError::FastbootUnexpectedReply)
                 }
                 FastBootResponse::Okay(value) => return Ok(value),
                 FastBootResponse::Fail(fail) => {
+                    debug!(fail = %fail, "fastboot fail response");
                     return Err(NusbFastBootError::FastbootFailed(fail))
                 }
             }
@@ -417,8 +427,48 @@ impl NusbFastBoot {
         &mut self,
         cmd: FastBootCommand<S>,
     ) -> Result<String, NusbFastBootError> {
+        let start = std::time::Instant::now();
+        let cmd_str = format!("{cmd}");
+        debug!(cmd = %cmd_str, "sending fastboot command");
         self.send_command(cmd).await?;
-        self.handle_responses().await
+        let send_duration = start.elapsed();
+        let res = self.handle_responses().await;
+        let elapsed = start.elapsed();
+        let resp_duration = elapsed.saturating_sub(send_duration);
+        match &res {
+            Ok(val) => {
+                if elapsed >= std::time::Duration::from_millis(100) {
+                    info!(
+                        cmd = %cmd_str,
+                        ?elapsed,
+                        ?send_duration,
+                        ?resp_duration,
+                        response = %val,
+                        "fastboot command completed (slow)"
+                    );
+                } else {
+                    debug!(
+                        cmd = %cmd_str,
+                        ?elapsed,
+                        ?send_duration,
+                        ?resp_duration,
+                        response = %val,
+                        "fastboot command completed"
+                    );
+                }
+            }
+            Err(e) => {
+                info!(
+                    cmd = %cmd_str,
+                    ?elapsed,
+                    ?send_duration,
+                    ?resp_duration,
+                    error = %e,
+                    "fastboot command failed"
+                );
+            }
+        }
+        res
     }
 
     /// Allocate a buffer of at most `bytes`, rounded up to the endpoint packet
@@ -441,20 +491,29 @@ impl NusbFastBoot {
     ///
     /// When successful the [DataDownload] helper should be used to actually send the data
     pub async fn download(&'_ mut self, size: u32) -> Result<DataDownload<'_>, NusbFastBootError> {
+        let t0 = std::time::Instant::now();
         let cmd = FastBootCommand::<&str>::Download(size);
         self.send_command(cmd).await?;
+        let t_sent = t0.elapsed();
+        debug!(size, ?t_sent, "download command sent, waiting for DATA handshake");
         loop {
+            let t_resp = std::time::Instant::now();
             let resp = self.read_response().await?;
+            let d_resp = t_resp.elapsed();
             match resp {
-                FastBootResponse::Info(i) => info!("info: {i}"),
-                FastBootResponse::Text(t) => info!("Text: {}", t),
-                FastBootResponse::Data(size) => {
-                    return Ok(DataDownload::new(self, size));
+                FastBootResponse::Info(i) => info!(info = %i, ?d_resp, "download info response"),
+                FastBootResponse::Text(t) => info!(text = %t, ?d_resp, "download text response"),
+                FastBootResponse::Data(accepted_size) => {
+                    let total = t0.elapsed();
+                    debug!(size, accepted_size, ?total, ?d_resp, "DATA handshake complete");
+                    return Ok(DataDownload::new(self, accepted_size));
                 }
                 FastBootResponse::Okay(_) => {
                     return Err(NusbFastBootError::FastbootUnexpectedReply)
                 }
                 FastBootResponse::Fail(fail) => {
+                    let total = t0.elapsed();
+                    info!(fail = %fail, ?total, ?d_resp, "download rejected by device");
                     return Err(NusbFastBootError::FastbootFailed(fail))
                 }
             }
@@ -700,6 +759,7 @@ impl DataDownload<'_> {
     /// This should only be called if all data has been queued up (matching the total size)
     #[instrument(skip_all, err)]
     pub async fn finish(mut self) -> Result<(), DownloadError> {
+        let t0 = std::time::Instant::now();
         if self.left != 0 {
             return Err(DownloadError::IncorrectDataLength {
                 expected: self.size,
@@ -713,12 +773,27 @@ impl DataDownload<'_> {
             self.fastboot.ep_out.submit(current);
         }
 
+        let pending_start = std::time::Instant::now();
+        let mut drain_count = 0;
         while self.fastboot.ep_out.pending() > 0 {
+            drain_count += 1;
             let completion = self.fastboot.ep_out.next_complete().await;
             completion.status.map_err(NusbFastBootError::from)?;
         }
+        let drain_duration = pending_start.elapsed();
 
+        let resp_start = std::time::Instant::now();
         self.fastboot.handle_responses().await?;
+        let resp_duration = resp_start.elapsed();
+        let total_finish = t0.elapsed();
+        debug!(
+            size = self.size,
+            drain_count,
+            ?drain_duration,
+            ?resp_duration,
+            ?total_finish,
+            "download stream finished and device acknowledged OKAY"
+        );
         Ok(())
     }
 }
