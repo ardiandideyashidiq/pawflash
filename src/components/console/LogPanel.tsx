@@ -4,8 +4,6 @@ import { toast } from "sonner";
 import { useUI } from "@/hooks/useUI";
 import { clampPanelWidth } from "@/hooks/useUI";
 import { useConsole } from "@/hooks/useConsole";
-import { useFlashPhase } from "@/hooks/useFlashProgress";
-import { useForceFastboot } from "@/hooks/useForceFastboot";
 import { ProgressWidget } from "@/components/console/ProgressWidget";
 import { cn } from "@/lib/utils";
 import type { ConsoleLevel } from "@/types/progress";
@@ -58,8 +56,6 @@ function levelStyle(level: ConsoleLevel): LevelStyle {
 export function LogPanel() {
   const { logPanelOpen, closeLogPanel, logPanelWidth, setLogPanelWidth } = useUI();
   const { entries, clearConsole } = useConsole();
-  const flash = useFlashPhase();
-  const force = useForceFastboot();
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
@@ -87,9 +83,6 @@ export function LogPanel() {
     const timeoutId = window.setTimeout(() => setMounted(false), SLIDE_DURATION_MS);
     return () => window.clearTimeout(timeoutId);
   }, [logPanelOpen]);
-
-  const isLive =
-    flash.phase === "waiting" || flash.phase === "flashing" || force.phase === "waiting";
 
   // Auto-scroll only while the user is already pinned near the bottom, and
   // scroll instantly — smooth scrolling on a high-frequency live log stutters.
@@ -225,15 +218,6 @@ export function LogPanel() {
         <div className="ml-2 flex items-center justify-between border-b border-border/80 p-3.5">
           <div className="flex items-center gap-2.5">
             <h2 className="text-sm font-semibold text-foreground tracking-tight">Operation Logs</h2>
-            {isLive && (
-              <span className="flex items-center gap-1.5 rounded-full border border-success/40 bg-success/15 px-2.5 py-0.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
-                </span>
-                <span className="text-[11px] font-bold text-signal-green tracking-wide uppercase">Live</span>
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-1">
             {entries.length > 0 && (

@@ -18,8 +18,7 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<ConsoleEntry[]>([]);
   const nextId = useRef(0);
   const lastEntryRef = useRef<ConsoleEntry | null>(null);
-  const lastFlashPct = useRef<{ partition: string; pct: number }>({ partition: "", pct: -1 });
-  const lastOverallPct = useRef<{ pct: number; at: number }>({ pct: -1, at: 0 });
+  const lastFlashPartition = useRef<string>("");
 
   const addEntry = useCallback((entry: { text: string; level: ConsoleLevel }) => {
     // Dedup and id allocation live outside the updater: React runs updaters
@@ -54,26 +53,23 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
           addEntry({ text: event.data.message, level: "info" });
           break;
         case "Flashing":
-          // Throttle byte-level progress to one log line per 1% step per
-          // partition — the full-fidelity stream drives the progress bars.
-          {
-            const pct = Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100);
-            const last = lastFlashPct.current;
-            if (last.partition === event.data.partition && last.pct === pct) {
-              return;
-            }
-            lastFlashPct.current = { partition: event.data.partition, pct };
+          // Log partition milestone once when flashing/erasing begins.
+          // Numerical byte-level percentage streams to progress widgets, not the log panel.
+          if (lastFlashPartition.current !== event.data.partition) {
+            lastFlashPartition.current = event.data.partition;
+            const op = event.data.operation === "erase" ? "Erasing" : "Flashing";
             addEntry({
-              text: `[${event.data.partition}] ${pct}%`,
+              text: `${op} ${event.data.partition}...`,
               level: "info",
             });
           }
           break;
         case "FlashProgress":
-          addEntry({
-            text: `[${event.data.partition}] ${Math.round(event.data.percent)}%`,
-            level: "info",
-          });
+        case "Overall":
+        case "MtkProgress":
+        case "PenumbraProgress":
+          // Real-time progress updates are handled by progress widgets,
+          // not written to the text log to prevent log flooding.
           break;
         case "FlashComplete": {
           const label = event.data.success ? "OK" : "FAIL";
@@ -87,39 +83,11 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
         case "DeviceAction":
           addEntry({ text: `${event.data.action}: ${event.data.detail}`, level: "command" });
           break;
-        case "Overall":
-          // Throttle cumulative progress to one log line per 5% step.
-          {
-            const now = Date.now();
-            const pct = Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100);
-            const last = lastOverallPct.current;
-            if (pct - last.pct < 5 && now - last.at < 2000 && last.pct >= 0) {
-              return;
-            }
-            lastOverallPct.current = { pct, at: now };
-            addEntry({
-              text: `Progress ${pct}%`,
-              level: "info",
-            });
-          }
-          break;
         case "ForceFastbootStage":
           addEntry({ text: event.data.message, level: "info" });
           break;
         case "MtkPhase":
           addEntry({ text: event.data.message, level: "info" });
-          break;
-        case "MtkProgress":
-          // Throttle byte-level mtk progress to one log line per 5% step.
-          {
-            const pct = Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100);
-            const last = lastOverallPct.current;
-            if (pct - last.pct < 5 && last.pct >= 0) {
-              return;
-            }
-            lastOverallPct.current = { pct, at: Date.now() };
-            addEntry({ text: `MTK ${pct}%`, level: "info" });
-          }
           break;
         case "MtkDone":
           addEntry({
@@ -129,17 +97,6 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
           break;
         case "PenumbraPhase":
           addEntry({ text: event.data.message, level: "info" });
-          break;
-        case "PenumbraProgress":
-          {
-            const pct = Math.round((event.data.bytes / Math.max(event.data.total, 1)) * 100);
-            const last = lastOverallPct.current;
-            if (pct - last.pct < 5 && last.pct >= 0) {
-              return;
-            }
-            lastOverallPct.current = { pct, at: Date.now() };
-            addEntry({ text: `penumbra ${pct}%`, level: "info" });
-          }
           break;
         case "PenumbraDone":
           addEntry({
@@ -171,8 +128,7 @@ export function ConsoleProvider({ children }: { children: ReactNode }) {
     setEntries([]);
     nextId.current = 0;
     lastEntryRef.current = null;
-    lastFlashPct.current = { partition: "", pct: -1 };
-    lastOverallPct.current = { pct: -1, at: 0 };
+    lastFlashPartition.current = "";
   }, []);
 
   return (
