@@ -69,6 +69,13 @@ async fn do_raw_flash<T: pawflash_core::flash::transport::FlashTransport>(
     both: bool,
     force: bool,
 ) -> Result<()> {
+    if executor.is_fastbootd().await {
+        bail!(
+            "device is in fastbootd mode (is-userspace = yes); flashing requires bootloader mode.\n\
+             Run 'pawflash device reboot bootloader' (or 'fastboot reboot bootloader') first."
+        );
+    }
+
     let base = base_partition(partition);
     if requires_raw_flash_ack(base) && !force {
         bail!(

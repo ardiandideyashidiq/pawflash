@@ -68,6 +68,10 @@ pub enum FlashError {
     #[diagnostic(help("check the USB connection; the device may have stopped responding"))]
     Timeout { partition: String, step: String },
 
+    #[error("device is in fastbootd mode (is-userspace = yes); bootloader mode is required")]
+    #[diagnostic(help("reboot the device to bootloader mode (fastboot reboot bootloader) before flashing"))]
+    FastbootdMode,
+
     #[error("flash cancelled by user")]
     Cancelled,
 }

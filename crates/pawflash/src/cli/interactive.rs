@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use inquire::{Confirm, Select};
-use miette::{Context, IntoDiagnostic, Result};
+use miette::{bail, Context, IntoDiagnostic, Result};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -119,6 +119,13 @@ pub async fn run(
         FlashExecutor::wait_for_device(Duration::from_secs(60), CancellationToken::default()),
     )
     .await?;
+
+    if executor.is_fastbootd().await {
+        bail!(
+            "device is in fastbootd mode (is-userspace = yes); scatter flashing requires bootloader mode.\n\
+             Run 'pawflash device reboot bootloader' (or 'fastboot reboot bootloader') first."
+        );
+    }
 
     execute_interactive_plan(&mut executor, &plan).await
 }

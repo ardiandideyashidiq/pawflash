@@ -119,7 +119,7 @@ impl SimulatedTransport {
         vars.insert("serialno".into(), "SIM000001".into());
         vars.insert("version".into(), "0.5".into());
         vars.insert("current-slot".into(), "a".into());
-        vars.insert("is-userspace".into(), "yes".into());
+        vars.insert("is-userspace".into(), "no".into());
 
         for partitions in scatter.layouts.values() {
             for part in partitions {

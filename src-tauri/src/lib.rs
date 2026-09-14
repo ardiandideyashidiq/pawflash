@@ -1342,6 +1342,13 @@ async fn execute_plan(
     e
   })?;
 
+  if executor.is_fastbootd().await {
+    let msg = "device is in fastbootd mode (is-userspace = yes); scatter flashing requires bootloader mode. Run 'fastboot reboot bootloader' first.";
+    warn!(%msg);
+    send_progress(&on_event, ProgressEvent::Error { message: msg.into() });
+    return Err(msg.into());
+  }
+
   // Execute with live byte-level progress streaming.
   let total = plan.actions.iter().filter(|a| a.action == "flash").count();
   info!(%total, "starting flash execution");
@@ -1507,6 +1514,13 @@ async fn flash_raw_image(
       ),
     },
   );
+
+  if is_userspace.as_deref() == Some("yes") || is_userspace.as_deref() == Some("true") {
+    let msg = "device is in fastbootd mode (is-userspace = yes); flashing requires bootloader mode. Run 'fastboot reboot bootloader' first.";
+    warn!(%msg);
+    send_progress(&on_event, ProgressEvent::Error { message: msg.into() });
+    return Err(msg.into());
+  }
 
   if unlocked.as_deref() == Some("no") {
     warn!(%partition, "bootloader is reported locked (unlocked: no)");

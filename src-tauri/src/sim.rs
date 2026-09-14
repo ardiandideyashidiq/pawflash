@@ -83,6 +83,13 @@ impl AnyExecutor {
     }
   }
 
+  pub async fn is_fastbootd(&mut self) -> bool {
+    match self {
+      Self::Real(executor) => executor.is_fastbootd().await,
+      Self::Sim(executor) => executor.is_fastbootd().await,
+    }
+  }
+
   /// # Errors
   /// Returns an error if the device does not respond.
   pub async fn get_var(&mut self, var: &str) -> Result<String, FlashError> {

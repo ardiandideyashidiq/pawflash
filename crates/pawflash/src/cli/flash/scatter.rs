@@ -88,6 +88,13 @@ pub(super) async fn run_scatter(cfg: &ScatterConfig<'_>) -> Result<()> {
     )
     .await?;
 
+    if executor.is_fastbootd().await {
+        bail!(
+            "device is in fastbootd mode (is-userspace = yes); scatter flashing requires bootloader mode.\n\
+             Run 'pawflash device reboot bootloader' (or 'fastboot reboot bootloader') first."
+        );
+    }
+
     debug!("connected, executing flash plan");
 
     let result = executor

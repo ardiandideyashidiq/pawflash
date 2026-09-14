@@ -92,6 +92,16 @@ impl<T: FlashTransport> FlashExecutor<T> {
         &self.device_vars
     }
 
+    /// Check whether the connected device is running in fastbootd (userspace) mode.
+    pub async fn is_fastbootd(&mut self) -> bool {
+        let is_userspace = self.fb.get_var("is-userspace").await.ok();
+        let val = is_userspace
+            .as_deref()
+            .or_else(|| self.device_vars.get("is-userspace").map(String::as_str))
+            .unwrap_or("no");
+        val.eq_ignore_ascii_case("yes") || val.eq_ignore_ascii_case("true")
+    }
+
     /// Query `max-download-size` once per executor lifetime and reuse it for
     /// every subsequent flash, avoiding redundant USB round-trips on
     /// multi-target operations (e.g. `--both`).
@@ -229,6 +239,27 @@ mod tests {
         assert_eq!(result.total, 1);
         assert_eq!(result.succeeded, 0);
         assert_eq!(result.failed, 1);
+    }
+
+    #[tokio::test]
+    async fn execute_plan_rejects_fastbootd_mode() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let img = dir.path().join("boot.img");
+        std::fs::write(&img, b"fake image data").unwrap();
+        let fb = MockTransport::new();
+        let mut vars = HashMap::new();
+        vars.insert("is-userspace".to_string(), "yes".to_string());
+        let mut exec = FlashExecutor::new(fb, vars);
+        let plan = make_empty_plan(vec![make_action("boot", img.to_str())]);
+        let result = exec.execute_plan(&plan, FlashRunOptions::default()).await;
+        assert_eq!(result.total, 1);
+        assert_eq!(result.succeeded, 0);
+        assert_eq!(result.failed, 1);
+        assert!(matches!(
+            result.outcomes[0].error,
+            Some(crate::flash::error::FlashError::FastbootdMode)
+        ));
+        assert!(!exec.fb.commands().iter().any(|c| c.starts_with("flash:") || c.starts_with("download:")));
     }
 
     #[tokio::test]

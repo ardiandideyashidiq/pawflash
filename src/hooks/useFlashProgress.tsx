@@ -256,6 +256,7 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
           ...prev,
           phase: "complete",
           statusText: "",
+          overallBytes: event.data.ok && prev.overallTotal > 0 ? prev.overallTotal : prev.overallBytes,
           summary: prev.summary
             ? { ...prev.summary, totalBytes: prev.overallTotal }
             : null,

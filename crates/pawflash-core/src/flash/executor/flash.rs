@@ -212,15 +212,11 @@ impl<T: FlashTransport> FlashExecutor<T> {
             }
         };
         if !opts.dry_run {
-            // Activate the slot the plan actually targets instead of blindly
-            // forcing slot "a" — a b-only plan (or a non-A/B device) must not
-            // end up with the wrong slot active.
-            if let Some(slot) = plan.actions.iter().find_map(|a| a.slot.as_deref()) {
-                match self.set_active_slot(slot).await {
-                    Ok(response) => info!(slot, response, "active slot set"),
-                    Err(e) => warn!(slot, error = %e, "set_active failed; continuing"),
-                }
+            if self.is_fastbootd().await {
+                warn!("device is in fastbootd mode (is-userspace = yes); refusing to execute flash plan");
+                return fastbootd_rejection_result(&all_actions);
             }
+            self.activate_plan_slot(plan).await;
         }
 
         let mut outcomes = Vec::with_capacity(total);
@@ -240,15 +236,12 @@ impl<T: FlashTransport> FlashExecutor<T> {
             let partition = &action.partition;
             info!(%partition, "Writing partition");
 
-            // Per-partition byte reporter folding cumulative overall progress.
             current_bytes.store(0, Ordering::Relaxed);
-            let mut on_bytes: Option<Box<dyn FnMut(u64, u64) + Send + '_>> = None;
-            if let Some(cb) = opts.on_transfer.as_mut() {
-                let callback = &mut **cb;
-                on_bytes = Some(Box::new(|bytes: u64, total: u64| {
+            let mut on_bytes = opts.on_transfer.as_mut().map(|cb| {
+                Box::new(|bytes: u64, total: u64| {
                     current_bytes.store(bytes, Ordering::Relaxed);
                     let completed = completed_bytes.load(Ordering::Relaxed);
-                    callback(FlashTransferEvent {
+                    (**cb)(FlashTransferEvent {
                         partition: partition.clone(),
                         operation: "flash".into(),
                         bytes,
@@ -256,8 +249,8 @@ impl<T: FlashTransport> FlashExecutor<T> {
                         overall_bytes: completed + bytes,
                         overall_total: plan_total,
                     });
-                }));
-            }
+                }) as Box<dyn FnMut(u64, u64) + Send + '_>
+            });
 
             let pb = opts
                 .progress
@@ -458,6 +451,15 @@ impl<T: FlashTransport> FlashExecutor<T> {
         );
         Ok(resp)
     }
+
+    async fn activate_plan_slot(&mut self, plan: &FlashPlan) {
+        if let Some(slot) = plan.actions.iter().find_map(|a| a.slot.as_deref()) {
+            match self.set_active_slot(slot).await {
+                Ok(response) => info!(slot, response, "active slot set"),
+                Err(e) => warn!(slot, error = %e, "set_active failed; continuing"),
+            }
+        }
+    }
 }
 
 /// Convert a single partition flash result into a recorded outcome, finishing
@@ -495,5 +497,25 @@ fn record_outcome(
                 error: Some(e),
             }
         }
+    }
+}
+
+fn fastbootd_rejection_result(all_actions: &[&FlashAction]) -> FlashResult {
+    let total = all_actions.len();
+    FlashResult {
+        total,
+        succeeded: 0,
+        failed: total,
+        outcomes: all_actions
+            .iter()
+            .map(|a| FlashOutcome {
+                partition: a.partition.clone(),
+                success: false,
+                response: None,
+                duration: Duration::ZERO,
+                error: Some(FlashError::FastbootdMode),
+            })
+            .collect(),
+        cancelled: false,
     }
 }
