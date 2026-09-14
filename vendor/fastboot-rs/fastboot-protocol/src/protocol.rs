@@ -11,27 +11,11 @@ fn bytes_slice_null(bytes: &[u8]) -> &[u8] {
 
 /// Parses a u32 from a string that can be either hex (0x prefixed) or decimal.
 pub fn parse_u32(s: &str) -> Result<u32, ParseIntError> {
-    if s.starts_with("0x") {
-        parse_u32_hex(s)
+    if let Some(hex) = s.strip_prefix("0x") {
+        u32::from_str_radix(hex, 16)
     } else {
         s.parse()
     }
-}
-
-/// Parse a hexadecimal 0x prefixed string e.g. 0x1234 into a u32
-pub fn parse_u32_hex(hex: &str) -> Result<u32, ParseIntError> {
-    // Can't create a custom ParseIntError; so if there is no 0x prefix, work around it providing
-    // an invalid hex string
-    let hex = hex.strip_prefix("0x").unwrap_or("invalid");
-    u32::from_str_radix(hex, 16)
-}
-
-/// Parse a hexadecimal 0x prefixed string e.g. 0x1234 into a u64
-pub fn parse_u64_hex(hex: &str) -> Result<u64, ParseIntError> {
-    // Can't create a custom ParseIntError; so if there is no 0x prefix, work around it providing
-    // an invalid hex string
-    let hex = hex.strip_prefix("0x").unwrap_or("invalid");
-    u64::from_str_radix(hex, 16)
 }
 
 /// Fastboot commands
@@ -41,24 +25,14 @@ pub enum FastBootCommand<S> {
     GetVar(S),
     /// Download a given length of data to the devices
     Download(u32),
-    /// Verify
-    Verify(u32),
     /// Flash downloaded to a partition
     Flash(S),
     /// Erase a partition
     Erase(S),
-    /// Boot the downloaded data
-    Boot,
-    /// Continue booting
-    Continue,
     /// Reboot the devices
     Reboot,
-    /// Reboot into the bootloader
-    RebootBootloader,
     /// Reboot into specific mode
     RebootTo(S),
-    /// Power off the device
-    Powerdown,
     /// Flashing commands (lock, unlock, lock_critical, unlock_critical, get_unlock_ability)
     Flashing(S),
     /// Set active boot slot (a or b)
@@ -74,15 +48,10 @@ impl<S: Display> Display for FastBootCommand<S> {
         match self {
             FastBootCommand::GetVar(var) => write!(f, "getvar:{var}"),
             FastBootCommand::Download(size) => write!(f, "download:{size:08x}"),
-            FastBootCommand::Verify(part) => write!(f, "verify:{part}"),
             FastBootCommand::Flash(part) => write!(f, "flash:{part}"),
             FastBootCommand::Erase(part) => write!(f, "erase:{part}"),
-            FastBootCommand::Boot => write!(f, "boot"),
-            FastBootCommand::Continue => write!(f, "continue"),
             FastBootCommand::Reboot => write!(f, "reboot"),
-            FastBootCommand::RebootBootloader => write!(f, "reboot-bootloader"),
             FastBootCommand::RebootTo(mode) => write!(f, "reboot-{mode}"),
-            FastBootCommand::Powerdown => write!(f, "powerdown"),
             FastBootCommand::Flashing(cmd) => write!(f, "flashing {cmd}"),
             FastBootCommand::SetActive(slot) => write!(f, "set_active:{slot}"),
             FastBootCommand::ResizeLogicalPartition { partition, size } => {
@@ -171,35 +140,9 @@ mod test {
     }
 
     #[test]
-    fn parse_valid_u32_hex() {
-        let hex = parse_u32_hex("0x123456").unwrap();
-        assert_eq!(0x123456, hex);
-
-        let hex = parse_u32_hex("0x0012abcd").unwrap();
-        assert_eq!(0x12abcd, hex);
-    }
-
-    #[test]
-    fn parse_valid_u64_hex() {
-        let hex = parse_u64_hex("0x123456").unwrap();
-        assert_eq!(0x123456, hex);
-
-        let hex = parse_u64_hex("0x0012abcd").unwrap();
-        assert_eq!(0x12abcd, hex);
-
-        let hex = parse_u64_hex("0x0000000134b72400").unwrap();
-        assert_eq!(0x134b72400, hex);
-    }
-
-    #[test]
     fn parse_invalid_u32() {
         parse_u32("12abcd").unwrap_err();
         parse_u32("hello").unwrap_err();
-    }
-
-    #[test]
-    fn parse_invalid_u32_hex() {
-        parse_u32_hex("123456").unwrap_err();
     }
 
     #[test]

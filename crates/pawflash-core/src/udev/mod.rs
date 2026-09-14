@@ -8,4 +8,4 @@
 
 mod rules;
 
-pub use rules::{device_visible, ensure_udev_rules, rules_content, DEVICE_VENDOR_IDS};
+pub use rules::{device_visible, DEVICE_VENDOR_IDS};

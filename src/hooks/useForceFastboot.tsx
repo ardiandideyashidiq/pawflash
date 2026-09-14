@@ -9,9 +9,9 @@ import {
 } from "react";
 import type { ProgressEvent } from "@/types/progress";
 
-export type ForceStage = "waiting_preloader" | "sending" | "confirmed" | "detected" | null;
+type ForceStage = "waiting_preloader" | "sending" | "confirmed" | "detected" | null;
 
-export interface ForceFastbootState {
+interface ForceFastbootState {
   phase: "idle" | "waiting" | "complete" | "cancelled" | "error";
   stage: ForceStage;
   message: string;

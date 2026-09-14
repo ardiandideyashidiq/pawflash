@@ -17,8 +17,6 @@ const sectionCardVariants = cva("", {
 
 interface SectionCardProps extends VariantProps<typeof sectionCardVariants> {
   title: string;
-  description?: string;
-  headerActions?: ReactNode;
   children: ReactNode;
   className?: string;
   contentClassName?: string;
@@ -26,8 +24,6 @@ interface SectionCardProps extends VariantProps<typeof sectionCardVariants> {
 
 export function SectionCard({
   title,
-  description,
-  headerActions,
   children,
   className,
   contentClassName,
@@ -35,15 +31,7 @@ export function SectionCard({
 }: SectionCardProps) {
   return (
     <section className={cn(sectionCardVariants({ variant }), className)}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <h3 className="text-sm font-semibold tracking-[0.04em] text-foreground">{title}</h3>
-          {description ? (
-            <p className="max-w-[48ch] text-sm text-muted-foreground">{description}</p>
-          ) : null}
-        </div>
-        {headerActions ? <div className="flex shrink-0 items-center gap-2">{headerActions}</div> : null}
-      </div>
+      <h3 className="text-sm font-semibold tracking-[0.04em] text-foreground">{title}</h3>
       <div className={cn("mt-4", contentClassName)}>{children}</div>
     </section>
   );

@@ -27,7 +27,7 @@ export type ProgressEvent =
   | { event: "PenumbraDone"; data: { ok: boolean; detail: string } }
   | { event: "Done"; data: { ok: boolean; detail: string } };
 
-export type ConsoleLevel = "info" | "success" | "error" | "warning" | "command" | "response";
+export type ConsoleLevel = "info" | "success" | "error" | "warning" | "command";
 
 export interface ConsoleEntry {
   id: number;

@@ -75,8 +75,6 @@ pub trait FlashTransport {
     async fn erase(&mut self, partition: &str) -> Result<String>;
     async fn reboot(&mut self) -> Result<()>;
     async fn reboot_to(&mut self, target: &str) -> Result<()>;
-    async fn is_logical(&mut self, partition: &str) -> Result<bool>;
-    async fn resize_logical_partition(&mut self, partition: &str, size: u64) -> Result<()>;
     async fn flashing(&mut self, cmd: &str) -> Result<String>;
     async fn set_active(&mut self, slot: &str) -> Result<String>;
     async fn snapshot_update(&mut self, cmd: &str) -> Result<String>;
@@ -111,14 +109,6 @@ impl FlashTransport for fastboot_protocol::nusb::NusbFastBoot {
 
     async fn reboot_to(&mut self, target: &str) -> Result<()> {
         self.reboot_to(target).await.map_err(FlashError::from).map(drop)
-    }
-
-    async fn is_logical(&mut self, partition: &str) -> Result<bool> {
-        self.is_logical(partition).await.map_err(FlashError::from)
-    }
-
-    async fn resize_logical_partition(&mut self, partition: &str, size: u64) -> Result<()> {
-        self.resize_logical_partition(partition, size).await.map_err(FlashError::from).map(drop)
     }
 
     async fn flashing(&mut self, cmd: &str) -> Result<String> {

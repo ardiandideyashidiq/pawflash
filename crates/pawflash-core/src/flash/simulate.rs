@@ -51,20 +51,6 @@ impl SimulatedDownloadSink {
         Ok(())
     }
 
-    #[must_use]
-    pub fn data(&self) -> &[u8] {
-        &self.data
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
-    }
 }
 
 // ── Simulated transport ────────────────────────────────────────────
@@ -205,18 +191,6 @@ impl FlashTransport for SimulatedTransport {
     async fn reboot_to(&mut self, target: &str) -> Result<()> {
         self.commands.push(format!("SIM reboot_to:{target}"));
         tokio::time::sleep(Duration::from_secs(2)).await;
-        Ok(())
-    }
-
-    async fn is_logical(&mut self, partition: &str) -> Result<bool> {
-        self.commands.push(format!("SIM is_logical:{partition}"));
-        Ok(partition == "metadata" || partition == "userdata" || partition == "cache")
-    }
-
-    async fn resize_logical_partition(&mut self, partition: &str, _size: u64) -> Result<()> {
-        self.commands
-            .push(format!("SIM resize_logical:{partition}:{_size}"));
-        tokio::time::sleep(Duration::from_millis(100)).await;
         Ok(())
     }
 

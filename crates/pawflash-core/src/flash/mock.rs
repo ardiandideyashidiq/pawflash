@@ -140,16 +140,6 @@ impl FlashTransport for MockTransport {
         Ok(())
     }
 
-    async fn is_logical(&mut self, partition: &str) -> Result<bool> {
-        self.commands.push(format!("is_logical:{partition}"));
-        Ok(false)
-    }
-
-    async fn resize_logical_partition(&mut self, partition: &str, _size: u64) -> Result<()> {
-        self.commands.push(format!("resize_logical:{partition}"));
-        Ok(())
-    }
-
     async fn flashing(&mut self, cmd: &str) -> Result<String> {
         self.commands.push(format!("flashing:{cmd}"));
         Ok(format!("OKAY flashing {cmd}"))

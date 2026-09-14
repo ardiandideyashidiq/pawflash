@@ -82,12 +82,9 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 
 function DialogFooter({
   className,
-  showCloseButton = false,
   children,
   ...props
-}: React.ComponentProps<"div"> & {
-  showCloseButton?: boolean
-}) {
+}: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-footer"
@@ -98,11 +95,6 @@ function DialogFooter({
       {...props}
     >
       {children}
-      {showCloseButton && (
-        <DialogPrimitive.Close render={<Button variant="outline" />}>
-          Close
-        </DialogPrimitive.Close>
-      )}
     </div>
   )
 }
@@ -142,7 +134,5 @@ export {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogOverlay,
-  DialogPortal,
   DialogTitle,
 }

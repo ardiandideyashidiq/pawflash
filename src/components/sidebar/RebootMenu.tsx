@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { Menu } from "@base-ui/react/menu";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
   ChevronDown,
@@ -8,9 +9,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
-import { useDevice } from "@/hooks/useDevice";
 import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
+import { useSimulation } from "@/hooks/useSimulation";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/types/api";
 import { rebootTargets, targetMeta, type RebootTarget } from "@/lib/reboot";
@@ -37,7 +38,7 @@ export const RebootMenu = memo(function RebootMenu({
 }: RebootMenuProps) {
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { reboot } = useDevice();
+  const { simulate } = useSimulation();
   const flash = useFlashPhase();
   const force = useForceFastboot();
 
@@ -53,7 +54,7 @@ export const RebootMenu = memo(function RebootMenu({
     onTargetChange(nextTarget);
     setBusy(true);
     try {
-      await reboot(nextTarget);
+      await invoke("reboot_device", { target: nextTarget, simulate });
       toast.success(successLabels[nextTarget]);
     } catch (error) {
       toast.error(errorMessage(error));

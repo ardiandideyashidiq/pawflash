@@ -16,8 +16,8 @@ const PANEL_WIDTH_KEY = "log-panel-width";
 
 // Panel width constraints shared with the LogPanel resize drag so a persisted
 // width can never open the panel outside the viewport.
-export const PANEL_MIN_WIDTH = 300;
-export const PANEL_MAX_FACTOR = 0.9;
+const PANEL_MIN_WIDTH = 300;
+const PANEL_MAX_FACTOR = 0.9;
 
 export function clampPanelWidth(width: number): number {
   const max = Math.max(window.innerWidth * PANEL_MAX_FACTOR, PANEL_MIN_WIDTH);

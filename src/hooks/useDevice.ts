@@ -10,10 +10,6 @@ export function useDevice() {
     () => invoke<DeviceInfo>("get_device_info", { simulate }),
     [simulate],
   );
-  const reboot = useCallback(
-    (target: string) => invoke<void>("reboot_device", { target, simulate }),
-    [simulate],
-  );
   const getVariable = useCallback(
     (name: string) => invoke<string>("get_var", { name, simulate }),
     [simulate],
@@ -34,12 +30,11 @@ export function useDevice() {
   return useMemo(
     () => ({
       check,
-      reboot,
       getVariable,
       setActiveSlot,
       unlockBootloader,
       lockBootloader,
     }),
-    [check, reboot, getVariable, setActiveSlot, unlockBootloader, lockBootloader],
+    [check, getVariable, setActiveSlot, unlockBootloader, lockBootloader],
   );
 }

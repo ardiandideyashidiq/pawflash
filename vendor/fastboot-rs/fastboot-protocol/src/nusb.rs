@@ -415,13 +415,6 @@ impl NusbFastBoot {
         self.execute(cmd).await
     }
 
-    /// Continue booting.
-    /// Returns the device response message on success.
-    pub async fn continue_boot(&mut self) -> Result<String, NusbFastBootError> {
-        let cmd = FastBootCommand::<&str>::Continue;
-        self.execute(cmd).await
-    }
-
     /// Erasing the given target partition.
     /// Returns the device response message on success.
     pub async fn erase(&mut self, target: &str) -> Result<String, NusbFastBootError> {

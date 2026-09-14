@@ -52,15 +52,4 @@ impl<T: FlashTransport> FlashExecutor<T> {
         self.fb.set_active(slot).await
     }
 
-    /// # Errors
-    /// Returns an error if the fastboot query fails.
-    pub async fn is_logical(&mut self, partition: &str) -> Result<bool> {
-        self.fb.is_logical(partition).await
-    }
-
-    /// # Errors
-    /// Returns an error if the resize command fails.
-    pub async fn resize_logical_partition(&mut self, partition: &str, size: u64) -> Result<()> {
-        self.fb.resize_logical_partition(partition, size).await
-    }
 }

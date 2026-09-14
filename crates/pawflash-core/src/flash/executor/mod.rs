@@ -35,7 +35,6 @@ pub(crate) const EMPTY_VBMETA: &[u8] = include_bytes!("../../../../../vendor/emp
 /// Reboot target modes understood by fastboot.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BootTarget {
-    System,
     Bootloader,
     Fastboot,
     Recovery,
@@ -45,7 +44,6 @@ impl BootTarget {
     #[must_use]
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::System => "system",
             Self::Bootloader => "bootloader",
             Self::Fastboot => "fastboot",
             Self::Recovery => "recovery",
@@ -64,7 +62,6 @@ impl std::str::FromStr for BootTarget {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "system" => Ok(Self::System),
             "bootloader" => Ok(Self::Bootloader),
             "fastbootd" | "fastboot" => Ok(Self::Fastboot),
             "recovery" => Ok(Self::Recovery),

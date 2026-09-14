@@ -46,12 +46,6 @@ function levelStyle(level: ConsoleLevel): LevelStyle {
         bg: "bg-trace-copper/15",
         border: "border-trace-copper/30",
       };
-    case "response":
-      return {
-        text: "text-foreground/90 font-medium",
-        bg: "bg-muted/60",
-        border: "border-border/50",
-      };
     default:
       return {
         text: "text-muted-foreground font-medium",

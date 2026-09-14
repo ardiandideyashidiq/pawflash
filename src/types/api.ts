@@ -1,5 +1,3 @@
-export type Theme = "light" | "dark";
-
 /** Error DTO returned by the Tauri backend (see `AppError` in src-tauri/src/lib.rs). */
 export type AppError =
   | { kind: "NoDevice"; detail: { message: string } }
@@ -49,19 +47,10 @@ export interface FlashPlanOptions {
   allowance: { include_preloader: boolean; allow_incomplete_slots: boolean };
 }
 
-export interface FlashOutcome {
-  partition: string;
-  success: boolean;
-  response: string | null;
-  duration: number;
-  error: string | null;
-}
-
 export interface FlashResult {
   total: number;
   succeeded: number;
   failed: number;
-  outcomes: FlashOutcome[];
   cancelled: boolean;
 }
 
