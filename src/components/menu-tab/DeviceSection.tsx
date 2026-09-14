@@ -47,7 +47,7 @@ export const DeviceSection = memo(function DeviceSection({
   };
 
   return (
-    <SectionCard title="Device" contentClassName="space-y-3">
+    <SectionCard title="Device" contentClassName="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <Button
         className="w-full justify-start gap-3"
         disabled={disabled || busy || forceFastbootDisabled}

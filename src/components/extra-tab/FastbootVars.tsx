@@ -67,7 +67,7 @@ export const FastbootVars = memo(function FastbootVars({
     <SectionCard
       title="Fastboot vars"
       className={cn("flex flex-col overflow-hidden", className)}
-      contentClassName="mt-0 flex min-h-0 flex-1 flex-col gap-4 overflow-hidden min-h-[300px]"
+      contentClassName="mt-0 flex min-h-0 flex-1 flex-col gap-3 overflow-hidden min-h-[220px]"
     >
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
         <Input
@@ -111,7 +111,7 @@ export const FastbootVars = memo(function FastbootVars({
           Copy vars
         </Button>
       </div>
-      <pre className="min-h-0 flex-1 overflow-auto rounded-md border border-border/70 bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+      <pre className="min-h-[140px] flex-1 overflow-auto rounded-md border border-border/70 bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
         {variableOutput || "Variable output will appear here."}
       </pre>
     </SectionCard>

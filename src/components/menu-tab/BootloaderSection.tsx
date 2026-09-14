@@ -67,20 +67,20 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
     <SectionCard title="Bootloader" contentClassName="grid grid-cols-2 gap-3">
       <Button
         variant="destructive"
-        className="w-full justify-start gap-3"
+        className="w-full justify-center gap-2.5 px-4 py-2"
         disabled={disabled || busy}
         onClick={() => handleOpenUnlock(true)}
       >
-        <LockOpen className="h-4 w-4" />
+        <LockOpen className="h-4 w-4 shrink-0" />
         Unlock
       </Button>
       <Button
         variant="outline"
-        className="w-full justify-start gap-3"
+        className="w-full justify-center gap-2.5 px-4 py-2"
         disabled={disabled || busy}
         onClick={() => handleOpenLock(true)}
       >
-        <Lock className="h-4 w-4" />
+        <Lock className="h-4 w-4 shrink-0" />
         Lock
       </Button>
 

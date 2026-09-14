@@ -31,7 +31,6 @@ import type { DeviceInfo, FlashResult } from "@/types/api";
 import type { ProgressEvent } from "@/types/progress";
 
 const FlasherTab = lazy(() => import("@/components/tabs/FlasherTab"));
-const MenuTab = lazy(() => import("@/components/tabs/MenuTab"));
 const MtkTab = lazy(() => import("@/components/tabs/MtkTab"));
 const PenumbraTab = lazy(() => import("@/components/tabs/PenumbraTab"));
 const ExtrasTab = lazy(() => import("@/components/tabs/ExtrasTab"));
@@ -486,7 +485,7 @@ function AppRoot() {
               key={tab}
               className={cn(
                 "animate-in fade-in duration-200 ease-out",
-                tab === "flasher" && "h-full",
+                (tab === "flasher" || tab === "extras") && "h-full min-h-0",
               )}
             >
               {tab === "flasher" && (
@@ -495,18 +494,16 @@ function AppRoot() {
                   flashDisabled={flashDisabled}
                 />
               )}
-              {tab === "menu" && (
-                <MenuTab onForceFastboot={startForceFastboot} menuActionDisabled={menuActionDisabled} />
-              )}
-              {tab === "mtk" && <MtkTab />}
-              {tab === "penumbra" && <PenumbraTab />}
               {tab === "extras" && (
                 <ExtrasTab
+                  onForceFastboot={startForceFastboot}
                   menuActionDisabled={menuActionDisabled}
                   isStartingFlash={isStartingFlash}
                   onManualFlash={startManualFlash}
                 />
               )}
+              {tab === "mtk" && <MtkTab />}
+              {tab === "penumbra" && <PenumbraTab />}
               {tab === "about" && <AboutTab />}
             </div>
           </Suspense>

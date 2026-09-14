@@ -28,23 +28,23 @@ export function SlotSection({ disabled = false }: { disabled?: boolean }) {
   };
 
   return (
-    <SectionCard title="Slot" variant="flat" contentClassName="grid grid-cols-2 gap-3">
+    <SectionCard title="Slot" contentClassName="grid grid-cols-2 gap-3">
       <Button
         variant="outline"
-        className="w-full gap-3"
+        className="w-full justify-center gap-2.5 px-4 py-2"
         disabled={disabled || busySlot !== null}
         onClick={() => void applySlot("a")}
       >
-        <ArrowRightLeft className="h-4 w-4" />
+        <ArrowRightLeft className="h-4 w-4 shrink-0" />
         {busySlot === "a" ? "Setting..." : "Set slot A"}
       </Button>
       <Button
         variant="outline"
-        className="w-full gap-3"
+        className="w-full justify-center gap-2.5 px-4 py-2"
         disabled={disabled || busySlot !== null}
         onClick={() => void applySlot("b")}
       >
-        <ArrowRightLeft className="h-4 w-4" />
+        <ArrowRightLeft className="h-4 w-4 shrink-0" />
         {busySlot === "b" ? "Setting..." : "Set slot B"}
       </Button>
     </SectionCard>

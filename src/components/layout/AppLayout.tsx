@@ -4,7 +4,6 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  Search,
   Info,
   Sun,
   Terminal,
@@ -47,10 +46,9 @@ export default function AppLayout({
   const navItems = useMemo(
     () => [
       { id: "flasher", label: "Flasher", icon: Zap },
-      { id: "menu", label: "Menu", icon: Wrench },
+      { id: "extras", label: "Extras", icon: Wrench },
       { id: "mtk", label: "mtkclient", icon: Cpu },
       { id: "penumbra", label: "penumbra", icon: Cpu },
-      { id: "extras", label: "Extras", icon: Search },
       { id: "about", label: "About", icon: Info },
     ],
     [],
