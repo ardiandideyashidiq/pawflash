@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { SectionCard } from "@/components/menu-tab/SectionCard";
 import { useDevice } from "@/hooks/useDevice";
 import { useConsole } from "@/hooks/useConsole";
@@ -67,7 +66,10 @@ export const FastbootVars = memo(function FastbootVars({
   return (
     <SectionCard
       title="Fastboot vars"
-      className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", className)}
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-hidden max-h-[calc(100dvh-2rem)] lg:max-h-[calc(100dvh-2.5rem)] xl:max-h-[calc(100dvh-3rem)]",
+        className,
+      )}
       contentClassName="mt-4 flex min-h-0 flex-1 flex-col gap-3.5 overflow-hidden"
     >
       <div className="shrink-0 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -113,12 +115,10 @@ export const FastbootVars = memo(function FastbootVars({
           Copy vars
         </Button>
       </div>
-      <div className="relative min-h-[140px] max-h-[320px] lg:max-h-none flex-1 min-h-0 overflow-hidden rounded-md border border-border/70 bg-muted/20">
-        <ScrollArea className="h-full w-full">
-          <pre className="p-3 font-mono text-xs leading-5 text-muted-foreground select-text whitespace-pre-wrap break-all">
-            {variableOutput || "Variable output will appear here."}
-          </pre>
-        </ScrollArea>
+      <div className="flex-1 min-h-[160px] max-h-[360px] lg:max-h-[460px] overflow-y-auto rounded-md border border-border/70 bg-muted/20 p-3">
+        <pre className="font-mono text-xs leading-5 text-muted-foreground select-text whitespace-pre-wrap break-all m-0">
+          {variableOutput || "Variable output will appear here."}
+        </pre>
       </div>
     </SectionCard>
   );

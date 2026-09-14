@@ -31,7 +31,7 @@ export function SectionCard({
 }: SectionCardProps) {
   return (
     <section className={cn(sectionCardVariants({ variant }), className)}>
-      <h3 className="text-sm font-semibold tracking-[0.04em] text-foreground">{title}</h3>
+      <h3 className="shrink-0 text-sm font-semibold tracking-[0.04em] text-foreground">{title}</h3>
       <div className={cn("mt-4", contentClassName)}>{children}</div>
     </section>
   );
