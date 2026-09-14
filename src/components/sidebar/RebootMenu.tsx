@@ -8,7 +8,6 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Separator } from "@/components/ui/separator";
 import { useFlashPhase } from "@/hooks/useFlashProgress";
 import { useForceFastboot } from "@/hooks/useForceFastboot";
 import { useSimulation } from "@/hooks/useSimulation";
@@ -69,47 +68,6 @@ export const RebootMenu = memo(function RebootMenu({
     }
   }, [menuDisabled]);
 
-  const renderMenuItem = (targetKey: RebootTarget) => {
-    const meta = targetMeta[targetKey];
-    const Icon = meta.icon;
-    const isSelected = target === targetKey;
-
-    return (
-      <Menu.Item
-        key={targetKey}
-        data-selected={isSelected || undefined}
-        className={cn(
-          "group flex w-full cursor-pointer items-center gap-3 rounded-md px-2.5 py-2 text-sm outline-none transition-colors hover:bg-accent-soft focus:bg-accent-soft",
-          isSelected && "bg-accent-soft/90 text-foreground font-medium",
-        )}
-        closeOnClick
-        onClick={() => {
-          void handleReboot(targetKey);
-        }}
-      >
-        <div
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-background/60 transition-colors group-hover:border-border",
-            meta.iconColor,
-          )}
-        >
-          <Icon className="h-4 w-4" />
-        </div>
-
-        <div className="flex flex-1 flex-col justify-center text-left min-w-0">
-          <span className="text-xs font-semibold leading-tight text-foreground truncate">
-            {meta.label}
-          </span>
-          <span className="text-[11px] leading-tight text-muted-foreground truncate">
-            {meta.description}
-          </span>
-        </div>
-
-        {isSelected && <Check className="h-4 w-4 shrink-0 text-trace-copper" />}
-      </Menu.Item>
-    );
-  };
-
   return (
     <Menu.Root disabled={menuDisabled} open={menuOpen} onOpenChange={setMenuOpen}>
       <Menu.Trigger
@@ -140,34 +98,33 @@ export const RebootMenu = memo(function RebootMenu({
       </Menu.Trigger>
 
       <Menu.Portal>
-        <Menu.Backdrop className="fixed inset-0 z-50 bg-stone-950/18 backdrop-blur-sm transition-opacity duration-150 data-closed:opacity-0 data-open:opacity-100" />
         <Menu.Positioner side="right" align="start" sideOffset={8} className="isolate z-50">
-          <Menu.Popup className="z-50 w-64 rounded-lg border border-border/80 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-md outline-none">
-            <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
-              Standard Reboot
-            </div>
+          <Menu.Popup className="z-50 w-56 rounded-lg border border-border/80 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-md outline-none space-y-0.5">
+            {rebootTargets.map((targetKey) => {
+              const meta = targetMeta[targetKey];
+              const isSelected = target === targetKey;
 
-            <div className="space-y-0.5">
-              {rebootTargets
-                .filter((t) => t === "system")
-                .map((t) => renderMenuItem(t))}
-            </div>
-
-            <Separator className="my-1.5 bg-border/60" />
-
-            <div className="px-2.5 pt-1 pb-1 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase select-none">
-              Advanced Modes
-            </div>
-
-            <div className="space-y-0.5">
-              {rebootTargets
-                .filter((t) => t !== "system")
-                .map((t) => renderMenuItem(t))}
-            </div>
+              return (
+                <Menu.Item
+                  key={targetKey}
+                  data-selected={isSelected || undefined}
+                  className={cn(
+                    "group flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent-soft focus:bg-accent-soft",
+                    isSelected && "bg-accent-soft/70",
+                  )}
+                  closeOnClick
+                  onClick={() => {
+                    void handleReboot(targetKey);
+                  }}
+                >
+                  <span className="truncate">{meta.label}</span>
+                  {isSelected && <Check className="h-4 w-4 shrink-0 text-trace-copper" />}
+                </Menu.Item>
+              );
+            })}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
     </Menu.Root>
   );
 });
-
