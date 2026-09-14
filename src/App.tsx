@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { Toaster, toast } from "sonner";
-import { PlugZap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, PlugZap, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import AppLayout from "@/components/layout/AppLayout";
@@ -358,7 +358,10 @@ function AppRoot() {
 
   const hideFlashDialog = useCallback(() => {
     setFlashOpen(false);
-  }, []);
+    if (flash.phase === "complete" || flash.phase === "cancelled" || flash.phase === "error") {
+      flash.reset();
+    }
+  }, [flash]);
 
   const hideForceDialog = useCallback(() => {
     setForceOpen(false);
@@ -379,6 +382,8 @@ function AppRoot() {
     activeForceSession ||
     planState.selectedFlashCount === 0;
 
+  const hasActiveFlash = activeFlashSession || (!flashOpen && flash.phase !== "idle");
+
   const sidebarActions = ({ sidebarOpen }: { sidebarOpen: boolean }) => (
     <div className={cn("space-y-3", !sidebarOpen && "space-y-2")}>
       <RebootMenu
@@ -388,30 +393,82 @@ function AppRoot() {
         onTargetChange={setRebootTarget}
       />
 
-      <Button
-        variant="outline"
-        size={sidebarOpen ? "sm" : "icon-sm"}
-        className={cn(
-          "w-full overflow-hidden",
-          sidebarOpen ? "justify-start gap-2" : "justify-center",
-          deviceConnected &&
-            !isCheckingDevice &&
-            "animate-pulse border-success/50 bg-success/10 text-signal-green hover:bg-success/15 hover:text-signal-green",
-        )}
-        disabled={isCheckingDevice || activeFlashSession || activeForceSession}
-        aria-label={deviceConnected ? `Connected: ${deviceLabel}` : (deviceHint ?? "Check Device")}
-        title={deviceConnected ? `Connected: ${deviceLabel}` : (deviceHint ?? "Check Device")}
-        onClick={checkDevice}
-      >
-        <PlugZap className="h-4 w-4 shrink-0" />
-        <span className={cn("truncate", !sidebarOpen && "sr-only")}>
-          {isCheckingDevice
-            ? "Checking device..."
-            : deviceConnected
-              ? "Connected"
-              : "Check Device"}
-        </span>
-      </Button>
+      {hasActiveFlash ? (
+        <Button
+          variant="outline"
+          size={sidebarOpen ? "sm" : "icon-sm"}
+          className={cn(
+            "w-full overflow-hidden transition-all",
+            sidebarOpen ? "justify-start gap-2" : "justify-center",
+            activeFlashSession
+              ? "animate-pulse border-trace-copper/60 bg-trace-copper/15 text-trace-copper hover:bg-trace-copper/25 hover:text-trace-copper font-semibold"
+              : flash.phase === "complete"
+                ? "border-success/50 bg-success/10 text-signal-green hover:bg-success/15 hover:text-signal-green font-semibold"
+                : "border-error/50 bg-error/10 text-error hover:bg-error/15 hover:text-error font-semibold",
+          )}
+          onClick={() => setFlashOpen((prev) => !prev)}
+          aria-label={
+            activeFlashSession
+              ? flashOpen
+                ? "Hide Flasher Modal"
+                : "Show Flasher Modal"
+              : "View Flash Result"
+          }
+          title={
+            activeFlashSession
+              ? flashOpen
+                ? "Hide Flasher Modal"
+                : "Show Flasher Modal"
+              : "View Flash Result"
+          }
+        >
+          {activeFlashSession ? (
+            flashOpen ? (
+              <Zap className="h-4 w-4 shrink-0 text-trace-copper" />
+            ) : (
+              <Eye className="h-4 w-4 shrink-0" />
+            )
+          ) : flash.phase === "complete" ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : (
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+          )}
+          <span className={cn("truncate", !sidebarOpen && "sr-only")}>
+            {activeFlashSession
+              ? flashOpen
+                ? "Flashing..."
+                : "Show Flasher"
+              : flash.phase === "complete"
+                ? "Flash Complete"
+                : "Flash Result"}
+          </span>
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          size={sidebarOpen ? "sm" : "icon-sm"}
+          className={cn(
+            "w-full overflow-hidden",
+            sidebarOpen ? "justify-start gap-2" : "justify-center",
+            deviceConnected &&
+              !isCheckingDevice &&
+              "animate-pulse border-success/50 bg-success/10 text-signal-green hover:bg-success/15 hover:text-signal-green",
+          )}
+          disabled={isCheckingDevice || activeForceSession}
+          aria-label={deviceConnected ? `Connected: ${deviceLabel}` : (deviceHint ?? "Check Device")}
+          title={deviceConnected ? `Connected: ${deviceLabel}` : (deviceHint ?? "Check Device")}
+          onClick={checkDevice}
+        >
+          <PlugZap className="h-4 w-4 shrink-0" />
+          <span className={cn("truncate", !sidebarOpen && "sr-only")}>
+            {isCheckingDevice
+              ? "Checking device..."
+              : deviceConnected
+                ? "Connected"
+                : "Check Device"}
+          </span>
+        </Button>
+      )}
     </div>
   );
 

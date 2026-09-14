@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import { X } from "lucide-react";
+import { EyeOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -60,6 +60,17 @@ export const FlashDialog = memo(function FlashDialog({
               </DialogPrimitive.Title>
             </div>
             <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {(phase === "flashing" || phase === "waiting") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full rounded-sm whitespace-nowrap sm:w-auto"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <EyeOff className="h-3.5 w-3.5" />
+                  Hide
+                </Button>
+              )}
               {canCancel && (
                 <Button
                   variant="outline"
