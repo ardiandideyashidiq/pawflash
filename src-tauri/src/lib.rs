@@ -624,6 +624,22 @@ async fn get_var(name: String, simulate: bool) -> Result<String, AppError> {
   Ok(value)
 }
 
+#[tracing::instrument(skip_all, fields(simulate))]
+#[tauri::command]
+async fn get_all_vars(simulate: bool) -> Result<HashMap<String, String>, AppError> {
+  let _lock = DEVICE_CHECK_LOCK.lock().await;
+  let t0 = std::time::Instant::now();
+  let mut executor = AnyExecutor::connect(simulate, None).await?;
+  let connect_duration = t0.elapsed();
+  let vars = executor.get_all_vars().await.map_err(|e| {
+    warn!(error = %e, "get_all_vars failed");
+    e
+  })?;
+  let total = t0.elapsed();
+  info!(count = vars.len(), %simulate, ?connect_duration, ?total, "all variables retrieved");
+  Ok(vars)
+}
+
 #[tracing::instrument(skip(on_event), fields(simulate))]
 #[tauri::command]
 async fn disable_vbmeta(on_event: Channel<ProgressEvent>, cancel: State<'_, CancelState>, simulate: bool) -> Result<(), AppError> {
@@ -1672,6 +1688,7 @@ pub fn run() {
       unlock_bootloader,
       set_active_slot,
       get_var,
+      get_all_vars,
       disable_vbmeta,
       parse_scatter,
       build_plan,

@@ -6,8 +6,7 @@ use nusb::Endpoint;
 pub use nusb::{transfer::TransferError, Device, DeviceInfo, Interface};
 use std::{collections::HashMap, fmt::Display, io::Write};
 use thiserror::Error;
-use tracing::{debug, info, warn};
-use tracing::{instrument, trace};
+use tracing::{debug, info, instrument, trace};
 
 use crate::protocol::FastBootResponse;
 use crate::protocol::{FastBootCommand, FastBootResponseParseError};
@@ -606,11 +605,17 @@ impl NusbFastBoot {
             trace!("Response: {:?}", resp);
             match resp {
                 FastBootResponse::Info(i) => {
-                    let Some((key, value)) = i.rsplit_once(':') else {
-                        warn!("Failed to parse variable: {i}");
+                    let clean = i.strip_prefix("(bootloader)").unwrap_or(&i).trim();
+                    let Some((key, value)) = clean.rsplit_once(':') else {
+                        debug!(line = clean, "ignoring non-kv fastboot info line");
                         continue;
                     };
-                    vars.insert(key.trim().to_string(), value.trim().to_string());
+                    let k = key.trim();
+                    let v = value.trim();
+                    if k.is_empty() || (k == "all" && v == "done") {
+                        continue;
+                    }
+                    vars.insert(k.to_string(), v.to_string());
                 }
                 FastBootResponse::Text(t) => info!("Text: {}", t),
                 FastBootResponse::Data(_) => {

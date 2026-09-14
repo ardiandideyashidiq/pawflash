@@ -14,6 +14,10 @@ export function useDevice() {
     (name: string) => invoke<string>("get_var", { name, simulate }),
     [simulate],
   );
+  const getAllVariables = useCallback(
+    () => invoke<Record<string, string>>("get_all_vars", { simulate }),
+    [simulate],
+  );
   const setActiveSlot = useCallback(
     (slot: "a" | "b") => invoke<string>("set_active_slot", { slot, simulate }),
     [simulate],
@@ -31,10 +35,11 @@ export function useDevice() {
     () => ({
       check,
       getVariable,
+      getAllVariables,
       setActiveSlot,
       unlockBootloader,
       lockBootloader,
     }),
-    [check, getVariable, setActiveSlot, unlockBootloader, lockBootloader],
+    [check, getVariable, getAllVariables, setActiveSlot, unlockBootloader, lockBootloader],
   );
 }

@@ -93,6 +93,15 @@ impl AnyExecutor {
   }
 
   /// # Errors
+  /// Returns an error if the device does not respond.
+  pub async fn get_all_vars(&mut self) -> Result<HashMap<String, String>, FlashError> {
+    match self {
+      Self::Real(executor) => executor.get_all_vars().await,
+      Self::Sim(executor) => executor.get_all_vars().await,
+    }
+  }
+
+  /// # Errors
   /// Returns an error if the reboot command fails.
   pub async fn reboot_to(&mut self, target: BootTarget) -> Result<(), FlashError> {
     match self {

@@ -18,7 +18,7 @@ export const FastbootVars = memo(function FastbootVars({
   disabled = false,
   className,
 }: FastbootVarsProps) {
-  const { getVariable, check } = useDevice();
+  const { getVariable, getAllVariables } = useDevice();
   const { addEntry } = useConsole();
   const [variableName, setVariableName] = useState("");
   const [variableOutput, setVariableOutput] = useState("");
@@ -28,6 +28,10 @@ export const FastbootVars = memo(function FastbootVars({
     const trimmed = variableName.trim();
     if (!trimmed) {
       toast.error("Enter a fastboot variable name");
+      return;
+    }
+    if (trimmed.toLowerCase() === "all") {
+      void readAllVariables();
       return;
     }
     setReading(true);
@@ -48,13 +52,16 @@ export const FastbootVars = memo(function FastbootVars({
     setReading(true);
     addEntry({ text: "GetvarAll Started", level: "command" });
     try {
-      const info = await check();
-      setVariableOutput(JSON.stringify(info.vars, null, 2));
-      if (!info.connected) {
-        toast.error("No fastboot device connected");
-      } else {
-        addEntry({ text: "GetvarAll Complete", level: "success" });
-      }
+      const vars = await getAllVariables();
+      const sorted = Object.keys(vars)
+        .sort()
+        .reduce<Record<string, string>>((acc, key) => {
+          acc[key] = vars[key];
+          return acc;
+        }, {});
+      setVariableOutput(JSON.stringify(sorted, null, 2));
+      const count = Object.keys(sorted).length;
+      addEntry({ text: `GetvarAll Complete (${count} variables)`, level: "success" });
     } catch (error) {
       addEntry({ text: `GetvarAll Error ${errorMessage(error)}`, level: "error" });
       toast.error(errorMessage(error));

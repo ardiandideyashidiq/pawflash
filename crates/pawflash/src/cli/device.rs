@@ -79,10 +79,25 @@ async fn dispatch_device_action<T: pawflash_core::flash::transport::FlashTranspo
             let resp = executor.set_active_slot(&slot).await?;
             output::status::ok(format!("{slot} OKAY"), resp);
         }
-        DeviceAction::GetVar { var } => match executor.get_var(&var).await {
-            Ok(value) => output::status::data(format!("{var}: {value}")),
-            Err(e) => bail!("failed to get '{var}': {e}"),
-        },
+        DeviceAction::GetVar { var } => {
+            if var == "all" {
+                match executor.get_all_vars().await {
+                    Ok(vars) => {
+                        let mut sorted: Vec<_> = vars.into_iter().collect();
+                        sorted.sort_by(|a, b| a.0.cmp(&b.0));
+                        for (k, v) in sorted {
+                            output::status::data(format!("{k}: {v}"));
+                        }
+                    }
+                    Err(e) => bail!("failed to get all variables: {e}"),
+                }
+            } else {
+                match executor.get_var(&var).await {
+                    Ok(value) => output::status::data(format!("{var}: {value}")),
+                    Err(e) => bail!("failed to get '{var}': {e}"),
+                }
+            }
+        }
     }
 
     Ok(())
