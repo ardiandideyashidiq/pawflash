@@ -22,28 +22,14 @@ const TRANSFER_TIMEOUT: Duration = Duration::from_secs(300);
 ///
 /// Parse the sparse file header + chunk headers, split into parts that each
 /// fit within `max_download`, then send each part as a separate
-/// download+flash transaction.  The bootloader reassembles the pieces.
-/// Returns the device response message from the final split flash.
-pub(crate) async fn flash_sparse_image(
-    fb: &mut impl FlashTransport,
-    partition: &str,
-    path: &Path,
-    file_len: u64,
-    limits: &crate::flash::sparse::TransferLimits,
-    mut reporter: Option<&mut TransferReporter<'_>>,
-    buf: &mut XferBuf,
-) -> Result<String> {
-    debug!(%partition, file_len, max_download = limits.max_download, "flashing sparse image");
-
-    let mut file = tokio::fs::File::open(path).await?;
-
-    // ---- parse file header ----
+async fn parse_sparse_header_and_chunks(
+    file: &mut tokio::fs::File,
+) -> Result<(FileHeader, Vec<ChunkHeader>)> {
     let mut header_bytes = FileHeaderBytes::default();
     file.read_exact(&mut header_bytes).await?;
     let header = FileHeader::from_bytes(&header_bytes)
         .map_err(|_| FlashError::SparseParseFailed)?;
 
-    // ---- parse all chunk headers, skipping data ----
     let mut chunks = Vec::with_capacity(header.chunks as usize);
     for _ in 0..header.chunks {
         let mut chunk_bytes = [0u8; CHUNK_HEADER_BYTES_LEN];
@@ -61,6 +47,26 @@ pub(crate) async fn flash_sparse_image(
         }
         chunks.push(chunk);
     }
+    Ok((header, chunks))
+}
+
+/// Flash an Android sparse image to a partition, splitting into chunks that
+/// fit within `max_download`.  Each split is sent as an independent
+/// download+flash transaction.  The bootloader reassembles the pieces.
+/// Returns the device response message from the final split flash.
+pub(crate) async fn flash_sparse_image(
+    fb: &mut impl FlashTransport,
+    partition: &str,
+    path: &Path,
+    file_len: u64,
+    limits: &crate::flash::sparse::TransferLimits,
+    mut reporter: Option<&mut TransferReporter<'_>>,
+    buf: &mut XferBuf,
+) -> Result<String> {
+    debug!(%partition, file_len, max_download = limits.max_download, "flashing sparse image");
+
+    let mut file = tokio::fs::File::open(path).await?;
+    let (header, chunks) = parse_sparse_header_and_chunks(&mut file).await?;
 
     info!(%partition, chunk_count = chunks.len(), "parsed sparse image header");
 
@@ -133,11 +139,13 @@ pub(crate) async fn flash_sparse_image(
                     // intermediate transfer-buffer copy.
                     let direct = sender.get_mut_data(to_read).await?;
                     read_exact_padded_or_truncate(&mut file, direct, chunk.size).await?;
-                    file_pos += direct.len() as u64;
+                    let n = direct.len() as u64;
+                    file_pos += n;
+                    written += n;
                     if let Some(rep) = reporter.as_mut() {
-                        rep.inc(direct.len() as u64);
+                        rep.inc(n);
+                        rep.report(written, total_download);
                     }
-                    written += direct.len() as u64;
                     remaining = remaining.saturating_sub(direct.len());
                 }
             }
@@ -231,11 +239,17 @@ pub(crate) async fn flash_sparse_wrapped(
 
         // file header for this split
         sender.extend_from_slice(&split.header.to_bytes()).await?;
+        if let Some(rep) = reporter.as_mut() {
+            rep.inc(FILE_HEADER_BYTES_LEN as u64);
+        }
         written += FILE_HEADER_BYTES_LEN as u64;
 
         // chunk headers + data for each chunk in this split
         for chunk in &split.chunks {
             sender.extend_from_slice(&chunk.header.to_bytes()).await?;
+            if let Some(rep) = reporter.as_mut() {
+                rep.inc(CHUNK_HEADER_BYTES_LEN as u64);
+            }
             written += CHUNK_HEADER_BYTES_LEN as u64;
 
             if chunk.size > 0 {
@@ -259,8 +273,13 @@ pub(crate) async fn flash_sparse_wrapped(
                     // past the end of the file for block alignment.  Zero-filling
                     // the tail is correct.
                     read_exact_padded(&mut file, direct).await?;
-                    file_pos += direct.len() as u64;
-                    written += direct.len() as u64;
+                    let n = direct.len() as u64;
+                    file_pos += n;
+                    written += n;
+                    if let Some(rep) = reporter.as_mut() {
+                        rep.inc(n);
+                        rep.report(written, total_sent);
+                    }
                     remaining = remaining.saturating_sub(direct.len());
                 }
             }

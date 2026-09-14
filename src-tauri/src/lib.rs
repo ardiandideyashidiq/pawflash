@@ -1397,10 +1397,24 @@ async fn flash_raw_image(
     });
     return Err(format!("{target} is a {role} partition; refusing without explicit confirmation").into());
   }
-  let resp = executor.flash_raw_image(&target, path).await.map_err(|e| {
-    warn!(%target, error = %e, "flash_raw_image failed");
-    e.to_string()
-  })?;
+  let mut on_transfer = |ev: FlashTransferEvent| {
+    let _ = on_event.send(ProgressEvent::Flashing {
+      partition: ev.partition,
+      operation: ev.operation,
+      bytes: ev.bytes,
+      total: ev.total,
+      overall_bytes: ev.overall_bytes,
+      overall_total: ev.overall_total,
+    });
+  };
+
+  let resp = executor
+    .flash_raw_image_with_callback(&target, path, Some(&mut on_transfer))
+    .await
+    .map_err(|e| {
+      warn!(%target, error = %e, "flash_raw_image failed");
+      e.to_string()
+    })?;
 
   info!(%target, response = %resp, "raw flash complete");
   send_progress(&on_event, ProgressEvent::FlashComplete { partition: target, success: true, response: Some(resp.clone()) });

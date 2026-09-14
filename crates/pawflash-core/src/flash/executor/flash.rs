@@ -28,21 +28,16 @@ impl<T: FlashTransport> FlashExecutor<T> {
     /// # Panics
     /// Panics if `EMPTY_VBMETA` exceeds 4 GiB (impossible for a 512-byte image).
     pub async fn flash_empty_vbmeta(&mut self) -> Result<String> {
-        // vbmeta is an A/B partition on virtually all devices; verify the
-        // device actually has it slotted before flashing both halves.
-        if let Ok(has_slot) = self.fb.get_var("has-slot:vbmeta").await {
-            if has_slot != "yes" {
-                return Err(FlashError::ActionFailed {
-                    partition: "vbmeta".into(),
-                    reason: format!("device has-slot:vbmeta is '{has_slot}', expected 'yes'"),
-                });
-            }
-        }
+        let is_slotted = self.fb.get_var("has-slot:vbmeta").await.map_or(true, |s| s == "yes");
+        let partitions: Vec<String> = if is_slotted {
+            vec!["vbmeta_a".into(), "vbmeta_b".into()]
+        } else {
+            vec!["vbmeta".into()]
+        };
         let data = EMPTY_VBMETA;
-        debug!("flashing empty vbmeta to both slots");
+        debug!(is_slotted, "flashing empty vbmeta");
         let mut last_resp = String::new();
-        for slot in &["a", "b"] {
-            let partition = format!("vbmeta_{slot}");
+        for partition in partitions {
             info!(%partition, "flashing empty vbmeta");
             let size = u32::try_from(data.len())
                 .expect("EMPTY_VBMETA is 512 bytes, always fits in u32");
@@ -60,22 +55,54 @@ impl<T: FlashTransport> FlashExecutor<T> {
         Ok(last_resp)
     }
 
-    /// Flash a raw image to a partition. Public entry point for `flash-raw`.
-    /// Returns the device response message.
+    /// Flash a raw (non-sparse) or sparse image to a single partition,
+    /// optionally streaming transfer progress via `on_transfer`.
     ///
     /// # Errors
     ///
     /// Returns an error if the image file cannot be read, the device cannot
     /// accept the data, or the flash command fails.
-    pub async fn flash_raw_image(
+    pub async fn flash_raw_image_with_callback(
         &mut self,
         partition: &str,
         image_path: &Path,
+        mut on_transfer: Option<&mut (dyn FnMut(FlashTransferEvent) + Send)>,
     ) -> Result<String> {
         debug!(%partition, image_path = %image_path.display(), "flash_raw_image entry");
         let max_download = self.max_download().await?;
 
-        self.flash_image_to_partition(partition, image_path, max_download, None, None).await
+        let mut on_bytes: Option<Box<dyn FnMut(u64, u64) + Send + '_>> = None;
+        if let Some(cb) = on_transfer.as_mut() {
+            let callback = &mut **cb;
+            let part_name = partition.to_string();
+            on_bytes = Some(Box::new(move |bytes: u64, total: u64| {
+                callback(FlashTransferEvent {
+                    partition: part_name.clone(),
+                    operation: "flash".into(),
+                    bytes,
+                    total,
+                    overall_bytes: bytes,
+                    overall_total: total,
+                });
+            }));
+        }
+
+        let mut reporter = on_bytes.as_mut().map(|cb| {
+            TransferReporter::new(None, Some(cb.as_mut() as &mut (dyn FnMut(u64, u64) + Send)))
+        });
+
+        self.flash_image_to_partition(partition, image_path, max_download, None, reporter.as_mut()).await
+    }
+
+    /// Flash a raw or sparse image file to a single partition without a scatter
+    /// plan. Routes through sparse-wrapping when the file exceeds `max_download`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the image file cannot be read, the device cannot
+    /// accept the data, or the flash command fails.
+    pub async fn flash_raw_image(&mut self, partition: &str, path: &Path) -> Result<String> {
+        self.flash_raw_image_with_callback(partition, path, None).await
     }
 
     /// Shared helper: erase partition, then download+flash (single or chunked).

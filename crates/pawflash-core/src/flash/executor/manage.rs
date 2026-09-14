@@ -31,19 +31,42 @@ impl<T: FlashTransport> FlashExecutor<T> {
     /// # Errors
     /// Returns an error if the reboot command fails.
     pub async fn reboot_to(&mut self, target: BootTarget) -> Result<()> {
-        self.fb.reboot_to(target.as_str()).await
+        match target {
+            BootTarget::System => self.fb.reboot().await,
+            _ => self.fb.reboot_to(target.as_str()).await,
+        }
     }
 
     /// # Errors
     /// Returns an error if the flashing command fails.
     pub async fn flashing_lock(&mut self) -> Result<String> {
-        self.fb.flashing("lock").await
+        match self.fb.flashing("lock").await {
+            Ok(resp) => Ok(resp),
+            Err(e) => {
+                let err_str = e.to_string().to_ascii_lowercase();
+                if err_str.contains("unknown") || err_str.contains("not recognized") {
+                    self.fb.oem("lock").await
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     /// # Errors
     /// Returns an error if the flashing command fails.
     pub async fn flashing_unlock(&mut self) -> Result<String> {
-        self.fb.flashing("unlock").await
+        match self.fb.flashing("unlock").await {
+            Ok(resp) => Ok(resp),
+            Err(e) => {
+                let err_str = e.to_string().to_ascii_lowercase();
+                if err_str.contains("unknown") || err_str.contains("not recognized") {
+                    self.fb.oem("unlock").await
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     /// # Errors

@@ -200,6 +200,12 @@ impl FlashTransport for SimulatedTransport {
         Ok(format!("OKAY flashing {cmd}"))
     }
 
+    async fn oem(&mut self, cmd: &str) -> Result<String> {
+        self.commands.push(format!("SIM oem:{cmd}"));
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        Ok(format!("OKAY oem {cmd}"))
+    }
+
     async fn set_active(&mut self, slot: &str) -> Result<String> {
         self.commands.push(format!("SIM set_active:{slot}"));
         tokio::time::sleep(Duration::from_millis(500)).await;

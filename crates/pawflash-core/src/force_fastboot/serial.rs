@@ -193,6 +193,38 @@ const fn should_match_existing(check_fastboot: bool, in_fastboot: bool) -> bool 
     !(check_fastboot && in_fastboot)
 }
 
+#[must_use]
+pub fn confirmed_preloader_ports() -> HashSet<String> {
+    let ports = match tokio_serial::available_ports() {
+        Ok(ports) => ports,
+        Err(err) => {
+            warn!(%err, "failed to enumerate serial ports");
+            return HashSet::new();
+        }
+    };
+
+    ports
+        .into_iter()
+        .filter_map(|p| {
+            if is_confirmed_port(&p) {
+                Some(p.port_name)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn is_confirmed_port(info: &tokio_serial::SerialPortInfo) -> bool {
+    if !is_candidate_serial_port(&info.port_name) {
+        return false;
+    }
+    match &info.port_type {
+        tokio_serial::SerialPortType::UsbPort(usb) => usb.vid == 0x0e8d,
+        _ => false,
+    }
+}
+
 /// Wait for a new preloader serial port to appear, checking for cancellation.
 ///
 /// An already-present candidate port (in the set at entry) is matched
@@ -233,10 +265,12 @@ pub async fn wait_for_preloader_with_cancel(
             return Ok(None);
         }
 
-        // If we are not already in fastboot, an existing preloader port is a
-        // match — do not require it to appear after we started polling.
-        if let Some(port) = initial.iter().next().cloned() {
-            info!(%port, "preloader port already present");
+        // If we are not already in fastboot, an existing confirmed preloader
+        // port (MediaTek VID) is a match. Unknown-type ports from the initial
+        // snapshot are not matched immediately to avoid false-positive matches
+        // on static motherboard/PCI COM ports on Windows (e.g. COM1).
+        if let Some(port) = confirmed_preloader_ports().into_iter().next() {
+            info!(%port, "MediaTek preloader port already present");
             return Ok(Some(port));
         }
 
@@ -277,7 +311,8 @@ pub async fn wait_for_preloader(
 /// Candidates that cannot actually be opened are skipped, so stale or phantom
 /// COM entries on Windows (left over while a device re-enumerates) never
 /// match. On Windows, non-MediaTek ports are also skipped to prevent
-/// returning the wrong device. Returns `None` once `timeout` elapses or the
+/// returning the wrong device. Checks for fastboot mode during each iteration.
+/// Returns `None` once `timeout` elapses, fastboot mode is entered, or the
 /// operation is cancelled.
 ///
 /// # Errors
@@ -285,6 +320,7 @@ pub async fn wait_for_preloader(
 /// Returns an error if serial port enumeration fails.
 pub async fn wait_for_reconnect(
     timeout: Duration,
+    expected_port: Option<&str>,
     cancel: Option<&AtomicBool>,
 ) -> Result<Option<String>> {
     let deadline = tokio::time::Instant::now() + timeout;
@@ -292,10 +328,19 @@ pub async fn wait_for_reconnect(
         if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             return Ok(None);
         }
+        if in_fastboot_mode().await {
+            info!("device entered fastboot mode during wait for reconnect");
+            return Ok(None);
+        }
         if tokio::time::Instant::now() >= deadline {
             return Ok(None);
         }
-        for port in serial_ports() {
+        if let Some(port) = expected_port {
+            if open_serial(port).is_ok() {
+                return Ok(Some(port.to_string()));
+            }
+        }
+        for port in confirmed_preloader_ports() {
             if open_serial(&port).is_ok() {
                 return Ok(Some(port));
             }

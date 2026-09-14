@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use pawflash_core::flash::error::FlashError;
 use pawflash_core::flash::executor::{BootTarget, FlashExecutor};
-use pawflash_core::flash::progress::FlashRunOptions;
+use pawflash_core::flash::progress::{FlashRunOptions, FlashTransferEvent};
 use pawflash_core::flash::results::FlashResult;
 use pawflash_core::flash::simulate::{simulated_vars, SimulatedTransport};
 use pawflash_core::scatter_parser::types::ScatterFile;
@@ -137,12 +137,18 @@ impl AnyExecutor {
     }
   }
 
+
   /// # Errors
   /// Returns an error if the image cannot be read or the flash fails.
-  pub async fn flash_raw_image(&mut self, partition: &str, image_path: &Path) -> Result<String, FlashError> {
+  pub async fn flash_raw_image_with_callback(
+    &mut self,
+    partition: &str,
+    image_path: &Path,
+    on_transfer: Option<&mut (dyn FnMut(FlashTransferEvent) + Send)>,
+  ) -> Result<String, FlashError> {
     match self {
-      Self::Real(executor) => executor.flash_raw_image(partition, image_path).await,
-      Self::Sim(executor) => executor.flash_raw_image(partition, image_path).await,
+      Self::Real(executor) => executor.flash_raw_image_with_callback(partition, image_path, on_transfer).await,
+      Self::Sim(executor) => executor.flash_raw_image_with_callback(partition, image_path, on_transfer).await,
     }
   }
 

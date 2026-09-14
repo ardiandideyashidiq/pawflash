@@ -13,17 +13,50 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
   const { addEntry } = useConsole();
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [lockOpen, setLockOpen] = useState(false);
+  const [unlockSuccess, setUnlockSuccess] = useState(false);
+  const [lockSuccess, setLockSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const run = async (fn: () => Promise<string>, action: string, successMsg: string) => {
+  const handleOpenUnlock = (open: boolean) => {
+    setUnlockOpen(open);
+    if (!open) {
+      setUnlockSuccess(false);
+    }
+  };
+
+  const handleOpenLock = (open: boolean) => {
+    setLockOpen(open);
+    if (!open) {
+      setLockSuccess(false);
+    }
+  };
+
+  const runUnlock = async () => {
     setBusy(true);
-    addEntry({ text: `${action} Started`, level: "info" });
+    addEntry({ text: "BootloaderUnlock Started", level: "info" });
     try {
-      await fn();
-      addEntry({ text: `${action} Complete`, level: "success" });
-      toast.success(successMsg);
+      await unlockBootloader();
+      addEntry({ text: "BootloaderUnlock Complete", level: "success" });
+      toast.success("Bootloader unlocked");
+      setUnlockSuccess(true);
     } catch (e) {
-      addEntry({ text: `${action} Error ${errorMessage(e)}`, level: "error" });
+      addEntry({ text: `BootloaderUnlock Error ${errorMessage(e)}`, level: "error" });
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runLock = async () => {
+    setBusy(true);
+    addEntry({ text: "BootloaderLock Started", level: "info" });
+    try {
+      await lockBootloader();
+      addEntry({ text: "BootloaderLock Complete", level: "success" });
+      toast.success("Bootloader locked");
+      setLockSuccess(true);
+    } catch (e) {
+      addEntry({ text: `BootloaderLock Error ${errorMessage(e)}`, level: "error" });
       toast.error(errorMessage(e));
     } finally {
       setBusy(false);
@@ -36,7 +69,7 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
         variant="destructive"
         className="w-full justify-start gap-3"
         disabled={disabled || busy}
-        onClick={() => setUnlockOpen(true)}
+        onClick={() => handleOpenUnlock(true)}
       >
         <LockOpen className="h-4 w-4" />
         Unlock
@@ -45,7 +78,7 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
         variant="outline"
         className="w-full justify-start gap-3"
         disabled={disabled || busy}
-        onClick={() => setLockOpen(true)}
+        onClick={() => handleOpenLock(true)}
       >
         <Lock className="h-4 w-4" />
         Lock
@@ -53,20 +86,26 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
 
       <ConfirmDialog
         open={unlockOpen}
-        onOpenChange={setUnlockOpen}
+        onOpenChange={handleOpenUnlock}
         title="Unlock Bootloader"
+        description="Unlocking the bootloader allows flashing custom images and modifying partitions, but may wipe user data."
         destructive
         confirmLabel="Unlock"
         isPending={busy}
-        onConfirm={() => run(unlockBootloader, "BootloaderUnlock", "Bootloader unlocked")}
+        isSuccess={unlockSuccess}
+        successMessage="Bootloader unlocked successfully."
+        onConfirm={runUnlock}
       />
       <ConfirmDialog
         open={lockOpen}
-        onOpenChange={setLockOpen}
+        onOpenChange={handleOpenLock}
         title="Lock Bootloader"
+        description="Locking the bootloader enforces signature verification and may wipe user data."
         confirmLabel="Lock"
         isPending={busy}
-        onConfirm={() => run(lockBootloader, "BootloaderLock", "Bootloader locked")}
+        isSuccess={lockSuccess}
+        successMessage="Bootloader locked successfully."
+        onConfirm={runLock}
       />
     </SectionCard>
   );

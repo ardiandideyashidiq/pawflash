@@ -71,6 +71,7 @@ pub async fn handshake(
             }
             Err(err) => {
                 warn!(%err, sends = count, "serial write failed");
+                drop(dev);
                 on_event(HandshakeEvent::PortLost { port: port.clone() });
 
                 if in_fastboot_mode().await {
@@ -78,8 +79,7 @@ pub async fn handshake(
                     break;
                 }
 
-                drop(dev);
-                if let Some(new_port) = wait_for_reconnect(RECONNECT_WINDOW, cancel).await? {
+                if let Some(new_port) = wait_for_reconnect(RECONNECT_WINDOW, Some(&port), cancel).await? {
                     debug!(port = %new_port, "reconnected after port loss");
                     port = new_port;
                     on_event(HandshakeEvent::PortReconnected { port: port.clone() });

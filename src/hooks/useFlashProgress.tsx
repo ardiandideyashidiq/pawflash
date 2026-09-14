@@ -100,7 +100,7 @@ function computeSpeed(
   }
   if (partitionStart && partitionStart.at >= 0) {
     const dt = (now - partitionStart.at) / 1000;
-    if (dt >= SPEED_MIN_DT_MS / 1000) {
+    if (dt >= SPEED_MIN_DT_MS / 1000 && dt <= SPEED_WINDOW_MS / 1000) {
       return Math.max(0, (currentBytes - partitionStart.bytes) / dt);
     }
   }
@@ -162,6 +162,13 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
         }
 
         const samples = speedSamplesRef.current;
+        const lastSample = samples[samples.length - 1];
+        if (lastSample && now - lastSample.at > 1500) {
+          // Device was busy writing to storage; reset the transfer window
+          // so the pause does not collapse the instantaneous transfer speed.
+          samples.length = 0;
+        }
+
         // Bytes are per-partition; ignore regressions (e.g. a re-seeded
         // partition) so the window never slopes backwards.
         if (bytes >= (samples[samples.length - 1]?.bytes ?? 0)) {
@@ -186,7 +193,7 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
           partition: event.data.partition,
           bytes: event.data.bytes,
           total: event.data.total,
-          speedBps,
+          speedBps: speedBps > 0 ? speedBps : (samples.length === 1 && prev.speedBps > 0 ? prev.speedBps : 0),
           overallBytes: event.data.overall_bytes,
           overallTotal: event.data.overall_total,
           statusText: "",

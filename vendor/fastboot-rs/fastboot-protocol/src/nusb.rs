@@ -214,6 +214,7 @@ impl NusbFastBoot {
                     || d.eq_ignore_ascii_case("androidwinusb")
                     || d.eq_ignore_ascii_case("androidwinusb86")
                     || d.eq_ignore_ascii_case("androidusb")
+                    || d.eq_ignore_ascii_case("usbccgp")
             });
             let string_matches = info.product_string().is_some_and(|s| {
                 let lower = s.to_ascii_lowercase();
@@ -296,6 +297,7 @@ impl NusbFastBoot {
         let interface =
             Self::find_fastboot_interface(info).ok_or(NusbFastBootOpenError::MissingInterface)?;
         let device = info.open().await.map_err(NusbFastBootOpenError::Device)?;
+        debug!(speed = ?device.speed(), "fastboot device opened");
         Self::from_device(device, interface).await
     }
 
@@ -432,6 +434,13 @@ impl NusbFastBoot {
     /// Returns the device response message on success.
     pub async fn flashing(&mut self, cmd: &str) -> Result<String, NusbFastBootError> {
         let c = FastBootCommand::Flashing(cmd);
+        self.execute(c).await
+    }
+
+    /// Send an OEM command (e.g. "unlock", "lock").
+    /// Returns the device response message on success.
+    pub async fn oem(&mut self, cmd: &str) -> Result<String, NusbFastBootError> {
+        let c = FastBootCommand::Oem(cmd);
         self.execute(c).await
     }
 

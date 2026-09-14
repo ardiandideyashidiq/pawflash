@@ -76,6 +76,7 @@ pub trait FlashTransport {
     async fn reboot(&mut self) -> Result<()>;
     async fn reboot_to(&mut self, target: &str) -> Result<()>;
     async fn flashing(&mut self, cmd: &str) -> Result<String>;
+    async fn oem(&mut self, cmd: &str) -> Result<String>;
     async fn set_active(&mut self, slot: &str) -> Result<String>;
     async fn snapshot_update(&mut self, cmd: &str) -> Result<String>;
 }
@@ -113,6 +114,10 @@ impl FlashTransport for fastboot_protocol::nusb::NusbFastBoot {
 
     async fn flashing(&mut self, cmd: &str) -> Result<String> {
         self.flashing(cmd).await.map_err(FlashError::from)
+    }
+
+    async fn oem(&mut self, cmd: &str) -> Result<String> {
+        self.oem(cmd).await.map_err(FlashError::from)
     }
 
     async fn set_active(&mut self, slot: &str) -> Result<String> {

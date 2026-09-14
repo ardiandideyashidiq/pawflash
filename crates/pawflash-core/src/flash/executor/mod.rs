@@ -38,6 +38,7 @@ pub enum BootTarget {
     Bootloader,
     Fastboot,
     Recovery,
+    System,
 }
 
 impl BootTarget {
@@ -47,6 +48,7 @@ impl BootTarget {
             Self::Bootloader => "bootloader",
             Self::Fastboot => "fastboot",
             Self::Recovery => "recovery",
+            Self::System => "system",
         }
     }
 }
@@ -65,6 +67,7 @@ impl std::str::FromStr for BootTarget {
             "bootloader" => Ok(Self::Bootloader),
             "fastbootd" | "fastboot" => Ok(Self::Fastboot),
             "recovery" => Ok(Self::Recovery),
+            "system" | "normal" => Ok(Self::System),
             _ => Err(format!("unknown reboot target '{s}'")),
         }
     }

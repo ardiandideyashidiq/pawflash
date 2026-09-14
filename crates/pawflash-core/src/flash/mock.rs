@@ -145,6 +145,11 @@ impl FlashTransport for MockTransport {
         Ok(format!("OKAY flashing {cmd}"))
     }
 
+    async fn oem(&mut self, cmd: &str) -> Result<String> {
+        self.commands.push(format!("oem:{cmd}"));
+        Ok(format!("OKAY oem {cmd}"))
+    }
+
     async fn set_active(&mut self, slot: &str) -> Result<String> {
         self.commands.push(format!("set_active:{slot}"));
         Ok(format!("OKAY set_active {slot}"))

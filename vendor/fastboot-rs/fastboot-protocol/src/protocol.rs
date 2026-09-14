@@ -41,6 +41,8 @@ pub enum FastBootCommand<S> {
     ResizeLogicalPartition { partition: S, size: u64 },
     /// Snapshot update management (cancel, merge)
     SnapshotUpdate(S),
+    /// OEM commands (e.g. oem unlock, oem lock)
+    Oem(S),
 }
 
 impl<S: Display> Display for FastBootCommand<S> {
@@ -58,6 +60,7 @@ impl<S: Display> Display for FastBootCommand<S> {
                 write!(f, "resize-logical-partition:{partition}:{size}")
             }
             FastBootCommand::SnapshotUpdate(cmd) => write!(f, "snapshot-update:{cmd}"),
+            FastBootCommand::Oem(cmd) => write!(f, "oem {cmd}"),
         }
     }
 }
