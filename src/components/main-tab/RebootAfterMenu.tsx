@@ -52,7 +52,7 @@ export const RebootAfterMenu = memo(function RebootAfterMenu({
 
       <Menu.Portal>
         <Menu.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50">
-          <Menu.Popup className="z-50 w-56 rounded-lg border border-border/80 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-md outline-none space-y-0.5">
+          <Menu.Popup className="z-50 w-56 rounded-lg border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-xl outline-none space-y-0.5">
             <Menu.Item
               className={cn(
                 "group flex w-full cursor-pointer items-center justify-between rounded-md px-3 py-2 text-sm font-medium text-foreground outline-none transition-colors hover:bg-accent-soft focus:bg-accent-soft",

@@ -452,7 +452,7 @@ function AppRoot() {
             sidebarOpen ? "justify-start gap-2" : "justify-center",
             deviceConnected &&
               !isCheckingDevice &&
-              "animate-pulse border-success/50 bg-success/10 text-signal-green hover:bg-success/15 hover:text-signal-green",
+              "border-success/50 bg-success/10 text-signal-green hover:bg-success/15 hover:text-signal-green",
           )}
           disabled={isCheckingDevice || activeForceSession}
           aria-label={deviceConnected ? `Connected: ${deviceLabel}` : (deviceHint ?? "Check Device")}

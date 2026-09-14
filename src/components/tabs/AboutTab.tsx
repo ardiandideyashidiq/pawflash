@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { AlertTriangle, Code2, Cpu, ExternalLink, ShieldCheck, Terminal, Zap } from "lucide-react";
+import { Code2, Cpu, ExternalLink, Terminal, Zap } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useConsole } from "@/hooks/useConsole";
@@ -58,13 +58,8 @@ export default function AboutTab() {
 
   return (
     <div className="relative min-h-full flex flex-col gap-4 w-full">
-      {/* OPEN SOURCE CREDITS 2x2 GRID */}
-      <div className="space-y-2">
-        <h4 className="text-sm font-semibold tracking-[0.04em] text-foreground px-1">
-          Open Source
-        </h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {CREDITS.map((credit) => {
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {CREDITS.map((credit) => {
             const Icon = credit.icon;
             return (
               <div
@@ -103,36 +98,18 @@ export default function AboutTab() {
               </div>
             );
           })}
-        </div>
       </div>
 
-      {/* SIMULATION MODE TOGGLE CARD (BELOW CREDITS GRID) */}
       {available && (
-        <div className="panel-shell p-4 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <ShieldCheck className="h-4.5 w-4.5 text-primary" />
-              <div>
-                <Label htmlFor="simulation-mode" className="text-xs font-semibold cursor-pointer">
-                  Simulation Mode
-                </Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Simulate device hardware I/O operations safely
-                </p>
-              </div>
-            </div>
-            <Switch
-              id="simulation-mode"
-              checked={simulate}
-              onCheckedChange={(v) => toggleSimulation(v)}
-            />
-          </div>
-          {simulate && (
-            <div className="flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              <span>SIMULATED MODE ACTIVE — real device I/O is bypassed.</span>
-            </div>
-          )}
+        <div className="flex items-center justify-between px-1 py-2">
+          <Label htmlFor="simulation-mode" className="text-sm text-foreground cursor-pointer">
+            Simulation mode
+          </Label>
+          <Switch
+            id="simulation-mode"
+            checked={simulate}
+            onCheckedChange={(v) => toggleSimulation(v)}
+          />
         </div>
       )}
     </div>

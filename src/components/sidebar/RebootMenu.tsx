@@ -99,7 +99,7 @@ export const RebootMenu = memo(function RebootMenu({
 
       <Menu.Portal>
         <Menu.Positioner side="right" align="start" sideOffset={8} className="isolate z-50">
-          <Menu.Popup className="z-50 w-56 rounded-lg border border-border/80 bg-popover/95 p-1.5 text-popover-foreground shadow-xl backdrop-blur-md outline-none space-y-0.5">
+          <Menu.Popup className="z-50 w-56 rounded-lg border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-xl outline-none space-y-0.5">
             {rebootTargets.map((targetKey) => {
               const meta = targetMeta[targetKey];
               const isSelected = target === targetKey;
