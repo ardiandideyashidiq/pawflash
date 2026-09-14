@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { Toaster, toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Eye, PlugZap, Zap } from "lucide-react";
@@ -84,12 +84,13 @@ function AppRoot() {
   const activeFlashSession = flash.phase === "waiting" || flash.phase === "flashing";
   const activeForceSession = force.phase === "waiting";
 
+  const inFlightDeviceCheckRef = useRef<Promise<DeviceInfo | null> | null>(null);
+
   const fetchDevice = useCallback(
     async (notify: boolean) => {
-      try {
-        const info = await device.check();
-        setDeviceInfo(info);
-        if (notify) {
+      if (inFlightDeviceCheckRef.current) {
+        const info = await inFlightDeviceCheckRef.current;
+        if (notify && info) {
           if (info.connected) {
             toast.success(`Connected: ${info.serial || info.vars.product || "device"}`);
           } else if (info.hint) {
@@ -99,18 +100,39 @@ function AppRoot() {
           }
         }
         return info;
-      } catch (error) {
-        const message = errorMessage(error);
-        addEntry({ text: `DeviceCheck Error ${message}`, level: "error" });
-        if (notify) toast.error(message);
-        return null;
       }
+
+      const promise = (async () => {
+        try {
+          const info = await device.check();
+          setDeviceInfo(info);
+          if (notify) {
+            if (info.connected) {
+              toast.success(`Connected: ${info.serial || info.vars.product || "device"}`);
+            } else if (info.hint) {
+              toast.warning(info.hint);
+            } else {
+              toast.info("No fastboot device connected");
+            }
+          }
+          return info;
+        } catch (error) {
+          const message = errorMessage(error);
+          addEntry({ text: `DeviceCheck Error ${message}`, level: "error" });
+          if (notify) toast.error(message);
+          return null;
+        } finally {
+          inFlightDeviceCheckRef.current = null;
+        }
+      })();
+
+      inFlightDeviceCheckRef.current = promise;
+      return promise;
     },
     [device, addEntry],
   );
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchDevice(false);
   }, [fetchDevice]);
 
@@ -142,7 +164,7 @@ function AppRoot() {
     if (isBusy) return;
 
     const intervalId = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" && !inFlightDeviceCheckRef.current) {
         void fetchDevice(false);
       }
     }, 2500);

@@ -82,6 +82,7 @@ pub async fn run(simulate: bool) -> Result<()> {
     let hint = pawflash_core::platform::CURRENT.post_handshake_hint();
     if !hint.is_empty() && !fastboot::in_fastboot_mode().await {
         output::status::warn("[!]", hint);
+        fastboot::log_fastboot_diagnostics().await;
     }
 
     info!(total_secs = start_all.elapsed().as_secs_f32(), sends = count, "force-fastboot complete");

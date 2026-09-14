@@ -34,7 +34,7 @@ export default function ExtrasTab({
           onManualFlash={onManualFlash}
         />
       </div>
-      <div className="flex min-h-[300px] flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         <FastbootVars disabled={menuActionDisabled} className="h-full flex-1 min-h-0" />
       </div>
     </div>

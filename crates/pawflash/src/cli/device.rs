@@ -56,8 +56,8 @@ async fn dispatch_device_action<T: pawflash_core::flash::transport::FlashTranspo
 ) -> Result<()> {
     match action {
         DeviceAction::Info => {
-            let vars = executor.get_all_vars().await?;
-            output::status::data(output::tables::device_info(&vars));
+            let vars = executor.device_vars();
+            output::status::data(output::tables::device_info(vars));
         }
         DeviceAction::Reboot { target } => {
             info!(%target, "rebooting device");

@@ -74,10 +74,15 @@ pub async fn handshake(
                 drop(dev);
                 on_event(HandshakeEvent::PortLost { port: port.clone() });
 
+                debug!(port = %port, sends = count, "preloader port lost; checking fastboot mode");
+
                 if in_fastboot_mode().await {
                     debug!("fastboot mode detected after write failure");
                     break;
                 }
+
+                #[cfg(target_os = "windows")]
+                super::fastboot::log_fastboot_diagnostics().await;
 
                 if let Some(new_port) = wait_for_reconnect(RECONNECT_WINDOW, Some(&port), cancel).await? {
                     debug!(port = %new_port, "reconnected after port loss");
@@ -94,6 +99,8 @@ pub async fn handshake(
                     return Err(Error::PortLostBeforeWrite { port: port.clone() });
                 }
                 debug!(sends = count, "preloader port did not reappear — device left preloader");
+                #[cfg(target_os = "windows")]
+                super::fastboot::log_fastboot_diagnostics().await;
                 break;
             }
         }

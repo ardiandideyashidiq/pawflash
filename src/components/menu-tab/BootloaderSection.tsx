@@ -66,7 +66,7 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
   return (
     <SectionCard title="Bootloader" contentClassName="grid grid-cols-2 gap-3">
       <Button
-        variant="destructive"
+        variant="outline"
         className="w-full justify-center gap-2.5 px-4 py-2"
         disabled={disabled || busy}
         onClick={() => handleOpenUnlock(true)}
@@ -88,7 +88,6 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
         open={unlockOpen}
         onOpenChange={handleOpenUnlock}
         title="Unlock Bootloader"
-        description="Unlocking the bootloader allows flashing custom images and modifying partitions, but may wipe user data."
         destructive
         confirmLabel="Unlock"
         isPending={busy}
@@ -100,7 +99,6 @@ export function BootloaderSection({ disabled = false }: { disabled?: boolean }) 
         open={lockOpen}
         onOpenChange={handleOpenLock}
         title="Lock Bootloader"
-        description="Locking the bootloader enforces signature verification and may wipe user data."
         confirmLabel="Lock"
         isPending={busy}
         isSuccess={lockSuccess}

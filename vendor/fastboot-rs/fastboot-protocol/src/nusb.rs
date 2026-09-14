@@ -55,6 +55,7 @@ pub struct Probe {
     pub driver: Option<String>,
     pub kind: InterfaceKind,
     pub iface_count: usize,
+    pub product: Option<String>,
 }
 
 impl Probe {
@@ -85,6 +86,7 @@ impl Probe {
             driver: None,
             kind,
             iface_count,
+            product: info.product_string().map(str::to_owned),
         }
     }
 
@@ -126,6 +128,8 @@ pub async fn probe() -> Result<Vec<Probe>, nusb::Error> {
             vidpid = p.vidpid(),
             kind = ?p.kind,
             serial = p.serial.as_deref().unwrap_or("?"),
+            driver = p.driver.as_deref().unwrap_or("<none>"),
+            product = p.product.as_deref().unwrap_or("<none>"),
             "usb device probe",
         );
     }
@@ -137,6 +141,17 @@ pub async fn devices() -> Result<impl Iterator<Item = DeviceInfo>, nusb::Error> 
     let all = all_devices().await?;
     debug!(total = all.len(), "nusb raw devices");
     for d in &all {
+        #[cfg(target_os = "windows")]
+        debug!(
+            vidpid = format_args!("{:04x}:{:04x}", d.vendor_id(), d.product_id()),
+            serial = d.serial_number().unwrap_or("?"),
+            driver = d.driver().unwrap_or("<none>"),
+            product = d.product_string().unwrap_or("<none>"),
+            ifaces = d.interfaces().count(),
+            fastboot = NusbFastBoot::find_fastboot_interface(d).is_some(),
+            "windows usb device enumeration",
+        );
+        #[cfg(not(target_os = "windows"))]
         debug!(
             vid = format_args!("0x{:04x}", d.vendor_id()),
             pid = format_args!("0x{:04x}", d.product_id()),
@@ -204,24 +219,46 @@ impl NusbFastBoot {
                 None
             }
         }) {
+            debug!(
+                vidpid = format_args!("{:04x}:{:04x}", info.vendor_id(), info.product_id()),
+                iface,
+                "found fastboot interface via USB class 0xff/0x42/0x03"
+            );
             return Some(iface);
         }
 
         #[cfg(target_os = "windows")]
         {
-            let driver_matches = info.driver().is_some_and(|d| {
+            let driver = info.driver();
+            let product = info.product_string();
+            let driver_matches = driver.is_some_and(|d| {
                 d.eq_ignore_ascii_case("winusb")
                     || d.eq_ignore_ascii_case("androidwinusb")
                     || d.eq_ignore_ascii_case("androidwinusb86")
                     || d.eq_ignore_ascii_case("androidusb")
                     || d.eq_ignore_ascii_case("usbccgp")
             });
-            let string_matches = info.product_string().is_some_and(|s| {
+            let string_matches = product.is_some_and(|s| {
                 let lower = s.to_ascii_lowercase();
                 lower.contains("fastboot") || lower.contains("bootloader")
             });
 
+            debug!(
+                vidpid = format_args!("{:04x}:{:04x}", info.vendor_id(), info.product_id()),
+                driver = driver.unwrap_or("<none>"),
+                product = product.unwrap_or("<none>"),
+                driver_matches,
+                string_matches,
+                "evaluating Windows fastboot match"
+            );
+
             if driver_matches || string_matches {
+                debug!(
+                    vidpid = format_args!("{:04x}:{:04x}", info.vendor_id(), info.product_id()),
+                    driver = driver.unwrap_or("<none>"),
+                    product = product.unwrap_or("<none>"),
+                    "matched fastboot interface on Windows via driver/product match"
+                );
                 return Some(0);
             }
         }
@@ -283,10 +320,32 @@ impl NusbFastBoot {
     /// interface
     #[tracing::instrument(skip_all, err)]
     pub async fn from_device(device: Device, interface: u8) -> Result<Self, NusbFastBootOpenError> {
-        let interface = device
-            .claim_interface(interface)
-            .await
-            .map_err(NusbFastBootOpenError::Interface)?;
+        let mut last_err = None;
+        let mut claimed = None;
+
+        for attempt in 0..5 {
+            match device.claim_interface(interface).await {
+                Ok(iface) => {
+                    claimed = Some(iface);
+                    break;
+                }
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    let is_busy = err_msg.contains("busy") || err_msg.contains("16");
+                    if is_busy && attempt < 4 {
+                        debug!(attempt, error = %e, "interface busy, retrying claim after brief delay");
+                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+                        last_err = Some(e);
+                        continue;
+                    }
+                    return Err(NusbFastBootOpenError::Interface(e));
+                }
+            }
+        }
+
+        let interface = claimed.ok_or_else(|| {
+            NusbFastBootOpenError::Interface(last_err.expect("error present if interface not claimed"))
+        })?;
         Self::from_interface(interface)
     }
 

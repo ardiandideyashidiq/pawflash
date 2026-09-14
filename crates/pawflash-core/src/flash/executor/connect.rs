@@ -18,7 +18,7 @@ async fn no_device_error(expected: Option<&str>) -> FlashError {
     classify_no_device(&probes, expected)
 }
 
-const fn is_candidate_mobile_device(vid: u16) -> bool {
+pub(crate) const fn is_candidate_mobile_device(vid: u16) -> bool {
     matches!(
         vid,
         0x18d1 // Google
@@ -213,6 +213,7 @@ mod tests {
             kind,
             iface_count: 1,
             driver: None,
+            product: None,
         }
     }
 

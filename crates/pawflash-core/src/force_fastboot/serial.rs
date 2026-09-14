@@ -333,6 +333,9 @@ pub async fn wait_for_reconnect(
             return Ok(None);
         }
         if tokio::time::Instant::now() >= deadline {
+            debug!("reconnect window expired without preloader reconnect");
+            #[cfg(target_os = "windows")]
+            super::fastboot::log_fastboot_diagnostics().await;
             return Ok(None);
         }
         if let Some(port) = expected_port {

@@ -25,8 +25,16 @@ use tracing_subscriber::{fmt, registry::Registry};
 // ── Logging init ──────────────────────────────────────────────────────
 
 fn init_logging() {
+  let level = if std::env::var_os("PAWFLASH_DEBUG").is_some()
+    || std::env::var("RUST_LOG").is_ok_and(|v| v.eq_ignore_ascii_case("debug") || v.eq_ignore_ascii_case("trace"))
+  {
+    LevelFilter::DEBUG
+  } else {
+    LevelFilter::INFO
+  };
+
   let subscriber = Registry::default()
-    .with(LevelFilter::INFO)
+    .with(level)
     .with(
       fmt::Layer::new()
         .with_writer(std::io::stderr)
@@ -242,21 +250,45 @@ fn send_progress(ch: &Channel<ProgressEvent>, event: ProgressEvent) {
 
 // ── Commands ──────────────────────────────────────────────────────────
 
-#[tracing::instrument(skip_all, fields(simulate))]
+static DEVICE_CHECK_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[tracing::instrument(skip(cancel), fields(simulate))]
 #[tauri::command]
-async fn get_device_info(simulate: bool) -> Result<DeviceInfo, AppError> {
+async fn get_device_info(
+  cancel: State<'_, CancelState>,
+  simulate: bool,
+) -> Result<DeviceInfo, AppError> {
   if simulate {
     info!("simulated device info requested");
     let vars = simulated_vars();
     return Ok(DeviceInfo { connected: true, serial: Some("SIM000001".into()), vars, hint: None });
   }
 
+  if cancel.in_flight.load(Ordering::Relaxed) {
+    debug!("device check skipped: operation in flight");
+    return Ok(DeviceInfo {
+      connected: false,
+      serial: None,
+      vars: HashMap::new(),
+      hint: Some("Device operation in progress".into()),
+    });
+  }
+
+  let _lock = DEVICE_CHECK_LOCK.lock().await;
+
+  if cancel.in_flight.load(Ordering::Relaxed) {
+    debug!("device check skipped: operation in flight");
+    return Ok(DeviceInfo {
+      connected: false,
+      serial: None,
+      vars: HashMap::new(),
+      hint: Some("Device operation in progress".into()),
+    });
+  }
+
   match FlashExecutor::connect().await {
-    Ok(mut executor) => {
-      let vars = executor.get_all_vars().await.map_err(|e| {
-        warn!(error = %e, "get_all_vars failed");
-        AppError::from(e)
-      })?;
+    Ok(executor) => {
+      let vars = executor.device_vars().clone();
       let serial = vars.get("serialno").cloned();
       let connected = true;
       info!(connected, serial = serial.as_deref().unwrap_or("?"), "device info retrieved");
@@ -276,10 +308,21 @@ async fn get_device_info(simulate: bool) -> Result<DeviceInfo, AppError> {
         Ok(DeviceInfo { connected: false, serial: None, vars: HashMap::new(), hint: Some(e.to_string()) })
       }
       other => {
-        // Permissions, open failures, protocol errors — report them so the GUI
-        // does not silently present "not connected".
-        warn!(error = %other, "get_device_info: connect failed");
-        Err(AppError::from(other))
+        let msg = other.to_string();
+        if msg.contains("busy") || msg.contains("16") {
+          warn!(error = %other, "get_device_info: fastboot interface busy");
+          Ok(DeviceInfo {
+            connected: false,
+            serial: None,
+            vars: HashMap::new(),
+            hint: Some("Fastboot interface busy".into()),
+          })
+        } else {
+          // Permissions, open failures, protocol errors — report them so the GUI
+          // does not silently present "not connected".
+          warn!(error = %other, "get_device_info: connect failed");
+          Err(AppError::from(other))
+        }
       }
     },
   }
@@ -309,6 +352,7 @@ async fn force_fastboot(
 
   if pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
     info!("already in fastboot mode");
+    pawflash_core::force_fastboot::fastboot::list_fastboot_devices().await;
     send_progress(&on_event, ProgressEvent::ForceFastbootStage { stage: "confirmed".into(), message: "Device already in fastboot mode.".into() });
     send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Already in fastboot mode".into() });
     return Ok(());
@@ -391,9 +435,12 @@ async fn force_fastboot(
   info!(sends, "device now in fastboot mode");
   let hint = pawflash_core::platform::CURRENT.post_handshake_hint();
   if !hint.is_empty() && !pawflash_core::force_fastboot::fastboot::in_fastboot_mode().await {
+    pawflash_core::force_fastboot::fastboot::log_fastboot_diagnostics().await;
     send_progress(&on_event, ProgressEvent::Warning {
       message: hint.into(),
     });
+  } else {
+    pawflash_core::force_fastboot::fastboot::list_fastboot_devices().await;
   }
   send_progress(&on_event, ProgressEvent::Done { ok: true, detail: "Device now in fastboot mode".into() });
   Ok(())
