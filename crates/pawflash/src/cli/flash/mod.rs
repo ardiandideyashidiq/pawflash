@@ -55,6 +55,7 @@ fn build_flash_options(
         ),
         image_verification,
         allowance,
+        image_overrides: std::collections::BTreeMap::new(),
     }
 }
 

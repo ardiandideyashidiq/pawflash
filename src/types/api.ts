@@ -45,6 +45,7 @@ export interface FlashPlanOptions {
   package_root: string | null;
   image_verification: { check_images: boolean; image_search: boolean };
   allowance: { include_preloader: boolean; allow_incomplete_slots: boolean };
+  image_overrides?: Record<string, string>;
 }
 
 export interface FlashResult {
@@ -107,6 +108,7 @@ export interface PartitionRow {
   image_type: string | null;
   region: string;
   selected: boolean;
+  is_overridden?: boolean;
 }
 
 /** Frontend flash-plan view (persisted across tab switches). */

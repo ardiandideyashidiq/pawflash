@@ -43,10 +43,13 @@ fn build_partition_actions<'a>(
 
         let part_ref = *part;
         let image_source = inherited_image_source_for_slot_b(part_ref, parts_by_name);
+        let has_override = options.image_overrides.contains_key(&part_ref.name)
+            || options.image_overrides.contains_key(&part_ref.name.to_lowercase());
         let (allowed, reason) = full_flash_allows_partition(
             part_ref,
             image_source,
             options.allowance.include_preloader,
+            has_override,
         );
         if !allowed {
             skipped.push(skipped_partition(part_ref, &reason));
@@ -54,7 +57,7 @@ fn build_partition_actions<'a>(
         }
 
         let (image, mut action_warnings) =
-            resolve_images_for_plan(image_source, scatter_dir, options);
+            resolve_images_for_plan(image_source, scatter_dir, options, &part_ref.name);
         if !image_exists(&image) {
             skipped.push(skipped_partition(part_ref, "image not found"));
             continue;
@@ -537,5 +540,32 @@ mod tests {
         let round_tripped: FlashPlanOptions =
             serde_json::from_str(&json).expect("kebab-case json deserializes");
         assert_eq!(round_tripped.storage, options.storage);
+    }
+
+    #[test]
+    fn build_flash_plan_should_honor_image_overrides() {
+        let mut scatter = synthetic_ab_scatter();
+        let dir = scatter_with_images(&mut scatter);
+        let custom_boot = dir.path().join("custom_boot.img");
+        std::fs::write(&custom_boot, b"custom-boot-content").expect("write custom boot");
+
+        let mut image_overrides = std::collections::BTreeMap::new();
+        image_overrides.insert("boot_a".to_string(), custom_boot.clone());
+
+        let options = FlashPlanOptions {
+            image_overrides,
+            ..FlashPlanOptions::default()
+        };
+        let plan = build_flash_plan(&scatter, &options);
+        let boot_action = plan
+            .actions
+            .iter()
+            .find(|a| a.partition == "boot_a")
+            .expect("boot_a action must exist");
+        assert_eq!(
+            boot_action.image_resolved_path(),
+            Some(custom_boot.to_str().expect("valid path")),
+            "boot_a action must use the overridden image path"
+        );
     }
 }

@@ -12,6 +12,7 @@ export function buildFlashPlanOptions(
   exclude: string[],
   includePreloader: boolean,
   scatterPath: string,
+  imageOverrides: Record<string, string> = {},
 ): FlashPlanOptions {
   return {
     storage: "auto",
@@ -22,5 +23,6 @@ export function buildFlashPlanOptions(
     package_root: parentDir(scatterPath),
     image_verification: { check_images: false, image_search: false },
     allowance: { include_preloader: includePreloader, allow_incomplete_slots: false },
+    image_overrides: imageOverrides,
   };
 }

@@ -18,13 +18,14 @@ pub(super) fn full_flash_allows_partition(
     part: &ScatterPartition,
     image_source: &ScatterPartition,
     include_preloader: bool,
+    has_image_override: bool,
 ) -> (bool, String) {
     let canonical = part.canonical();
     let safety = part.safety_class();
     // Use the image-presence predicate (not `flashable_by_profile`) so a
     // partition declared with `partition_size: 0` but carrying an image is
     // still eligible; the device validates the real extent.
-    let flashable = image_source.has_image();
+    let flashable = image_source.has_image() || has_image_override;
 
     if matches!(safety.as_str(), "identity_or_calibration" | "dangerous") {
         return (false, format!("blocked safety class: {safety}"));
@@ -88,7 +89,7 @@ mod tests {
 
     fn allows(name: &str, include_preloader: bool) -> (bool, String) {
         let p = part(name, true, true, 0x0040_0000);
-        full_flash_allows_partition(&p, &p, include_preloader)
+        full_flash_allows_partition(&p, &p, include_preloader, false)
     }
 
     #[test]
@@ -112,15 +113,22 @@ mod tests {
     #[test]
     fn full_flash_should_always_allow_userdata_with_image() {
         let p = part("userdata", true, true, 0x0040_0000);
-        let (allowed, reason) = full_flash_allows_partition(&p, &p, false);
+        let (allowed, reason) = full_flash_allows_partition(&p, &p, false, false);
         assert!(allowed, "userdata with an image must always flash: {reason}");
     }
 
     #[test]
     fn full_flash_should_skip_userdata_without_image() {
         let p = part("userdata", false, false, 0x0040_0000);
-        let (allowed, _) = full_flash_allows_partition(&p, &p, false);
+        let (allowed, _) = full_flash_allows_partition(&p, &p, false, false);
         assert!(!allowed, "image-less userdata should be skipped");
+    }
+
+    #[test]
+    fn full_flash_should_allow_partition_with_override() {
+        let p = part("recovery", false, false, 0x0040_0000);
+        let (allowed, reason) = full_flash_allows_partition(&p, &p, false, true);
+        assert!(allowed, "partition with override should be allowed: {reason}");
     }
 
     #[test]

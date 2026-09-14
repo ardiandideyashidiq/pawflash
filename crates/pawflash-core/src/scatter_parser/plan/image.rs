@@ -8,7 +8,42 @@ pub(super) fn resolve_images_for_plan(
     part: &ScatterPartition,
     scatter_dir: Option<&std::path::Path>,
     options: &FlashPlanOptions,
+    target_name: &str,
 ) -> (Value, Vec<String>) {
+    let override_path = options
+        .image_overrides
+        .get(target_name)
+        .or_else(|| options.image_overrides.get(&target_name.to_lowercase()))
+        .or_else(|| options.image_overrides.get(&part.name))
+        .or_else(|| options.image_overrides.get(&part.name.to_lowercase()));
+
+    if let Some(path) = override_path {
+        let exists = path.exists();
+        let file_name = path
+            .file_name()
+            .map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().to_string());
+        let resolved_path = path.to_string_lossy().to_string();
+        let (status, warnings) = checked_image_status(
+            Some(&resolved_path),
+            Some(exists),
+            options.image_verification.check_images,
+            part.size,
+        );
+        return (
+            json!({
+                "file_name": file_name,
+                "path": {
+                    "resolved_path": resolved_path,
+                    "exists": exists,
+                    "outside_package_root": false,
+                    "warning": null,
+                },
+                "status": status,
+            }),
+            warnings,
+        );
+    }
+
     let resolved = resolve_image_path(
         part.file_name.as_deref(),
         scatter_dir,

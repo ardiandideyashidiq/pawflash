@@ -216,6 +216,9 @@ pub struct FlashPlanOptions {
     pub image_verification: ImageVerification,
     /// Flash allowance settings.
     pub allowance: Allowance,
+    /// Partition name to custom image path overrides.
+    #[serde(default)]
+    pub image_overrides: std::collections::BTreeMap<String, std::path::PathBuf>,
 }
 
 /// Flash plan summary counts.

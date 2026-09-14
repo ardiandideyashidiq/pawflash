@@ -32,10 +32,14 @@ export interface FlashPlanState {
   loading: boolean;
   error: string | null;
   options: PlanOptions;
+  imageOverrides: Record<string, string>;
   loadScatter: (path: string) => void;
   clearScatter: () => void;
   setIncludePreloader: (v: boolean) => void;
   setRebootTarget: (v: RebootTarget | null) => void;
+  setImageOverride: (partition: string, filePath: string) => void;
+  clearImageOverride: (partition: string) => void;
+  clearAllImageOverrides: () => void;
   togglePartition: (name: string) => void;
   toggleAllPartitions: () => void;
   allSelected: boolean;
@@ -48,12 +52,13 @@ export interface FlashPlanState {
 
 const FlashPlanContext = createContext<FlashPlanState | null>(null);
 
-function toPlanView(dto: FlashPlanDto): FlashPlanView {
+function toPlanView(dto: FlashPlanDto, overrides: Record<string, string>): FlashPlanView {
   const rows: PartitionRow[] = dto.actions
     .filter((a) => a.action === "flash")
     .map((a, index) => {
       const imagePath = a.image?.path?.resolved_path ?? null;
       const imageName = imagePath ? (imagePath.split(/[/\\]/).pop() ?? imagePath) : null;
+      const isOverridden = Boolean(overrides[a.partition] || overrides[a.partition.toLowerCase()]);
       return {
         index,
         partition: a.partition,
@@ -64,6 +69,7 @@ function toPlanView(dto: FlashPlanDto): FlashPlanView {
         image_type: a.image_type,
         region: a.region,
         selected: false,
+        is_overridden: isOverridden,
       };
     });
   return {
@@ -87,6 +93,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [includePreloader, setIncludePreloader] = useState(false);
   const [rebootTarget, setRebootTarget] = useState<RebootTarget | null>(null);
+  const [imageOverrides, setImageOverrides] = useState<Record<string, string>>({});
   const [reloadToken, setReloadToken] = useState(0);
 
   const requestRef = useRef(0);
@@ -94,6 +101,26 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
   // Partition names from the previously rendered plan, used to tell "still
   // exists, preserve selection" apart from "newly added, default selected".
   const lastRowsRef = useRef<Set<string>>(new Set());
+
+  const setImageOverride = useCallback((partition: string, filePath: string) => {
+    setImageOverrides((prev) => ({
+      ...prev,
+      [partition]: filePath,
+    }));
+  }, []);
+
+  const clearImageOverride = useCallback((partition: string) => {
+    setImageOverrides((prev) => {
+      const next = { ...prev };
+      delete next[partition];
+      delete next[partition.toLowerCase()];
+      return next;
+    });
+  }, []);
+
+  const clearAllImageOverrides = useCallback(() => {
+    setImageOverrides({});
+  }, []);
 
   const refreshPlan = useCallback(async () => {
     if (!scatterPath) return;
@@ -103,11 +130,11 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
     try {
       const dto = await invoke<FlashPlanDto>("build_plan", {
         path: scatterPath,
-        options: buildFlashPlanOptions([], includePreloader, scatterPath),
+        options: buildFlashPlanOptions([], includePreloader, scatterPath, imageOverrides),
       });
       if (requestRef.current !== requestId) return;
 
-      const view = toPlanView(dto);
+      const view = toPlanView(dto, imageOverrides);
       const preserveSelection = lastScatterPathRef.current === scatterPath;
       const nextRows = new Set(view.rows.map((r) => r.partition));
       setPlan(view);
@@ -143,7 +170,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     }
-  }, [scatterPath, includePreloader]);
+  }, [scatterPath, includePreloader, imageOverrides]);
 
   useEffect(() => {
     if (!scatterPath) return;
@@ -157,6 +184,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
     setPlan(null);
     setSelected(new Set());
     setError(null);
+    setImageOverrides({});
     setScatterPath(path);
     lastScatterPathRef.current = "";
     setReloadToken((t) => t + 1);
@@ -170,6 +198,7 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
     setError(null);
     setLoading(false);
     setScatterPath("");
+    setImageOverrides({});
     setIncludePreloader(false);
     setRebootTarget(null);
     lastScatterPathRef.current = "";
@@ -225,10 +254,14 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       options: { includePreloader, rebootTarget },
+      imageOverrides,
       loadScatter,
       clearScatter,
       setIncludePreloader,
       setRebootTarget,
+      setImageOverride,
+      clearImageOverride,
+      clearAllImageOverrides,
       togglePartition,
       toggleAllPartitions,
       allSelected,
@@ -245,10 +278,14 @@ export function FlashPlanProvider({ children }: { children: ReactNode }) {
       error,
       includePreloader,
       rebootTarget,
+      imageOverrides,
       loadScatter,
       clearScatter,
       setIncludePreloader,
       setRebootTarget,
+      setImageOverride,
+      clearImageOverride,
+      clearAllImageOverrides,
       togglePartition,
       toggleAllPartitions,
       allSelected,

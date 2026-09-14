@@ -232,6 +232,7 @@ function AppRoot() {
           planState.buildExclude(),
           planState.options.includePreloader,
           planState.scatterPath,
+          planState.imageOverrides,
         ),
         simulate,
         onEvent: channel,

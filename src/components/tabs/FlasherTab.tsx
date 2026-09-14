@@ -30,6 +30,8 @@ export default function FlasherTab({ onStartFlash, flashDisabled }: FlasherTabPr
     someSelected,
     selectedFlashCount,
     rows,
+    setImageOverride,
+    clearImageOverride,
   } = useFlashPlan();
 
   return (
@@ -53,6 +55,8 @@ export default function FlasherTab({ onStartFlash, flashDisabled }: FlasherTabPr
         onToggleAll={toggleAllPartitions}
         allSelected={allSelected}
         someSelected={someSelected}
+        onOverrideImage={setImageOverride}
+        onClearOverrideImage={clearImageOverride}
       />
 
       {error && (

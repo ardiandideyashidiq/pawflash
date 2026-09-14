@@ -1,4 +1,7 @@
-import { memo } from "react";
+import { memo, useCallback } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { ArrowLeftRight, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -10,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import type { PartitionRow } from "@/types/api";
+import { errorMessage, type PartitionRow } from "@/types/api";
 
 interface PartitionTableProps {
   partitions: PartitionRow[];
@@ -20,9 +23,11 @@ interface PartitionTableProps {
   allSelected: boolean;
   someSelected: boolean;
   className?: string;
+  onOverrideImage?: (partition: string, path: string) => void;
+  onClearOverrideImage?: (partition: string) => void;
 }
 
-const columnWidths = ["w-12", "w-36", "w-28", "w-40", "w-56"];
+const columnWidths = ["w-12", "w-36", "w-28", "w-40", "w-64"];
 
 export const PartitionTable = memo(function PartitionTable({
   partitions,
@@ -32,7 +37,32 @@ export const PartitionTable = memo(function PartitionTable({
   allSelected,
   someSelected,
   className,
+  onOverrideImage,
+  onClearOverrideImage,
 }: PartitionTableProps) {
+  const handleSwapImage = useCallback(
+    async (partition: string) => {
+      try {
+        const selected = await open({
+          title: `Select image for ${partition}`,
+          filters: [
+            {
+              name: "Partition images",
+              extensions: ["img", "bin", "sin", "iso"],
+            },
+          ],
+          multiple: false,
+        });
+        if (typeof selected === "string" && selected.trim()) {
+          onOverrideImage?.(partition, selected.trim());
+        }
+      } catch (error) {
+        toast.error(errorMessage(error));
+      }
+    },
+    [onOverrideImage],
+  );
+
   if (partitions.length === 0) {
     return (
       <div
@@ -122,15 +152,51 @@ export const PartitionTable = memo(function PartitionTable({
                   )}
                 </TableCell>
                 <TableCell className="text-left">
-                  <span
-                    className={cn(
-                      "block min-w-0 truncate font-mono",
-                      !partition.image_name && "text-muted-foreground",
-                    )}
-                    title={partition.image_path ?? partition.image_name ?? "No image resolved"}
-                  >
-                    {partition.image_name ?? "—"}
-                  </span>
+                  <div className="flex items-center justify-between gap-2 group/cell">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "truncate font-mono",
+                          !partition.image_name && "text-muted-foreground",
+                          partition.is_overridden && "text-trace-copper font-medium",
+                        )}
+                        title={partition.image_path ?? partition.image_name ?? "No image resolved"}
+                      >
+                        {partition.image_name ?? "—"}
+                      </span>
+                      {partition.is_overridden && (
+                        <span className="shrink-0 rounded bg-trace-copper/15 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-trace-copper">
+                          custom
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {partition.is_overridden && onClearOverrideImage && (
+                        <button
+                          type="button"
+                          onClick={() => onClearOverrideImage(partition.partition)}
+                          title="Reset to default image"
+                          aria-label={`Reset ${partition.partition} to default image`}
+                          className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          disabled={loading}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {onOverrideImage && (
+                        <button
+                          type="button"
+                          onClick={() => void handleSwapImage(partition.partition)}
+                          title="Swap image"
+                          aria-label={`Swap image for ${partition.partition}`}
+                          className="cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          disabled={loading}
+                        >
+                          <ArrowLeftRight className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
