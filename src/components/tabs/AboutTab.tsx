@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, Code2, Cpu, ExternalLink, ShieldCheck, Terminal, Zap } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -47,16 +48,20 @@ export default function AboutTab() {
     });
   };
 
-  const handleOpenUrl = (url: string) => {
-    window.open(url, "_blank", "noopener,noreferrer");
+  const handleOpenUrl = async (url: string) => {
+    try {
+      await invoke("open_url", { url });
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   };
 
   return (
     <div className="relative min-h-full flex flex-col gap-4 w-full">
       {/* OPEN SOURCE CREDITS 2x2 GRID */}
       <div className="space-y-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80 px-1">
-          Powered By Open Source
+        <h4 className="text-sm font-semibold tracking-[0.04em] text-foreground px-1">
+          Open Source
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {CREDITS.map((credit) => {
@@ -67,6 +72,8 @@ export default function AboutTab() {
                 onClick={() => void handleOpenUrl(credit.url)}
                 tabIndex={0}
                 role="button"
+                title={`Open ${credit.name} on GitHub (${credit.url})`}
+                aria-label={`Open ${credit.name} on GitHub`}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     void handleOpenUrl(credit.url);

@@ -401,7 +401,7 @@ function AppRoot() {
             "w-full overflow-hidden transition-all",
             sidebarOpen ? "justify-start gap-2" : "justify-center",
             activeFlashSession
-              ? "animate-pulse border-trace-copper/60 bg-trace-copper/15 text-trace-copper hover:bg-trace-copper/25 hover:text-trace-copper font-semibold"
+              ? "border-trace-copper/60 bg-trace-copper/15 text-trace-copper hover:bg-trace-copper/25 hover:text-trace-copper font-semibold"
               : flash.phase === "complete"
                 ? "border-success/50 bg-success/10 text-signal-green hover:bg-success/15 hover:text-signal-green font-semibold"
                 : "border-error/50 bg-error/10 text-error hover:bg-error/15 hover:text-error font-semibold",

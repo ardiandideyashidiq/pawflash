@@ -1430,6 +1430,44 @@ fn classify_partition(name: String) -> String {
   pawflash_core::scatter_parser::safety::role_for_name(&name)
 }
 
+/// Opens an HTTP/HTTPS URL in the default system browser.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+  if !url.starts_with("https://") && !url.starts_with("http://") {
+    return Err("Invalid URL protocol".into());
+  }
+
+  info!(url = %url, "opening external url in system browser");
+
+  #[cfg(target_os = "windows")]
+  let mut cmd = {
+    let mut c = std::process::Command::new("rundll32");
+    c.args(["url.dll,FileProtocolHandler", &url]);
+    c
+  };
+
+  #[cfg(target_os = "macos")]
+  let mut cmd = {
+    let mut c = std::process::Command::new("open");
+    c.arg(&url);
+    c
+  };
+
+  #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+  let mut cmd = {
+    let mut c = std::process::Command::new("xdg-open");
+    c.arg(&url);
+    c
+  };
+
+  cmd.spawn().map_err(|e| {
+    warn!(url = %url, error = %e, "failed to spawn browser process");
+    format!("Failed to open URL: {e}")
+  })?;
+
+  Ok(())
+}
+
 // ── App entry ─────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1474,6 +1512,7 @@ pub fn run() {
       penumbra_pgpt,
       penumbra_reboot,
       penumbra_shutdown,
+      open_url,
     ])
     .run(tauri::generate_context!())
     .expect("error while running pawflash");
@@ -1601,5 +1640,11 @@ mod tests {
                 pawflash_core::mtk::MtkEvent::Result { ok: true, .. }
             ))
         );
+    }
+
+    #[test]
+    fn open_url_rejects_non_http_protocol() {
+        assert!(open_url("javascript:alert(1)".into()).is_err());
+        assert!(open_url("file:///etc/passwd".into()).is_err());
     }
 }
