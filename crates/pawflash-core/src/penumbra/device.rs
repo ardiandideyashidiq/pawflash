@@ -34,13 +34,36 @@ pub struct PenumbraDevice {
 /// if no port appears, [`PenumbraError::DaMismatch`] if the DA doesn't support
 /// the connected `SoC`, or a wrapped penumbra error otherwise.
 pub fn open_device(da_bytes: Vec<u8>, wait: Duration) -> Result<PenumbraDevice> {
+    open_device_with_auth(da_bytes, None, wait)
+}
+
+/// Open an MTK device with `da_bytes` and optional `auth_bytes`, waiting up to `wait` for a port.
+///
+/// Acquires the shared device lock first, waits for an MTK port, and builds a device.
+///
+/// # Errors
+///
+/// Returns [`PenumbraError::DeviceBusy`] if the lock is held, [`PenumbraError::NoDevice`]
+/// if no port appears, [`PenumbraError::DaMismatch`] if the DA doesn't support
+/// the connected `SoC`, or a wrapped penumbra error otherwise.
+pub fn open_device_with_auth(
+    da_bytes: Vec<u8>,
+    auth_bytes: Option<Vec<u8>>,
+    wait: Duration,
+) -> Result<PenumbraDevice> {
     let lock = acquire_device_lock().map_err(map_lock_err)?;
     let port = wait_for_port(wait, Duration::from_millis(500))?;
     let da_hint = da_bytes_parse_hint(&da_bytes);
 
-    let mut device = DeviceBuilder::default()
+    let mut builder = DeviceBuilder::default()
         .with_mtk_port(port)
-        .with_da_data(da_bytes)
+        .with_da_data(da_bytes);
+
+    if let Some(auth) = auth_bytes {
+        builder = builder.with_auth(auth);
+    }
+
+    let mut device = builder
         .build()
         .map_err(|e| PenumbraError::Penumbra(e.to_string()))?;
 
@@ -52,7 +75,7 @@ pub fn open_device(da_bytes: Vec<u8>, wait: Duration) -> Result<PenumbraDevice> 
 }
 
 /// Map an mtk lock error to a penumbra one.
-fn map_lock_err(e: crate::mtk::MtkError) -> PenumbraError {
+pub(crate) fn map_lock_err(e: crate::mtk::MtkError) -> PenumbraError {
     match e {
         crate::mtk::MtkError::DeviceBusy => PenumbraError::DeviceBusy,
         other => PenumbraError::DeviceLock {
@@ -62,7 +85,7 @@ fn map_lock_err(e: crate::mtk::MtkError) -> PenumbraError {
 }
 
 /// Poll [`find_mtk_port`] until a port appears or `wait` elapses.
-fn wait_for_port(wait: Duration, tick: Duration) -> Result<Box<dyn penumbra::MTKPort>> {
+pub(crate) fn wait_for_port(wait: Duration, tick: Duration) -> Result<Box<dyn penumbra::MTKPort>> {
     let start = Instant::now();
     loop {
         if let Some(port) = find_mtk_port() {

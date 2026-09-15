@@ -33,7 +33,7 @@ pub mod state;
 pub mod types;
 
 pub use da::{da_cache_path, download_da, remove_cached_da, verify_da};
-pub use device::{open_device, PenumbraDevice, parse_da_file};
+pub use device::{open_device, open_device_with_auth, PenumbraDevice, parse_da_file};
 pub use error::{PenumbraError, Result};
 pub use manifest::{fetch_da_manifest, list_dais, resolve_by_brand_chipset, resolve_by_device, DAEntry, DAManifest, DA_MANIFEST_URL};
 pub use ops::{

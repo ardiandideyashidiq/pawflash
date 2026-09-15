@@ -1,13 +1,15 @@
 //! Real penumbra runner: opens the device and drives operations through the
 //! penumbra [`Device`] API.
 
-use crate::penumbra::device::open_device;
+use crate::penumbra::device::{map_lock_err, open_device_with_auth, wait_for_port};
 use crate::penumbra::error::PenumbraError;
 use crate::penumbra::ops::{
     EventCb, PartitionEntry, PenumbraBootMode, PenumbraRunner, emit_done, emit_phase,
     throttled_progress,
 };
 use crate::penumbra::Result;
+use penumbra::connection::Connection;
+use penumbra::connection::port::ConnectionType;
 use penumbra::core::bootctrl::{BootControl, BootPartition, OFFSET_SLOT_SUFFIX};
 use penumbra::core::seccfg::LockFlag;
 use penumbra::core::storage::{PartitionKind, RpmbRegion};
@@ -24,6 +26,7 @@ const DEFAULT_WAIT: Duration = Duration::from_secs(30);
 /// The real runner, holding the DA bytes needed to open the device.
 pub struct RealPenumbra {
     da_bytes: Vec<u8>,
+    auth_bytes: Option<Vec<u8>>,
     wait: Duration,
 }
 
@@ -31,12 +34,19 @@ impl RealPenumbra {
     /// Create a runner that opens devices with `da_bytes`.
     #[must_use]
     pub const fn new(da_bytes: Vec<u8>) -> Self {
-        Self { da_bytes, wait: DEFAULT_WAIT }
+        Self { da_bytes, auth_bytes: None, wait: DEFAULT_WAIT }
+    }
+
+    /// Attach optional authentication data for DAA enabled devices.
+    #[must_use]
+    pub fn with_auth(mut self, auth: Option<Vec<u8>>) -> Self {
+        self.auth_bytes = auth;
+        self
     }
 
     /// Open the device, run `op`, and release the lock on drop.
     fn with_device<T>(&self, op: impl FnOnce(&mut Device) -> Result<T>) -> Result<T> {
-        let mut dev = open_device(self.da_bytes.clone(), self.wait)?;
+        let mut dev = open_device_with_auth(self.da_bytes.clone(), self.auth_bytes.clone(), self.wait)?;
         let result = op(&mut dev.device);
         drop(dev);
         result
@@ -440,9 +450,21 @@ impl PenumbraRunner for RealPenumbra {
 
     fn crash(&self, on_event: EventCb<'_>) -> Result<()> {
         emit_phase(on_event, "crash", "crashing device to bootrom");
-        Err(PenumbraError::Penumbra(
-            "crash is preloader-only and not implemented via the DA path".into(),
-        ))
+        let lock = crate::mtk::lock::acquire_device_lock().map_err(map_lock_err)?;
+        let port = wait_for_port(self.wait, Duration::from_millis(500))?;
+        if port.get_connection_type() == ConnectionType::Da {
+            return Err(PenumbraError::Penumbra(
+                "device is in DA mode; reboot into preloader mode to crash to bootrom".into(),
+            ));
+        }
+        let mut conn = Connection::new(port);
+        let dummy = [0u8; 0x100];
+        // Preloader asserts on invalid DA header, triggering reset into BootROM
+        let _ = conn.send_da(&dummy, 0x100, 0, 0x100);
+        drop(conn);
+        drop(lock);
+        emit_done(on_event, true, "preloader assertion triggered, device crashed to bootrom".into());
+        Ok(())
     }
 }
 
