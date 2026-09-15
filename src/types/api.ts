@@ -160,6 +160,7 @@ export interface PenumbraDaEntry {
   auth_sha256?: string;
   verified?: boolean;
   notes?: string;
+  is_custom?: boolean;
 }
 
 export interface PenumbraDaSelection {

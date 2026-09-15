@@ -1123,6 +1123,7 @@ async fn penumbra_list_devices(
         auth_sha256: None,
         verified: Some(true),
         notes: None,
+        is_custom: None,
       },
       pawflash_core::penumbra::DAEntry {
         id: Some("xiaomi-mt6877-combo".into()),
@@ -1147,6 +1148,7 @@ async fn penumbra_list_devices(
         auth_sha256: Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into()),
         verified: Some(true),
         notes: Some("Includes Xiaomi SLA/DAA Auth bypass".into()),
+        is_custom: None,
       },
       pawflash_core::penumbra::DAEntry {
         id: Some("tecno-mt6768".into()),
@@ -1166,6 +1168,7 @@ async fn penumbra_list_devices(
         auth_sha256: None,
         verified: Some(true),
         notes: None,
+        is_custom: None,
       },
       pawflash_core::penumbra::DAEntry {
         id: Some("oppo-mt6789".into()),
@@ -1180,6 +1183,7 @@ async fn penumbra_list_devices(
         auth_sha256: None,
         verified: Some(true),
         notes: None,
+        is_custom: None,
       },
     ]);
   }
@@ -1187,6 +1191,23 @@ async fn penumbra_list_devices(
     .await
     .map_err(|e| AppError::Other { message: e.to_string() })?
     .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })
+}
+
+#[tracing::instrument(skip_all, fields(simulate))]
+#[tauri::command]
+async fn penumbra_add_custom_da(
+  entry: pawflash_core::penumbra::DAEntry,
+  simulate: bool,
+) -> Result<(), AppError> {
+  if simulate {
+    return Ok(());
+  }
+  tokio::task::spawn_blocking(move || {
+    pawflash_core::penumbra::manifest::save_custom_da(&entry)
+  })
+  .await
+  .map_err(|e| AppError::Other { message: e.to_string() })?
+  .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })
 }
 
 #[tracing::instrument(skip_all, fields(simulate))]
@@ -2124,6 +2145,7 @@ pub fn run() {
       mtk_erase,
       penumbra_status,
       penumbra_list_devices,
+      penumbra_add_custom_da,
       penumbra_da_download,
       penumbra_da_status,
       penumbra_da_remove,

@@ -90,7 +90,10 @@ export const DaPickerModal = memo(function DaPickerModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[80vh] max-h-[640px] w-full flex-col overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[80vh] max-h-[640px] w-full flex-col overflow-hidden p-0 sm:max-w-2xl"
+      >
         <DialogHeader className="shrink-0 border-b border-border/70 px-4 py-3 gap-2.5">
           <DialogTitle className="text-sm font-semibold">Select Working DA</DialogTitle>
           <DialogDescription className="sr-only">
@@ -215,6 +218,14 @@ export const DaPickerModal = memo(function DaPickerModal({
                           >
                             <Shield className="h-2.5 w-2.5" />
                             Auth Combo
+                          </Badge>
+                        )}
+                        {entry.is_custom && (
+                          <Badge
+                            variant="outline"
+                            className="border-trace-copper/60 bg-trace-copper/10 text-trace-copper text-[10px] px-1.5 py-0"
+                          >
+                            Custom
                           </Badge>
                         )}
                       </div>

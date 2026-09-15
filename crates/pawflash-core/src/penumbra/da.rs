@@ -77,6 +77,17 @@ pub fn download_da(
 
 /// Download arbitrary blob bytes into memory (blocking), reporting progress per chunk.
 fn download_blob_bytes(url: &str, on_progress: &mut dyn FnMut(u64, u64)) -> Result<Vec<u8>> {
+    let local_path = url.strip_prefix("file://").unwrap_or(url);
+    if !url.starts_with("http://") && !url.starts_with("https://") && Path::new(local_path).exists() {
+        let bytes = fs::read(local_path).map_err(|source| PenumbraError::Download {
+            url: url.to_string(),
+            source: ureq::Error::Io(source),
+        })?;
+        let len = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        on_progress(len, len);
+        return Ok(bytes);
+    }
+
     let mut res = ureq::get(url)
         .call()
         .map_err(|source| PenumbraError::Download { url: url.to_string(), source })?;

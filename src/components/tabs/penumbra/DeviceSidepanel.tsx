@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -21,6 +21,7 @@ import { DaPickerModal } from "@/components/tabs/penumbra/DaPickerModal";
 import { DaDownloadModal } from "@/components/tabs/penumbra/DaDownloadModal";
 import { useConsole } from "@/hooks/useConsole";
 import { useSimulation } from "@/hooks/useSimulation";
+import { useDaRepository } from "@/hooks/useDaRepository";
 import { errorMessage, type PenumbraDaEntry, type PenumbraStatusPayload } from "@/types/api";
 import type { ProgressEvent } from "@/types/progress";
 
@@ -40,8 +41,7 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
   const { simulate } = useSimulation();
   const { addEntry, addProgressEvent } = useConsole();
 
-  const [devices, setDevices] = useState<PenumbraDaEntry[]>([]);
-  const [loadingDevices, setLoadingDevices] = useState(false);
+  const { devices, loading: loadingDevices, refresh: refreshDevices } = useDaRepository();
 
   // Modal states
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -53,22 +53,6 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
   const [downloadTotalBytes, setDownloadTotalBytes] = useState(0);
   const [downloadPhaseMsg, setDownloadPhaseMsg] = useState("");
   const [downloadErrMsg, setDownloadErrMsg] = useState<string | undefined>();
-
-  const fetchDevices = useCallback(async () => {
-    setLoadingDevices(true);
-    try {
-      const list = await invoke<PenumbraDaEntry[]>("penumbra_list_devices", { simulate });
-      setDevices(list);
-    } catch (error) {
-      toast.error(`Failed to load device list: ${errorMessage(error)}`);
-    } finally {
-      setLoadingDevices(false);
-    }
-  }, [simulate]);
-
-  useEffect(() => {
-    void fetchDevices();
-  }, [fetchDevices]);
 
   const handleStartDownload = async (entry: PenumbraDaEntry, deviceName: string) => {
     setPickerOpen(false);
@@ -201,7 +185,10 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
             variant="ghost"
             size="icon-sm"
             disabled={disabled}
-            onClick={() => void onRefresh()}
+            onClick={() => {
+              void onRefresh();
+              void refreshDevices(false);
+            }}
             className="h-7 w-7 text-muted-foreground hover:text-foreground"
             title="Refresh Status"
           >

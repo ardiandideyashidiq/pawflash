@@ -24,6 +24,7 @@ import {
   useForceFastboot,
 } from "@/hooks/useForceFastboot";
 import { FlashPlanProvider, useFlashPlan } from "@/hooks/useFlashPlan";
+import { DaRepositoryProvider } from "@/hooks/useDaRepository";
 import { buildFlashPlanOptions } from "@/lib/plan";
 import { useDevice } from "@/hooks/useDevice";
 import { errorMessage } from "@/types/api";
@@ -574,17 +575,19 @@ function AppRoot() {
 export default function App() {
   return (
     <SimulationProvider>
-      <UIProvider>
-        <ConsoleProvider>
-          <FlashProgressProvider>
-            <ForceFastbootProvider>
-              <FlashPlanProvider>
-                <AppRoot />
-              </FlashPlanProvider>
-            </ForceFastbootProvider>
-          </FlashProgressProvider>
-        </ConsoleProvider>
-      </UIProvider>
+      <DaRepositoryProvider>
+        <UIProvider>
+          <ConsoleProvider>
+            <FlashProgressProvider>
+              <ForceFastbootProvider>
+                <FlashPlanProvider>
+                  <AppRoot />
+                </FlashPlanProvider>
+              </ForceFastbootProvider>
+            </FlashProgressProvider>
+          </ConsoleProvider>
+        </UIProvider>
+      </DaRepositoryProvider>
     </SimulationProvider>
   );
 }
