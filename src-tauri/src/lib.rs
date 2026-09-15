@@ -1101,25 +1101,80 @@ async fn penumbra_list_devices(
   if simulate {
     return Ok(vec![
       pawflash_core::penumbra::DAEntry {
+        id: Some("infinix-mt6789".into()),
         brand: "infinix".into(),
         chipset: "mt6789".into(),
         devices: vec!["Infinix NOTE 12".into(), "Infinix Zero 20".into()],
-        url: "https://example.com/da.bin".into(),
-        sha256: "dummy".into(),
+        da: Some(pawflash_core::penumbra::manifest::FileBlob {
+          url: "https://example.com/infinix-mt6789.bin".into(),
+          sha256: "3c7de4ee52b47f1d4c5122868b52dfa06c18e5ef940f4c8a04c46365a696bbdd".into(),
+          filename: Some("infinix-mt6789.bin".into()),
+          size_bytes: Some(184320),
+        }),
+        auth: None,
+        url: "https://example.com/infinix-mt6789.bin".into(),
+        sha256: "3c7de4ee52b47f1d4c5122868b52dfa06c18e5ef940f4c8a04c46365a696bbdd".into(),
+        auth_url: None,
+        auth_sha256: None,
+        verified: Some(true),
+        notes: None,
       },
       pawflash_core::penumbra::DAEntry {
+        id: Some("xiaomi-mt6877-combo".into()),
         brand: "xiaomi".into(),
         chipset: "mt6877".into(),
-        devices: vec!["Redmi Note 12 Pro".into()],
-        url: "https://example.com/da.bin".into(),
-        sha256: "dummy".into(),
+        devices: vec!["Redmi Note 12 Pro 5G".into(), "Redmi Note 12 Pro+ 5G".into()],
+        da: Some(pawflash_core::penumbra::manifest::FileBlob {
+          url: "https://example.com/xiaomi-mt6877.bin".into(),
+          sha256: "8a3e7b1c2d5f4a6e8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a".into(),
+          filename: Some("xiaomi-mt6877.bin".into()),
+          size_bytes: Some(262144),
+        }),
+        auth: Some(pawflash_core::penumbra::manifest::FileBlob {
+          url: "https://example.com/xiaomi-mt6877.auth".into(),
+          sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+          filename: Some("xiaomi-mt6877.auth".into()),
+          size_bytes: Some(4096),
+        }),
+        url: "https://example.com/xiaomi-mt6877.bin".into(),
+        sha256: "8a3e7b1c2d5f4a6e8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a".into(),
+        auth_url: Some("https://example.com/xiaomi-mt6877.auth".into()),
+        auth_sha256: Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into()),
+        verified: Some(true),
+        notes: Some("Includes Xiaomi SLA/DAA Auth bypass".into()),
       },
       pawflash_core::penumbra::DAEntry {
-        brand: "transsion".into(),
+        id: Some("tecno-mt6768".into()),
+        brand: "tecno".into(),
         chipset: "mt6768".into(),
-        devices: vec!["Tecno Spark 9 Pro".into(), "Infinix Hot 11S".into()],
-        url: "https://example.com/da.bin".into(),
-        sha256: "dummy".into(),
+        devices: vec!["Tecno Spark 9 Pro".into(), "Tecno Camon 19".into()],
+        da: Some(pawflash_core::penumbra::manifest::FileBlob {
+          url: "https://example.com/tecno-mt6768.bin".into(),
+          sha256: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d".into(),
+          filename: Some("tecno-mt6768.bin".into()),
+          size_bytes: Some(147456),
+        }),
+        auth: None,
+        url: "https://example.com/tecno-mt6768.bin".into(),
+        sha256: "1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d".into(),
+        auth_url: None,
+        auth_sha256: None,
+        verified: Some(true),
+        notes: None,
+      },
+      pawflash_core::penumbra::DAEntry {
+        id: Some("oppo-mt6789".into()),
+        brand: "oppo".into(),
+        chipset: "mt6789".into(),
+        devices: vec!["Oppo Reno 8T".into()],
+        da: None,
+        auth: None,
+        url: "https://example.com/oppo-mt6789.bin".into(),
+        sha256: "5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b".into(),
+        auth_url: None,
+        auth_sha256: None,
+        verified: Some(true),
+        notes: None,
       },
     ]);
   }
@@ -1139,8 +1194,15 @@ async fn penumbra_da_download(
   send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "manifest".into(), message: "Fetching DA manifest...".into() });
 
   if simulate {
-    send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "download".into(), message: "Downloading (simulated)...".into() });
-    send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "DA installed (simulated)".into() });
+    send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "download".into(), message: "Downloading DA binary (simulated)...".into() });
+    let _ = on_event.send(ProgressEvent::PenumbraProgress { bytes: 184320, total: 184320 });
+    if let Some(ref d) = device
+      && (d.to_lowercase().contains("redmi") || d.to_lowercase().contains("xiaomi"))
+    {
+      send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "download".into(), message: "Downloading companion Auth file (simulated)...".into() });
+      let _ = on_event.send(ProgressEvent::PenumbraProgress { bytes: 4096, total: 4096 });
+    }
+    send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "DA & Auth combo installed (simulated)".into() });
     return Ok(());
   }
 
@@ -1151,43 +1213,60 @@ async fn penumbra_da_download(
     }
     _ => return Err(AppError::Other { message: "enter a device model name".into() }),
   };
-  send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "download".into(), message: format!("Downloading {} ({})...", entry.brand, entry.chipset) });
+
+  send_progress(&on_event, ProgressEvent::PenumbraPhase {
+    phase: "download".into(),
+    message: format!("Downloading DA for {} ({})...", entry.brand, entry.chipset),
+  });
 
   let existing_auth = pawflash_core::penumbra::load_selection().and_then(|s| s.auth_path);
-  let selection = pawflash_core::penumbra::DaSelection {
-    brand: entry.brand.clone(),
-    chipset: entry.chipset.clone(),
-    path: String::new(),
-    sha256: entry.sha256.clone(),
-    auth_path: existing_auth,
-    is_custom: false,
-  };
-  let channel = on_event.clone();
-  let path = tokio::task::spawn_blocking(move || {
-    let mut last_sent = 0u64;
-    let mut on_progress = |done: u64, total: u64| {
-      if done - last_sent >= 1024 * 1024 || done == total {
-        last_sent = done;
-        let _ = channel.send(ProgressEvent::PenumbraProgress { bytes: done, total });
+  let channel_da = on_event.clone();
+  let channel_auth = on_event.clone();
+  let entry_clone = entry.clone();
+
+  let (da_path, auth_path) = tokio::task::spawn_blocking(move || {
+    let mut last_sent_da = 0u64;
+    let mut on_da_progress = |done: u64, total: u64| {
+      if done - last_sent_da >= 64 * 1024 || done == total {
+        last_sent_da = done;
+        let _ = channel_da.send(ProgressEvent::PenumbraProgress { bytes: done, total });
       }
     };
-    pawflash_core::penumbra::download_da(&entry, &mut on_progress)
+    let mut last_sent_auth = 0u64;
+    let mut on_auth_progress = |done: u64, total: u64| {
+      if done - last_sent_auth >= 1024 || done == total {
+        last_sent_auth = done;
+        let _ = channel_auth.send(ProgressEvent::PenumbraProgress { bytes: done, total });
+      }
+    };
+    pawflash_core::penumbra::download_da_combo(&entry_clone, &mut on_da_progress, &mut on_auth_progress)
   })
   .await
   .map_err(|e| AppError::Other { message: e.to_string() })?
   .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?;
 
+  let final_auth_path = auth_path
+    .map(|p| p.display().to_string())
+    .or(existing_auth);
+
+  let da_sha256 = entry.da_sha256().to_string();
   let sel = pawflash_core::penumbra::DaSelection {
-    brand: selection.brand,
-    chipset: selection.chipset,
-    path: path.display().to_string(),
-    sha256: selection.sha256,
-    auth_path: selection.auth_path,
+    brand: entry.brand,
+    chipset: entry.chipset,
+    path: da_path.display().to_string(),
+    sha256: da_sha256,
+    auth_path: final_auth_path,
     is_custom: false,
   };
   pawflash_core::penumbra::save_selection(&sel)
     .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?;
-  send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: format!("installed at {}", path.display()) });
+
+  let summary = if sel.auth_path.is_some() {
+    format!("installed DA + Auth combo at {}", da_path.display())
+  } else {
+    format!("installed DA at {}", da_path.display())
+  };
+  send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: summary });
   Ok(())
 }
 

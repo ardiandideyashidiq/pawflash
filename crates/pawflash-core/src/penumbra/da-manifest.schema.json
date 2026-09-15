@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/ardiandideyashidiq/penumbra/main/DA/da-manifest.schema.json",
+  "title": "PawflashPenumbraDAManifest",
+  "description": "Hosted Download Agent (DA) and Auth file catalog with retail device mappings for MediaTek devices.",
+  "type": "object",
+  "required": ["version", "dais"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Semantic version or date code of the manifest release."
+    },
+    "updated_at": {
+      "type": "string",
+      "description": "ISO 8601 UTC timestamp of the last manifest update."
+    },
+    "dais": {
+      "type": "array",
+      "description": "List of available DA target entries.",
+      "items": {
+        "$ref": "#/$defs/DAEntry"
+      }
+    }
+  },
+
+  "$defs": {
+    "FileBlob": {
+      "type": "object",
+      "required": ["url", "sha256"],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "description": "Recommended filename when saved to disk."
+        },
+        "url": {
+          "type": "string",
+          "description": "Direct HTTP(S) download URL for the binary payload."
+        },
+        "sha256": {
+          "type": "string",
+          "description": "Hex-encoded SHA-256 digest of the uncompressed file.",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Expected byte length for progress estimation and integrity checks."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "DAEntry": {
+      "type": "object",
+      "required": ["brand", "chipset", "devices"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique slug identifier for the DA entry."
+        },
+        "brand": {
+          "type": "string",
+          "description": "OEM / Manufacturer brand name for categorisation and filtering."
+        },
+        "chipset": {
+          "type": "string",
+          "description": "MediaTek SoC identifier in lowercase (e.g. 'mt6768', 'mt6789', 'mt6877')."
+        },
+        "devices": {
+          "type": "array",
+          "description": "Marketing and retail model names compatible with this DA.",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "da": {
+          "$ref": "#/$defs/FileBlob",
+          "description": "The Download Agent binary (.bin) blob metadata."
+        },
+        "auth": {
+          "$ref": "#/$defs/FileBlob",
+          "description": "Optional companion SLA / DAA auth file required for secure bootroms."
+        },
+        "url": {
+          "type": "string",
+          "description": "Legacy/flat DA download URL fallback."
+        },
+        "sha256": {
+          "type": "string",
+          "description": "Legacy/flat DA SHA-256 fallback."
+        },
+        "auth_url": {
+          "type": "string",
+          "description": "Legacy/flat Auth download URL fallback."
+        },
+        "auth_sha256": {
+          "type": "string",
+          "description": "Legacy/flat Auth SHA-256 fallback."
+        },
+        "verified": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this DA combo has been verified by the community."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional instructions or test point advice."
+        }
+      }
+    }
+  }
+}

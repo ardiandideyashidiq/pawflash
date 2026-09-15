@@ -140,12 +140,26 @@ export interface PenumbraPartitionInfo {
   section: string;
 }
 
+export interface FileBlob {
+  url: string;
+  sha256: string;
+  filename?: string;
+  size_bytes?: number;
+}
+
 export interface PenumbraDaEntry {
+  id?: string;
   brand: string;
   chipset: string;
   devices: string[];
-  url: string;
-  sha256: string;
+  da?: FileBlob;
+  auth?: FileBlob;
+  url?: string;
+  sha256?: string;
+  auth_url?: string;
+  auth_sha256?: string;
+  verified?: boolean;
+  notes?: string;
 }
 
 export interface PenumbraDaSelection {

@@ -4,12 +4,12 @@ import { Channel } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Cpu,
-  Download,
   FileKey,
   FolderOpen,
   PanelRightClose,
   RefreshCw,
   Shield,
+  Smartphone,
   Trash2,
   Usb,
 } from "lucide-react";
@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DaPickerModal } from "@/components/tabs/penumbra/DaPickerModal";
+import { DaDownloadModal } from "@/components/tabs/penumbra/DaDownloadModal";
 import { useConsole } from "@/hooks/useConsole";
 import { useSimulation } from "@/hooks/useSimulation";
 import { errorMessage, type PenumbraDaEntry, type PenumbraStatusPayload } from "@/types/api";
@@ -39,56 +41,86 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
   const { addEntry, addProgressEvent } = useConsole();
 
   const [devices, setDevices] = useState<PenumbraDaEntry[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [loadingDevices, setLoadingDevices] = useState(false);
-  const [downloadingDa, setDownloadingDa] = useState(false);
+
+  // Modal states
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloadEntry, setDownloadEntry] = useState<PenumbraDaEntry | null>(null);
+  const [downloadDeviceName, setDownloadDeviceName] = useState<string | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState<"idle" | "downloading" | "success" | "error">("idle");
+  const [downloadProgressBytes, setDownloadProgressBytes] = useState(0);
+  const [downloadTotalBytes, setDownloadTotalBytes] = useState(0);
+  const [downloadPhaseMsg, setDownloadPhaseMsg] = useState("");
+  const [downloadErrMsg, setDownloadErrMsg] = useState<string | undefined>();
 
   const fetchDevices = useCallback(async () => {
     setLoadingDevices(true);
     try {
       const list = await invoke<PenumbraDaEntry[]>("penumbra_list_devices", { simulate });
       setDevices(list);
-      if (list.length > 0 && !selectedDevice) {
-        const first = list[0].devices[0] || `${list[0].brand} ${list[0].chipset}`;
-        setSelectedDevice(first);
-      }
     } catch (error) {
       toast.error(`Failed to load device list: ${errorMessage(error)}`);
     } finally {
       setLoadingDevices(false);
     }
-  }, [simulate, selectedDevice]);
+  }, [simulate]);
 
   useEffect(() => {
     void fetchDevices();
   }, [fetchDevices]);
 
-  const handleDownload = async () => {
-    if (!selectedDevice) {
-      toast.error("Please select a device model");
-      return;
-    }
-    setDownloadingDa(true);
-    addEntry({ text: `Penumbra DADownload Start: ${selectedDevice}`, level: "command" });
+  const handleStartDownload = async (entry: PenumbraDaEntry, deviceName: string) => {
+    setPickerOpen(false);
+    setDownloadEntry(entry);
+    setDownloadDeviceName(deviceName);
+    setDownloadStatus("downloading");
+    setDownloadProgressBytes(0);
+    setDownloadTotalBytes(0);
+    setDownloadPhaseMsg(`Starting download for ${deviceName}...`);
+    setDownloadErrMsg(undefined);
+    setDownloadModalOpen(true);
+
+    addEntry({ text: `Penumbra DADownload Start: ${deviceName}`, level: "command" });
 
     const channel = new Channel<ProgressEvent>();
-    channel.onmessage = (event) => addProgressEvent(event);
+    channel.onmessage = (event) => {
+      addProgressEvent(event);
+      if (event.event === "PenumbraProgress") {
+        setDownloadProgressBytes(event.data.bytes);
+        setDownloadTotalBytes(event.data.total);
+      } else if (event.event === "PenumbraPhase") {
+        setDownloadPhaseMsg(event.data.message);
+      } else if (event.event === "PenumbraDone") {
+        if (event.data.ok) {
+          setDownloadStatus("success");
+          setDownloadPhaseMsg(event.data.detail);
+        } else {
+          setDownloadStatus("error");
+          setDownloadErrMsg(event.data.detail);
+        }
+      } else if (event.event === "Error") {
+        setDownloadStatus("error");
+        setDownloadErrMsg(event.data.message);
+      }
+    };
 
     try {
       await invoke("penumbra_da_download", {
-        device: selectedDevice,
+        device: deviceName,
         onEvent: channel,
         simulate,
       });
-      toast.success(`DA for ${selectedDevice} installed`);
-      addEntry({ text: `Penumbra DADownload Success: ${selectedDevice}`, level: "success" });
+      setDownloadStatus("success");
+      toast.success(`DA for ${deviceName} installed`);
+      addEntry({ text: `Penumbra DADownload Success: ${deviceName}`, level: "success" });
       await onRefresh();
     } catch (error) {
       const msg = errorMessage(error);
+      setDownloadStatus("error");
+      setDownloadErrMsg(msg);
       toast.error(`DA download failed: ${msg}`);
       addEntry({ text: `Penumbra DADownload Error: ${msg}`, level: "error" });
-    } finally {
-      setDownloadingDa(false);
     }
   };
 
@@ -297,38 +329,14 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
           {/* Remote Repository Selector */}
           <div className="space-y-2">
             <span className="text-xs font-semibold text-foreground">Download Working DA</span>
-            <select
-              value={selectedDevice}
-              onChange={(e) => setSelectedDevice(e.target.value)}
-              disabled={disabled || loadingDevices || downloadingDa}
-              aria-label="Target device model"
-              className="w-full rounded-md border border-input bg-background/80 px-2.5 py-1.5 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {devices.length === 0 ? (
-                <option value="">{loadingDevices ? "Fetching device manifest..." : "No devices listed"}</option>
-              ) : (
-                devices.map((entry) => {
-                  const devName = entry.devices.join(", ") || `${entry.brand} ${entry.chipset}`;
-                  return (
-                    <option
-                      key={`${entry.brand}-${entry.chipset}`}
-                      value={entry.devices[0] || `${entry.brand} ${entry.chipset}`}
-                    >
-                      {devName} ({entry.brand.toUpperCase()} · {entry.chipset.toUpperCase()})
-                    </option>
-                  );
-                })
-              )}
-            </select>
-
             <Button
               size="sm"
-              disabled={disabled || downloadingDa || !selectedDevice}
-              onClick={() => void handleDownload()}
+              disabled={disabled || loadingDevices}
+              onClick={() => setPickerOpen(true)}
               className="w-full gap-2 bg-trace-copper font-semibold text-zinc-950 hover:bg-trace-gold text-xs"
             >
-              <Download className="h-3.5 w-3.5" />
-              {downloadingDa ? "Downloading..." : "Download & Install DA"}
+              <Smartphone className="h-3.5 w-3.5" />
+              Select Device DA from Catalog
             </Button>
           </div>
 
@@ -361,6 +369,28 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
           </div>
         </div>
       </ScrollArea>
+
+      {/* Modals */}
+      <DaPickerModal
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        devices={devices}
+        loading={loadingDevices}
+        onSelectAndDownload={(entry, devName) => void handleStartDownload(entry, devName)}
+      />
+
+      <DaDownloadModal
+        open={downloadModalOpen}
+        onOpenChange={setDownloadModalOpen}
+        entry={downloadEntry}
+        deviceName={downloadDeviceName}
+        status={downloadStatus}
+        progressBytes={downloadProgressBytes}
+        totalBytes={downloadTotalBytes}
+        phaseMessage={downloadPhaseMsg}
+        errorMessage={downloadErrMsg}
+        onDone={() => setDownloadModalOpen(false)}
+      />
     </div>
   );
 });

@@ -20,6 +20,46 @@ pub fn da_cache_path(brand: &str, chipset: &str) -> PathBuf {
     penumbra_dir().join("da").join(format!("{brand}-{chipset}.bin"))
 }
 
+/// The on-disk path for a cached companion Auth blob.
+#[must_use]
+pub fn auth_cache_path(brand: &str, chipset: &str) -> PathBuf {
+    penumbra_dir().join("da").join(format!("{brand}-{chipset}.auth"))
+}
+
+/// Download and cache a DA entry, verifying its SHA-256. If a companion auth
+/// blob is present on `entry`, it is also downloaded and verified.
+/// Returns `(da_path, auth_path)`.
+///
+/// # Errors
+///
+/// Returns [`PenumbraError::Download`] on HTTP failure and
+/// [`PenumbraError::HashMismatch`] on a bad digest.
+pub fn download_da_combo(
+    entry: &DAEntry,
+    on_da_progress: &mut dyn FnMut(u64, u64),
+    on_auth_progress: &mut dyn FnMut(u64, u64),
+) -> Result<(PathBuf, Option<PathBuf>)> {
+    let da_url = entry.da_url();
+    let da_sha = entry.da_sha256();
+    let bytes = download_blob_bytes(da_url, on_da_progress)?;
+    let root = penumbra_dir().join("da");
+    let da_path = write_blob_bytes(&format!("{}-{}.bin", entry.brand, entry.chipset), da_sha, &root, &bytes)?;
+
+    let auth_path = if entry.has_auth() {
+        if let (Some(url), Some(sha)) = (entry.auth_url(), entry.auth_sha256()) {
+            let a_bytes = download_blob_bytes(url, on_auth_progress)?;
+            let a_path = write_blob_bytes(&format!("{}-{}.auth", entry.brand, entry.chipset), sha, &root, &a_bytes)?;
+            Some(a_path)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    Ok((da_path, auth_path))
+}
+
 /// Download and cache a DA entry, verifying its SHA-256.
 ///
 /// # Errors
@@ -30,20 +70,16 @@ pub fn download_da(
     entry: &DAEntry,
     on_progress: &mut dyn FnMut(u64, u64),
 ) -> Result<PathBuf> {
-    let bytes = download_da_bytes(entry, on_progress)?;
-    let root = penumbra_dir().join("da");
-    write_da_bytes(entry, &root, &bytes)
+    let mut noop = |_, _| {};
+    let (da, _) = download_da_combo(entry, on_progress, &mut noop)?;
+    Ok(da)
 }
 
-/// Download the DA blob into memory (blocking), reporting progress per chunk.
-///
-/// # Errors
-///
-/// Returns [`PenumbraError::Download`] on any HTTP failure.
-fn download_da_bytes(entry: &DAEntry, on_progress: &mut dyn FnMut(u64, u64)) -> Result<Vec<u8>> {
-    let mut res = ureq::get(&entry.url)
+/// Download arbitrary blob bytes into memory (blocking), reporting progress per chunk.
+fn download_blob_bytes(url: &str, on_progress: &mut dyn FnMut(u64, u64)) -> Result<Vec<u8>> {
+    let mut res = ureq::get(url)
         .call()
-        .map_err(|source| PenumbraError::Download { url: entry.url.clone(), source })?;
+        .map_err(|source| PenumbraError::Download { url: url.to_string(), source })?;
     let total = res.body_mut().content_length().unwrap_or(0);
     let mut reader = res.body_mut().as_reader();
     let mut buf = vec![0u8; READ_CHUNK];
@@ -52,7 +88,7 @@ fn download_da_bytes(entry: &DAEntry, on_progress: &mut dyn FnMut(u64, u64)) -> 
     loop {
         let n = reader
             .read(&mut buf)
-            .map_err(|source| PenumbraError::Download { url: entry.url.clone(), source: ureq::Error::Io(source) })?;
+            .map_err(|source| PenumbraError::Download { url: url.to_string(), source: ureq::Error::Io(source) })?;
         if n == 0 {
             break;
         }
@@ -63,21 +99,12 @@ fn download_da_bytes(entry: &DAEntry, on_progress: &mut dyn FnMut(u64, u64)) -> 
     Ok(out)
 }
 
-/// Verify, write, and atomically cache the DA blob `bytes` for `entry`.
-///
-/// This is the network-free core of the cache path (tests drive it directly
-/// with local bytes). Staging happens in the cache dir's parent so the final
-/// rename stays on one filesystem.
-///
-/// # Errors
-///
-/// Returns [`PenumbraError::HashMismatch`] on a bad digest and
-/// [`PenumbraError::Cache`] on write failure.
-fn write_da_bytes(entry: &DAEntry, root: &Path, bytes: &[u8]) -> Result<PathBuf> {
+/// Verify, write, and atomically cache arbitrary blob `bytes`.
+fn write_blob_bytes(filename: &str, expected_sha256: &str, root: &Path, bytes: &[u8]) -> Result<PathBuf> {
     let actual = hex::encode(sha2::Sha256::digest(bytes));
-    if actual != entry.sha256 {
+    if !expected_sha256.is_empty() && actual != expected_sha256 {
         return Err(PenumbraError::HashMismatch {
-            expected: entry.sha256.clone(),
+            expected: expected_sha256.to_string(),
             actual,
         });
     }
@@ -86,7 +113,7 @@ fn write_da_bytes(entry: &DAEntry, root: &Path, bytes: &[u8]) -> Result<PathBuf>
     fs::create_dir_all(parent).map_err(|source| PenumbraError::Cache(source.to_string()))?;
     fs::create_dir_all(root).map_err(|source| PenumbraError::Cache(source.to_string()))?;
 
-    let final_path = root.join(format!("{}-{}.bin", entry.brand, entry.chipset));
+    let final_path = root.join(filename);
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
@@ -97,6 +124,11 @@ fn write_da_bytes(entry: &DAEntry, root: &Path, bytes: &[u8]) -> Result<PathBuf>
     fs::rename(&staging, &final_path).map_err(|source| PenumbraError::Cache(source.to_string()))?;
 
     Ok(final_path)
+}
+
+#[cfg(test)]
+fn write_da_bytes(entry: &DAEntry, root: &Path, bytes: &[u8]) -> Result<PathBuf> {
+    write_blob_bytes(&format!("{}-{}.bin", entry.brand, entry.chipset), entry.da_sha256(), root, bytes)
 }
 
 /// Verify a DA blob on disk against an expected SHA-256.
@@ -159,6 +191,7 @@ mod tests {
             devices: vec!["Infinix NOTE 12".into()],
             url: "https://example.invalid/DA/infinix/mt6789.bin".into(),
             sha256: EXPECTED_SHA.into(),
+            ..Default::default()
         }
     }
 

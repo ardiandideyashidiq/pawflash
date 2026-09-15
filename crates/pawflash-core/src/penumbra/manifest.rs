@@ -12,9 +12,22 @@ use serde::{Deserialize, Serialize};
 pub const DA_MANIFEST_URL: &str =
     "https://raw.githubusercontent.com/ardiandideyashidiq/penumbra/main/DA/manifest.json";
 
-/// One hosted DA blob.
+/// Metadata for a downloadable binary blob (DA or Auth).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileBlob {
+    pub url: String,
+    pub sha256: String,
+    #[serde(default)]
+    pub filename: Option<String>,
+    #[serde(default)]
+    pub size_bytes: Option<u64>,
+}
+
+/// One hosted DA blob and optional companion auth blob.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DAEntry {
+    #[serde(default)]
+    pub id: Option<String>,
     /// OEM/brand subdirectory, e.g. `infinix`.
     pub brand: String,
     /// `SoC` chipset, e.g. `mt6789`.
@@ -22,13 +35,79 @@ pub struct DAEntry {
     /// Retail device names using this DA, e.g. `["Infinix NOTE 12"]`.
     #[serde(default)]
     pub devices: Vec<String>,
-    /// Raw download URL for the blob.
+    /// Nested DA binary blob info.
+    #[serde(default)]
+    pub da: Option<FileBlob>,
+    /// Optional companion auth file (e.g. for SLA/DAA secured chipsets).
+    #[serde(default)]
+    pub auth: Option<FileBlob>,
+    /// Raw download URL for the blob (flat fallback).
+    #[serde(default)]
     pub url: String,
-    /// SHA-256 of the blob.
+    /// SHA-256 of the blob (flat fallback).
+    #[serde(default)]
     pub sha256: String,
+    /// Optional raw download URL for auth file (flat fallback).
+    #[serde(default)]
+    pub auth_url: Option<String>,
+    /// Optional SHA-256 for auth file (flat fallback).
+    #[serde(default)]
+    pub auth_sha256: Option<String>,
+    /// Whether verified working by community.
+    #[serde(default)]
+    pub verified: Option<bool>,
+    /// Optional notes / instructions.
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 impl DAEntry {
+    /// Resolved DA download URL.
+    #[must_use]
+    pub fn da_url(&self) -> &str {
+        if let Some(ref d) = self.da {
+            &d.url
+        } else {
+            &self.url
+        }
+    }
+
+    /// Resolved DA SHA-256 digest.
+    #[must_use]
+    pub fn da_sha256(&self) -> &str {
+        if let Some(ref d) = self.da {
+            &d.sha256
+        } else {
+            &self.sha256
+        }
+    }
+
+    /// Resolved companion Auth download URL if present.
+    #[must_use]
+    pub fn auth_url(&self) -> Option<&str> {
+        if let Some(ref a) = self.auth {
+            Some(&a.url)
+        } else {
+            self.auth_url.as_deref()
+        }
+    }
+
+    /// Resolved companion Auth SHA-256 digest if present.
+    #[must_use]
+    pub fn auth_sha256(&self) -> Option<&str> {
+        if let Some(ref a) = self.auth {
+            Some(&a.sha256)
+        } else {
+            self.auth_sha256.as_deref()
+        }
+    }
+
+    /// Returns `true` if this DA has a companion Auth file.
+    #[must_use]
+    pub const fn has_auth(&self) -> bool {
+        self.auth.is_some() || self.auth_url.is_some()
+    }
+
     /// Human-readable label for pickers: `"Infinix NOTE 12  (infinix · mt6789)"`.
     #[must_use]
     pub fn label(&self) -> String {
@@ -199,6 +278,36 @@ mod tests {
         assert_eq!(m.dais.len(), 2);
         assert_eq!(m.dais[0].devices, vec!["Infinix NOTE 12", "Infinix NOTE 12i"]);
         assert_eq!(m.dais[0].sha256.len(), 64);
+        assert!(!m.dais[0].has_auth());
+    }
+
+    #[test]
+    fn parses_da_auth_combo() {
+        let json = r#"{
+          "version": "1.2.0",
+          "dais": [
+            {
+              "id": "xiaomi-combo",
+              "brand": "xiaomi",
+              "chipset": "mt6877",
+              "devices": ["Redmi Note 12 Pro 5G"],
+              "da": {
+                "url": "https://example.com/da.bin",
+                "sha256": "3c7de4ee52b47f1d4c5122868b52dfa06c18e5ef940f4c8a04c46365a696bbdd"
+              },
+              "auth": {
+                "url": "https://example.com/auth.auth",
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          ]
+        }"#;
+        let m: DAManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(m.dais.len(), 1);
+        let entry = &m.dais[0];
+        assert!(entry.has_auth());
+        assert_eq!(entry.da_url(), "https://example.com/da.bin");
+        assert_eq!(entry.auth_url(), Some("https://example.com/auth.auth"));
     }
 
     #[test]
