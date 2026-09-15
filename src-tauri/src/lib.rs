@@ -1095,6 +1095,42 @@ async fn penumbra_status(simulate: bool) -> Result<PenumbraStatusPayload, AppErr
 
 #[tracing::instrument(skip_all, fields(simulate))]
 #[tauri::command]
+async fn penumbra_list_devices(
+  simulate: bool,
+) -> Result<Vec<pawflash_core::penumbra::DAEntry>, AppError> {
+  if simulate {
+    return Ok(vec![
+      pawflash_core::penumbra::DAEntry {
+        brand: "infinix".into(),
+        chipset: "mt6789".into(),
+        devices: vec!["Infinix NOTE 12".into(), "Infinix Zero 20".into()],
+        url: "https://example.com/da.bin".into(),
+        sha256: "dummy".into(),
+      },
+      pawflash_core::penumbra::DAEntry {
+        brand: "xiaomi".into(),
+        chipset: "mt6877".into(),
+        devices: vec!["Redmi Note 12 Pro".into()],
+        url: "https://example.com/da.bin".into(),
+        sha256: "dummy".into(),
+      },
+      pawflash_core::penumbra::DAEntry {
+        brand: "transsion".into(),
+        chipset: "mt6768".into(),
+        devices: vec!["Tecno Spark 9 Pro".into(), "Infinix Hot 11S".into()],
+        url: "https://example.com/da.bin".into(),
+        sha256: "dummy".into(),
+      },
+    ]);
+  }
+  tokio::task::spawn_blocking(pawflash_core::penumbra::list_dais)
+    .await
+    .map_err(|e| AppError::Other { message: e.to_string() })?
+    .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })
+}
+
+#[tracing::instrument(skip_all, fields(simulate))]
+#[tauri::command]
 async fn penumbra_da_download(
   device: Option<String>,
   on_event: Channel<ProgressEvent>,
@@ -2003,6 +2039,7 @@ pub fn run() {
       mtk_write,
       mtk_erase,
       penumbra_status,
+      penumbra_list_devices,
       penumbra_da_download,
       penumbra_da_status,
       penumbra_da_remove,

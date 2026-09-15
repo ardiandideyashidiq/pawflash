@@ -122,3 +122,37 @@ export interface FlashPlanView {
   skippedCount: number;
 }
 
+export interface PenumbraStatusPayload {
+  da_version: string | null;
+  da_path: string | null;
+  da_installed: boolean;
+  device_visible: boolean;
+  platform: string;
+  auth_path: string | null;
+  is_custom: boolean;
+}
+
+export interface PenumbraPartitionInfo {
+  name: string;
+  address: number;
+  size: number;
+  sizeFormatted: string;
+  section: string;
+}
+
+export interface PenumbraDaEntry {
+  brand: string;
+  chipset: string;
+  devices: string[];
+  url: string;
+  sha256: string;
+}
+
+export interface PenumbraDaSelection {
+  brand: string;
+  chipset: string;
+  path: string;
+  sha256: string;
+  auth_path: string | null;
+  is_custom: boolean;
+}

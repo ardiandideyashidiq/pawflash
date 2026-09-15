@@ -5,7 +5,7 @@
 //! URL. Consumers resolve a DA by device name (primary) or `(brand, chipset)`.
 
 use crate::penumbra::{PenumbraError, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Fixed consumer URL for the DA manifest. Everything else (DA file paths,
 /// URLs, hashes) is resolved from this document.
@@ -13,7 +13,7 @@ pub const DA_MANIFEST_URL: &str =
     "https://raw.githubusercontent.com/ardiandideyashidiq/penumbra/main/DA/manifest.json";
 
 /// One hosted DA blob.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DAEntry {
     /// OEM/brand subdirectory, e.g. `infinix`.
     pub brand: String,
@@ -38,7 +38,7 @@ impl DAEntry {
 }
 
 /// The DA manifest.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DAManifest {
     pub version: String,
     #[serde(default)]
