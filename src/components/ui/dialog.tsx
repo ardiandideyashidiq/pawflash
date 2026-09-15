@@ -5,8 +5,35 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+function Dialog({
+  onOpenChange,
+  dismissible = false,
+  ...props
+}: DialogPrimitive.Root.Props & {
+  /** If false (default), clicking outside the dialog or backdrop will not dismiss it. */
+  dismissible?: boolean;
+}) {
+  const handleOpenChange = React.useCallback(
+    (
+      nextOpen: boolean,
+      details: Parameters<NonNullable<DialogPrimitive.Root.Props["onOpenChange"]>>[1]
+    ) => {
+      if (!dismissible && !nextOpen && details?.reason === "outside-press") {
+        details.cancel();
+        return;
+      }
+      onOpenChange?.(nextOpen, details);
+    },
+    [dismissible, onOpenChange]
+  );
+
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  );
 }
 
 function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {
@@ -21,12 +48,12 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 cursor-default bg-stone-950/40 backdrop-blur-sm transition-opacity duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
     />
-  )
+  );
 }
 
 function DialogContent({

@@ -183,7 +183,7 @@ export function LogPanel() {
         type="button"
         aria-label="Close logs"
         className={cn(
-          "fixed inset-0 z-40 cursor-default bg-stone-950/25 backdrop-blur-sm transition-opacity duration-300",
+          "fixed inset-0 z-40 cursor-default bg-stone-950/40 backdrop-blur-sm transition-opacity duration-200",
           shown ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={closeLogPanel}

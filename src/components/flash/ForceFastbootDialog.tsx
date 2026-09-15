@@ -44,7 +44,7 @@ export const ForceFastbootDialog = memo(function ForceFastbootDialog({
       onOpenChange={createDismissibleDialogRootHandler(onOpenChange)}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-stone-950/18 backdrop-blur-sm transition-opacity duration-150 data-closed:opacity-0 data-open:opacity-100" />
+        <DialogPrimitive.Backdrop className="fixed inset-0 isolate z-50 cursor-default bg-stone-950/40 backdrop-blur-sm transition-opacity duration-150 data-closed:opacity-0 data-open:opacity-100" />
         <DialogPrimitive.Popup className="fixed top-1/2 left-1/2 z-50 flex w-[min(28rem,calc(100vw-1rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-md border border-border bg-background shadow-[var(--overlay-shadow)] pointer-events-auto outline-none transition-all duration-150 data-closed:scale-[0.99] data-closed:opacity-0 data-open:scale-100 data-open:opacity-100">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0 flex-1">
