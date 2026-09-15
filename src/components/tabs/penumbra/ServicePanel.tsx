@@ -187,11 +187,7 @@ export const ServicePanel = memo(function ServicePanel({
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto w-full pt-2">
       {/* Bootloader Security */}
       <SectionCard title="Bootloader Lock (seccfg)" contentClassName="space-y-3">
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Directly writes security configuration to the <code className="text-trace-copper font-mono">seccfg</code> partition in DA mode.
-        </p>
-
-        <div className="grid grid-cols-2 gap-3 pt-2">
+        <div className="grid grid-cols-2 gap-3 pt-1">
           <Button
             variant="outline"
             disabled={disabled || busy || !daInstalled}
@@ -216,15 +212,11 @@ export const ServicePanel = memo(function ServicePanel({
 
       {/* Low-level BootROM Crash */}
       <SectionCard title="SoC Low-level Recovery" contentClassName="space-y-3">
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Force the SoC from Preloader into hardware BootROM mode (USB VID:PID 0x0E8D:0x0003) via assertion panic.
-        </p>
-
         <Button
           variant="outline"
           disabled={disabled || busy || !daInstalled}
           onClick={() => void handleCrash()}
-          className="w-full gap-2 border-error/40 hover:bg-error/10 hover:text-error text-xs mt-2"
+          className="w-full gap-2 border-error/40 hover:bg-error/10 hover:text-error text-xs mt-1"
         >
           <Skull className="h-4 w-4 text-error" />
           Crash Preloader to BootROM
@@ -232,11 +224,7 @@ export const ServicePanel = memo(function ServicePanel({
       </SectionCard>
 
       {/* MediaTek Power & Reboot Modes */}
-      <SectionCard title="MediaTek Power & Reboot Modes" className="md:col-span-2" contentClassName="space-y-4">
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Instruct the Download Agent to reset the device into specialized MediaTek hardware execution environments.
-        </p>
-
+      <SectionCard title="MediaTek Power & Reboot Modes" className="md:col-span-2" contentClassName="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <select
             value={bootMode}

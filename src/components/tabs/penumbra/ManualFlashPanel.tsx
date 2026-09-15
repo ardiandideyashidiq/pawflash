@@ -117,10 +117,6 @@ export const ManualFlashPanel = memo(function ManualFlashPanel({
   return (
     <div className="max-w-2xl mx-auto w-full pt-4">
       <SectionCard title="Direct Partition Flash (DA Mode)" contentClassName="space-y-4">
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Flash raw binary images directly to target storage partitions via the active Download Agent connection.
-        </p>
-
         <div className="space-y-1.5">
           <span className="text-xs font-medium text-muted-foreground">Target Partition</span>
           <Input

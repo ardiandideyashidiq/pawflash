@@ -30,41 +30,15 @@ type PenumbraSubTab = "scatter" | "pgpt" | "backup" | "manual" | "service";
 interface TabDef {
   id: PenumbraSubTab;
   label: string;
-  description: string;
   icon: React.ComponentType<{ className?: string }>;
 }
 
 const TABS: TabDef[] = [
-  {
-    id: "scatter",
-    label: "Scatter Flash",
-    description: "Firmware flashing via scatter XML or text map",
-    icon: Layers,
-  },
-  {
-    id: "pgpt",
-    label: "Partition Table (PGPT)",
-    description: "Read, dump, write, or erase partition table",
-    icon: HardDrive,
-  },
-  {
-    id: "backup",
-    label: "Backup & NVRAM",
-    description: "Safeguard IMEI, calibration & dump partitions",
-    icon: Archive,
-  },
-  {
-    id: "manual",
-    label: "Manual Partition Flash",
-    description: "Direct single partition write or raw image",
-    icon: Send,
-  },
-  {
-    id: "service",
-    label: "Service & Boot",
-    description: "Bootloader unlock, relock, and device wipe",
-    icon: Wrench,
-  },
+  { id: "scatter", label: "Scatter Flash", icon: Layers },
+  { id: "pgpt", label: "Partition Table (PGPT)", icon: HardDrive },
+  { id: "backup", label: "Backup & Calibration", icon: Archive },
+  { id: "manual", label: "Manual Partition Flash", icon: Send },
+  { id: "service", label: "Service & Boot", icon: Wrench },
 ];
 
 export default memo(function PenumbraTab() {
@@ -127,10 +101,7 @@ export default memo(function PenumbraTab() {
 
               <Menu.Portal>
                 <Menu.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50">
-                  <Menu.Popup className="z-50 w-72 rounded-lg border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-xl outline-none space-y-0.5">
-                    <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/60 mb-1">
-                      Penumbra Operations
-                    </div>
+                  <Menu.Popup className="z-50 w-56 rounded-lg border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-xl outline-none space-y-0.5">
                     {TABS.map((tab) => {
                       const Icon = tab.icon;
                       const isSelected = activeTab === tab.id;
@@ -141,29 +112,17 @@ export default memo(function PenumbraTab() {
                           onClick={() => setActiveTab(tab.id)}
                           className={cn(
                             "group flex w-full cursor-pointer items-center justify-between rounded-md px-2.5 py-2 text-xs font-medium outline-none transition-colors hover:bg-accent-soft focus:bg-accent-soft",
-                            isSelected && "bg-trace-copper/10 border border-trace-copper/30",
+                            isSelected && "bg-trace-copper/10 text-trace-copper font-semibold",
                           )}
                         >
-                          <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                          <div className="flex items-center gap-2.5">
                             <Icon
                               className={cn(
-                                "h-4 w-4 mt-0.5 shrink-0 transition-colors",
+                                "h-4 w-4 shrink-0 transition-colors",
                                 isSelected ? "text-trace-copper" : "text-muted-foreground group-hover:text-foreground",
                               )}
                             />
-                            <div className="flex min-w-0 flex-1 flex-col text-left">
-                              <span
-                                className={cn(
-                                  "text-xs font-medium leading-snug truncate",
-                                  isSelected ? "text-trace-copper font-semibold" : "text-foreground",
-                                )}
-                              >
-                                {tab.label}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground font-normal leading-snug line-clamp-1">
-                                {tab.description}
-                              </span>
-                            </div>
+                            <span className="truncate">{tab.label}</span>
                           </div>
                           {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-trace-copper ml-2" />}
                         </Menu.Item>

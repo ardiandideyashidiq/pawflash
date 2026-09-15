@@ -212,18 +212,15 @@ export const BackupPanel = memo(function BackupPanel({
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       {/* Hero NVRAM Card */}
-      <div className="panel-shell p-5 border-trace-copper/40 bg-trace-copper/5 shrink-0">
+      <div className="panel-shell p-4 border-trace-copper/40 bg-trace-copper/5 shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-signal-green" />
-              Backup NVRAM & Calibration (IMEI / Radio / Keys)
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-signal-green" />
+              Backup NVRAM & Calibration
             </h3>
-            <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-              Dumps vital device-specific calibration partitions:{" "}
-              <code className="font-mono text-trace-copper">
-                nvram, nvdata, protect_f, protect_s, nvcfg, proinfo, persist, seccfg, sec1
-              </code>. Safeguards IMEI and carrier configuration against accidental bricking or baseband loss.
+            <p className="text-xs text-muted-foreground">
+              Preserves IMEI, baseband calibration, and device security keys.
             </p>
           </div>
 

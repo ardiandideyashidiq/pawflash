@@ -200,7 +200,7 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
             </div>
             <div className="flex items-center gap-2">
               <span
-                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                className={`inline-block h-2 w-2 rounded-full ${
                   status?.device_visible ? "bg-signal-green animate-pulse" : "bg-muted-foreground/60"
                 }`}
               />
@@ -208,9 +208,6 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
                 {status?.device_visible ? "MTK USB Port Connected" : "Waiting for MTK USB Port"}
               </span>
             </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Turn device off and plug in USB (Preloader), or hold Vol- / Vol+ while connecting (BootROM).
-            </p>
           </div>
 
           {/* Active Download Agent */}
@@ -255,7 +252,7 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
               </div>
             ) : (
               <div className="text-xs text-muted-foreground">
-                No DA installed. Download from the list below or select a custom DA file.
+                No DA installed
               </div>
             )}
           </div>
@@ -292,7 +289,7 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
               </div>
             ) : (
               <div className="text-xs text-muted-foreground">
-                No auth loaded (optional, only required for SLA/DAA secured chipsets).
+                No auth loaded (optional)
               </div>
             )}
           </div>
