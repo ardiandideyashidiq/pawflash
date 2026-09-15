@@ -174,7 +174,7 @@ export const ScatterPanel = memo(function ScatterPanel({
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       {/* Header bar */}
-      <div className="panel-shell flex flex-wrap items-center justify-between gap-3 p-3">
+      <div className="panel-shell flex flex-wrap items-center justify-between gap-3 p-3 shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-[280px]">
           <Button
             variant="outline"
@@ -279,7 +279,7 @@ export const ScatterPanel = memo(function ScatterPanel({
       </div>
 
       {/* Flash Action Footer */}
-      <div className="panel-shell flex flex-wrap items-center justify-between gap-4 p-4">
+      <div className="panel-shell flex flex-wrap items-center justify-between gap-4 p-4 shrink-0">
         <div className="flex items-center gap-3">
           <div
             role="button"

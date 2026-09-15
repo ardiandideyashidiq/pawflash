@@ -211,7 +211,7 @@ export const PartitionTablePanel = memo(function PartitionTablePanel({
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       {/* Action and Search bar */}
-      <div className="panel-shell flex flex-wrap items-center justify-between gap-3 p-3">
+      <div className="panel-shell flex flex-wrap items-center justify-between gap-3 p-3 shrink-0">
         <div className="flex items-center gap-2">
           <Button
             size="sm"

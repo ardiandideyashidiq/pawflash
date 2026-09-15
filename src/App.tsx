@@ -519,7 +519,8 @@ function AppRoot() {
               key={tab}
               className={cn(
                 "animate-in fade-in duration-200 ease-out",
-                (tab === "flasher" || tab === "extras") && "h-full min-h-0",
+                (tab === "flasher" || tab === "extras" || tab === "penumbra" || tab === "mtk") &&
+                  "h-full min-h-0 flex flex-col flex-1",
               )}
             >
               {tab === "flasher" && (

@@ -159,7 +159,7 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
   return (
     <div className="panel-shell flex h-full min-h-0 flex-col overflow-hidden">
       {/* Sidepanel Header */}
-      <div className="flex items-center justify-between border-b border-border/70 px-4 py-3 bg-card/96">
+      <div className="flex items-center justify-between border-b border-border/70 px-4 py-3 bg-card/96 shrink-0">
         <div className="flex items-center gap-2">
           <Usb className="h-4 w-4 text-trace-copper" />
           <span className="text-sm font-semibold text-foreground">Device & DA Setup</span>

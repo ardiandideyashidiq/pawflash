@@ -212,7 +212,7 @@ export const BackupPanel = memo(function BackupPanel({
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       {/* Hero NVRAM Card */}
-      <div className="panel-shell p-5 border-trace-copper/40 bg-trace-copper/5">
+      <div className="panel-shell p-5 border-trace-copper/40 bg-trace-copper/5 shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
@@ -255,10 +255,10 @@ export const BackupPanel = memo(function BackupPanel({
       {/* Bulk Partition Backup */}
       <SectionCard
         title="Custom & Full Partition Backup"
-        className="flex-1 flex flex-col min-h-0"
+        className="flex-1 flex flex-col min-h-0 overflow-hidden"
         contentClassName="flex-1 flex flex-col min-h-0 mt-2 gap-3"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3">
             <Button
               variant="outline"

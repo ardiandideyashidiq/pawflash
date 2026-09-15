@@ -73,7 +73,7 @@ export default memo(function PenumbraTab() {
       {/* Main Canvas (Sub-tabs Navigation + Content Panels) */}
       <div className="flex min-w-0 flex-1 min-h-0 flex-col gap-3">
         {/* Sub-tab Navigation Header */}
-        <div className="flex items-center justify-between gap-2 border-b border-border/70 pb-2">
+        <div className="flex items-center justify-between gap-2 border-b border-border/70 pb-2 shrink-0">
           <div className="flex items-center gap-1 overflow-x-auto">
             {TABS.map((tab) => {
               const Icon = tab.icon;
@@ -135,18 +135,26 @@ export default memo(function PenumbraTab() {
         </div>
 
         {/* Tab Content Panels */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {activeTab === "scatter" && <ScatterPanel daInstalled={daInstalled} />}
           {activeTab === "pgpt" && <PartitionTablePanel daInstalled={daInstalled} />}
           {activeTab === "backup" && <BackupPanel daInstalled={daInstalled} />}
-          {activeTab === "manual" && <ManualFlashPanel daInstalled={daInstalled} />}
-          {activeTab === "service" && <ServicePanel daInstalled={daInstalled} />}
+          {activeTab === "manual" && (
+            <div className="h-full min-h-0 overflow-y-auto pr-1">
+              <ManualFlashPanel daInstalled={daInstalled} />
+            </div>
+          )}
+          {activeTab === "service" && (
+            <div className="h-full min-h-0 overflow-y-auto pr-1">
+              <ServicePanel daInstalled={daInstalled} />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Collapsable Right Sidepanel */}
       {sidepanelOpen && (
-        <aside className="w-80 shrink-0 min-h-0 flex flex-col transition-all duration-200 ease-out">
+        <aside className="w-80 shrink-0 h-full min-h-0 flex flex-col transition-all duration-200 ease-out">
           <DeviceSidepanel
             status={status}
             onRefresh={refreshStatus}
