@@ -16,7 +16,7 @@ use penumbra::core::storage::{PartitionKind, RpmbRegion};
 use penumbra::{Device, Storage};
 use std::fs::{File, create_dir_all};
 use std::io::{BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use wincode::Serialize;
 
@@ -477,24 +477,41 @@ impl PenumbraRunner for RealPenumbra {
         let scatter = crate::scatter_parser::parse::parse_scatter(scatter_path)
             .map_err(|e| PenumbraError::Penumbra(format!("failed to parse scatter: {e}")))?;
         let scatter_dir = scatter_path.parent().unwrap_or_else(|| Path::new("."));
+        let options = crate::scatter_parser::types::FlashPlanOptions {
+            package_root: Some(scatter_dir.to_path_buf()),
+            allowance: crate::scatter_parser::types::Allowance {
+                include_preloader: true,
+                allow_incomplete_slots: true,
+            },
+            ..Default::default()
+        };
+        let plan = crate::scatter_parser::build_flash_plan(&scatter, &options);
 
         let mut targets = Vec::new();
-        for layout_parts in scatter.layouts.values() {
-            for p in layout_parts {
-                if !p.is_download {
+        for action in plan.actions {
+            if action.action != "flash" {
+                continue;
+            }
+            if let Some(filter) = partitions {
+                if !filter.contains(&action.partition) {
                     continue;
                 }
-                if let Some(filter) = partitions {
-                    if !filter.contains(&p.name) {
-                        continue;
-                    }
-                }
-                if let Some(ref filename) = p.file_name {
-                    let img_path = scatter_dir.join(filename);
-                    if img_path.is_file() {
-                        targets.push((p.name.clone(), img_path));
-                    }
-                }
+            }
+            let img_path = if let Some(resolved) = action.image_resolved_path() {
+                PathBuf::from(resolved)
+            } else if let Some(fname) = action
+                .image
+                .as_ref()
+                .and_then(|v| v.get("file_name"))
+                .and_then(|f| f.as_str())
+            {
+                scatter_dir.join(fname)
+            } else {
+                continue;
+            };
+
+            if img_path.is_file() {
+                targets.push((action.partition.clone(), img_path));
             }
         }
 
