@@ -31,7 +31,6 @@ export const ScatterPanel = memo(function ScatterPanel({
   const {
     scatterPath,
     plan,
-    loading,
     options,
     setIncludePreloader,
     togglePartition,
@@ -116,52 +115,32 @@ export const ScatterPanel = memo(function ScatterPanel({
           <Button
             variant="outline"
             size="sm"
-            disabled={disabled || loading || flashing}
+            disabled={disabled || flashing}
             onClick={() => void handlePickScatter()}
             className="gap-2 shrink-0"
           >
             <FolderOpen className="h-4 w-4 text-trace-copper" />
-            {loading ? "Parsing..." : "Choose Scatter"}
+            Choose Scatter
           </Button>
           <div className="font-mono text-xs truncate text-muted-foreground bg-muted/40 px-2.5 py-1.5 rounded border border-border/60 flex-1">
             {scatterPath || "No scatter file selected (.txt or .xml)"}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 text-xs">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setIncludePreloader(!options.includePreloader)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setIncludePreloader(!options.includePreloader);
-              }
-            }}
-            className="flex items-center gap-2 cursor-pointer select-none text-xs font-medium"
+        <div className="flex items-center gap-2 select-none">
+          <Checkbox
+            id="scatter-include-preloader"
+            checked={options.includePreloader}
+            onCheckedChange={(checked) => setIncludePreloader(Boolean(checked))}
+            disabled={disabled || flashing}
+            aria-label="Include preloader in flash"
+          />
+          <Label
+            htmlFor="scatter-include-preloader"
+            className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground"
           >
-            <Checkbox
-              id="scatter-include-preloader-header"
-              checked={options.includePreloader}
-              onCheckedChange={(checked) => setIncludePreloader(Boolean(checked))}
-              disabled={disabled || loading || flashing}
-              aria-label="Include preloader in flash"
-            />
-            <Label
-              htmlFor="scatter-include-preloader-header"
-              className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground"
-            >
-              Include preloader
-            </Label>
-          </div>
-
-          {plan?.chipset && (
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span>Platform: <strong className="text-foreground font-mono">{plan.chipset}</strong></span>
-              {plan.project && <span>Project: <strong className="text-foreground font-mono">{plan.project}</strong></span>}
-            </div>
-          )}
+            Include preloader
+          </Label>
         </div>
       </div>
 
@@ -173,6 +152,7 @@ export const ScatterPanel = memo(function ScatterPanel({
               <col className="w-12" />
               <col className="w-36 sm:w-48" />
               <col className="w-28 hidden sm:table-column" />
+              <col className="w-32 hidden lg:table-column" />
               <col className="w-auto" />
             </colgroup>
             <TableHeader className="[&_th]:text-muted-foreground [&_th]:font-bold text-xs">
@@ -190,6 +170,7 @@ export const ScatterPanel = memo(function ScatterPanel({
                 </TableHead>
                 <TableHead>Partition</TableHead>
                 <TableHead className="hidden sm:table-cell">Size</TableHead>
+                <TableHead className="hidden lg:table-cell text-center">Type</TableHead>
                 <TableHead>Image File</TableHead>
               </TableRow>
             </TableHeader>
@@ -208,6 +189,7 @@ export const ScatterPanel = memo(function ScatterPanel({
                 <col className="w-12" />
                 <col className="w-36 sm:w-48" />
                 <col className="w-28 hidden sm:table-column" />
+                <col className="w-32 hidden lg:table-column" />
                 <col className="w-auto" />
               </colgroup>
               <TableBody>
@@ -229,6 +211,13 @@ export const ScatterPanel = memo(function ScatterPanel({
                     <TableCell className="hidden sm:table-cell text-xs text-muted-foreground tabular-nums">
                       {part.size_human}
                     </TableCell>
+                    <TableCell className="hidden truncate text-center text-xs text-muted-foreground lg:table-cell">
+                      {part.image_type ? (
+                        part.image_type
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground truncate">
                       {part.image_name ? (
                         <span className="text-trace-copper font-medium">{part.image_name}</span>
@@ -247,56 +236,29 @@ export const ScatterPanel = memo(function ScatterPanel({
       {/* Flash Action Footer */}
       <div className="panel-shell flex flex-wrap items-center justify-between gap-4 p-4 shrink-0">
         <div className="flex flex-wrap items-center gap-4">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setBackupProtected(!backupProtected)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setBackupProtected(!backupProtected);
-              }
-            }}
-            className="flex items-center gap-2 cursor-pointer text-xs font-medium select-none"
-          >
+          <div className="flex items-center gap-2 select-none">
             <Checkbox
+              id="scatter-backup-nvram"
               checked={backupProtected}
               onCheckedChange={(checked) => setBackupProtected(Boolean(checked))}
               disabled={flashing}
               aria-label="Backup NVRAM and calibration before flashing"
             />
-            <span className="flex items-center gap-1.5">
+            <Label
+              htmlFor="scatter-backup-nvram"
+              className="flex items-center gap-1.5 cursor-pointer text-xs font-medium select-none"
+            >
               <ShieldCheck className="h-3.5 w-3.5 text-signal-green" />
               Backup NVRAM & Calibration
-            </span>
-          </div>
-
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setIncludePreloader(!options.includePreloader)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setIncludePreloader(!options.includePreloader);
-              }
-            }}
-            className="flex items-center gap-2 cursor-pointer text-xs font-medium select-none"
-          >
-            <Checkbox
-              id="scatter-include-preloader-footer"
-              checked={options.includePreloader}
-              onCheckedChange={(checked) => setIncludePreloader(Boolean(checked))}
-              disabled={flashing}
-              aria-label="Include preloader in flash"
-            />
-            <Label
-              htmlFor="scatter-include-preloader-footer"
-              className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground"
-            >
-              Include preloader
             </Label>
           </div>
+
+          {plan?.chipset && (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground border-l border-border/60 pl-3">
+              <span>Platform: <strong className="text-foreground font-mono">{plan.chipset}</strong></span>
+              {plan.project && <span>Project: <strong className="text-foreground font-mono">{plan.project}</strong></span>}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
