@@ -173,7 +173,7 @@ export const DeviceSidepanel = memo(function DeviceSidepanel({
   const authFileName = status?.auth_path ? status.auth_path.split(/[/\\]/).pop() : null;
 
   return (
-    <div className="panel-shell flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
       {/* Sidepanel Header */}
       <div className="flex items-center justify-between border-b border-border/70 px-4 py-3 bg-card/96 shrink-0">
         <div className="flex items-center gap-2">

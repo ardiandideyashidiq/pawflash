@@ -45,10 +45,7 @@ export default memo(function PenumbraTab() {
   const { simulate } = useSimulation();
   const [activeTab, setActiveTab] = useState<PenumbraSubTab>("scatter");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sidepanelOpen, setSidepanelOpen] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return window.innerWidth >= 1280;
-  });
+  const [sidepanelOpen, setSidepanelOpen] = useState(false);
   const [status, setStatus] = useState<PenumbraStatusPayload | null>(null);
 
   const refreshStatus = useCallback(async () => {
@@ -67,6 +64,17 @@ export default memo(function PenumbraTab() {
     }, 4000);
     return () => clearInterval(interval);
   }, [refreshStatus]);
+
+  useEffect(() => {
+    if (!sidepanelOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSidepanelOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sidepanelOpen]);
 
   const daInstalled = Boolean(status?.da_installed);
 
@@ -194,22 +202,22 @@ export default memo(function PenumbraTab() {
         </div>
       </div>
 
-      {/* Collapsable Right Sidepanel: Drawer overlay on small screens (< 1280px), inline on wide screens (>= 1280px) */}
+      {/* Collapsable Right Sidepanel: Overlay drawer on all screen widths */}
       {sidepanelOpen && (
         <>
-          {/* Backdrop on screens < xl */}
+          {/* Backdrop */}
           <div
             role="button"
             tabIndex={0}
             aria-label="Close setup panel"
-            className="fixed inset-0 z-40 bg-stone-950/40 backdrop-blur-xs xl:hidden"
+            className="fixed inset-0 z-40 bg-stone-950/40 backdrop-blur-xs transition-opacity duration-200"
             onClick={() => setSidepanelOpen(false)}
             onKeyDown={(e) => {
               if (e.key === "Escape") setSidepanelOpen(false);
             }}
           />
 
-          <aside className="fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] h-full shadow-2xl xl:static xl:z-auto xl:shadow-none xl:w-72 2xl:w-80 shrink-0 min-h-0 flex flex-col transition-all duration-200 ease-out">
+          <aside className="fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] h-full shadow-2xl bg-card border-l border-border/80 shrink-0 min-h-0 flex flex-col transition-transform duration-200 ease-out">
             <DeviceSidepanel
               status={status}
               onRefresh={refreshStatus}
