@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Channel } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -9,20 +9,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useFlashPlan } from "@/hooks/useFlashPlan";
 import { useFlashProgress } from "@/hooks/useFlashProgress";
 import { useSimulation } from "@/hooks/useSimulation";
 import { useConsole } from "@/hooks/useConsole";
-import { buildFlashPlanOptions } from "@/lib/plan";
-import { errorMessage, type FlashPlanDto } from "@/types/api";
+import { errorMessage } from "@/types/api";
 import type { ProgressEvent } from "@/types/progress";
-
-interface ParsedScatterPartition {
-  name: string;
-  fileName: string | null;
-  sizeHuman: string;
-  isDownload: boolean;
-  selected: boolean;
-}
 
 interface ScatterPanelProps {
   daInstalled: boolean;
@@ -36,14 +28,23 @@ export const ScatterPanel = memo(function ScatterPanel({
   const { simulate } = useSimulation();
   const flash = useFlashProgress();
   const { addEntry, addProgressEvent } = useConsole();
+  const {
+    scatterPath,
+    plan,
+    loading,
+    options,
+    setIncludePreloader,
+    togglePartition,
+    toggleAllPartitions,
+    allSelected,
+    someSelected,
+    selectedFlashCount,
+    rows,
+    selectedRows,
+    loadScatter,
+  } = useFlashPlan();
 
-  const [scatterPath, setScatterPath] = useState("");
-  const [platform, setPlatform] = useState<string | null>(null);
-  const [project, setProject] = useState<string | null>(null);
-  const [partitions, setPartitions] = useState<ParsedScatterPartition[]>([]);
-  const [includePreloader, setIncludePreloader] = useState(false);
   const [backupProtected, setBackupProtected] = useState(true);
-  const [loading, setLoading] = useState(false);
   const [flashing, setFlashing] = useState(false);
 
   const handlePickScatter = async () => {
@@ -54,116 +55,15 @@ export const ScatterPanel = memo(function ScatterPanel({
         multiple: false,
       });
       if (typeof selected === "string" && selected.trim()) {
-        await loadScatter(selected.trim());
+        loadScatter(selected.trim());
       }
     } catch (error) {
       toast.error(errorMessage(error));
     }
   };
 
-  const loadScatter = async (path: string, withPreloader = includePreloader) => {
-    setLoading(true);
-    try {
-      const options = buildFlashPlanOptions([], withPreloader, path, {});
-      const plan = await invoke<FlashPlanDto>("build_plan", { path, options });
-
-      setScatterPath(path);
-      setPlatform(plan.platform ?? null);
-      setProject(plan.project ?? null);
-
-      const parts: ParsedScatterPartition[] = plan.actions
-        .filter((a) => a.action === "flash")
-        .map((a) => {
-          const imgPath = a.image?.path?.resolved_path ?? null;
-          const fileName = imgPath ? (imgPath.split(/[/\\]/).pop() ?? imgPath) : null;
-          return {
-            name: a.partition,
-            fileName,
-            sizeHuman: a.size_human,
-            isDownload: Boolean(imgPath),
-            selected: Boolean(imgPath),
-          };
-        });
-
-      setPartitions(parts);
-      toast.success(`Loaded scatter with ${parts.length} partitions (both slots populated)`);
-      addEntry({
-        text: `ScatterLoaded: ${path} (${parts.length} partitions, dual-slot populated)`,
-        level: "info",
-      });
-    } catch (error) {
-      const msg = errorMessage(error);
-      toast.error(`Failed to parse scatter: ${msg}`);
-      addEntry({ text: `ScatterParseError: ${msg}`, level: "error" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleToggleIncludePreloader = async (checked: boolean) => {
-    setIncludePreloader(checked);
-    if (!scatterPath) return;
-
-    try {
-      setLoading(true);
-      const options = buildFlashPlanOptions([], checked, scatterPath, {});
-      const plan = await invoke<FlashPlanDto>("build_plan", { path: scatterPath, options });
-
-      setPartitions((prev) => {
-        const prevSelected = new Set(prev.filter((p) => p.selected).map((p) => p.name));
-        const prevNames = new Set(prev.map((p) => p.name));
-
-        return plan.actions
-          .filter((a) => a.action === "flash")
-          .map((a) => {
-            const imgPath = a.image?.path?.resolved_path ?? null;
-            const fileName = imgPath ? (imgPath.split(/[/\\]/).pop() ?? imgPath) : null;
-            const isNew = !prevNames.has(a.partition);
-            const selected = isNew ? checked : prevSelected.has(a.partition);
-            return {
-              name: a.partition,
-              fileName,
-              sizeHuman: a.size_human,
-              isDownload: Boolean(imgPath),
-              selected,
-            };
-          });
-      });
-      toast.info(checked ? "Preloader included in flash plan" : "Preloader excluded from flash plan");
-    } catch (error) {
-      toast.error(`Failed to update plan: ${errorMessage(error)}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const togglePartition = (name: string) => {
-    setPartitions((prev) =>
-      prev.map((p) => (p.name === name ? { ...p, selected: !p.selected } : p))
-    );
-  };
-
-  const allSelected = useMemo(
-    () => partitions.length > 0 && partitions.every((p) => p.selected),
-    [partitions]
-  );
-  const someSelected = useMemo(
-    () => partitions.some((p) => p.selected) && !allSelected,
-    [partitions, allSelected]
-  );
-
-  const toggleAll = () => {
-    const next = !allSelected;
-    setPartitions((prev) => prev.map((p) => ({ ...p, selected: next })));
-  };
-
-  const selectedCount = useMemo(
-    () => partitions.filter((p) => p.selected).length,
-    [partitions]
-  );
-
   const handleStartFlash = async () => {
-    if (!scatterPath || selectedCount === 0) {
+    if (!scatterPath || selectedFlashCount === 0) {
       toast.error("Select at least one partition to flash");
       return;
     }
@@ -176,7 +76,7 @@ export const ScatterPanel = memo(function ScatterPanel({
     flash.reset();
     flash.openDialog();
 
-    const selectedNames = partitions.filter((p) => p.selected).map((p) => p.name);
+    const selectedNames = selectedRows.map((p) => p.partition);
     addEntry({
       text: `Penumbra ScatterFlash Started path=${scatterPath} count=${selectedNames.length}`,
       level: "command",
@@ -232,19 +132,19 @@ export const ScatterPanel = memo(function ScatterPanel({
           <div
             role="button"
             tabIndex={0}
-            onClick={() => void handleToggleIncludePreloader(!includePreloader)}
+            onClick={() => setIncludePreloader(!options.includePreloader)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                void handleToggleIncludePreloader(!includePreloader);
+                setIncludePreloader(!options.includePreloader);
               }
             }}
             className="flex items-center gap-2 cursor-pointer select-none text-xs font-medium"
           >
             <Checkbox
               id="scatter-include-preloader-header"
-              checked={includePreloader}
-              onCheckedChange={(checked) => void handleToggleIncludePreloader(Boolean(checked))}
+              checked={options.includePreloader}
+              onCheckedChange={(checked) => setIncludePreloader(Boolean(checked))}
               disabled={disabled || loading || flashing}
               aria-label="Include preloader in flash"
             />
@@ -256,10 +156,10 @@ export const ScatterPanel = memo(function ScatterPanel({
             </Label>
           </div>
 
-          {platform && (
+          {plan?.chipset && (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span>Platform: <strong className="text-foreground font-mono">{platform}</strong></span>
-              {project && <span>Project: <strong className="text-foreground font-mono">{project}</strong></span>}
+              <span>Platform: <strong className="text-foreground font-mono">{plan.chipset}</strong></span>
+              {plan.project && <span>Project: <strong className="text-foreground font-mono">{plan.project}</strong></span>}
             </div>
           )}
         </div>
@@ -282,8 +182,8 @@ export const ScatterPanel = memo(function ScatterPanel({
                     <Checkbox
                       checked={allSelected}
                       indeterminate={someSelected}
-                      onCheckedChange={toggleAll}
-                      disabled={partitions.length === 0 || flashing}
+                      onCheckedChange={toggleAllPartitions}
+                      disabled={rows.length === 0 || flashing}
                       aria-label="Select all partitions"
                     />
                   </div>
@@ -297,7 +197,7 @@ export const ScatterPanel = memo(function ScatterPanel({
         </div>
 
         <ScrollArea className="min-h-0 flex-1">
-          {partitions.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground">
               <p className="text-sm font-medium">No scatter partitions loaded</p>
               <p className="text-xs mt-1">Load a MediaTek scatter file to review partition images.</p>
@@ -311,27 +211,27 @@ export const ScatterPanel = memo(function ScatterPanel({
                 <col className="w-auto" />
               </colgroup>
               <TableBody>
-                {partitions.map((part) => (
-                  <TableRow key={part.name} className={part.selected ? "row-tint-flash" : undefined}>
+                {rows.map((part) => (
+                  <TableRow key={part.partition} className={part.selected ? "row-tint-flash" : undefined}>
                     <TableCell className="px-0 text-center">
                       <div className="flex justify-center">
                         <Checkbox
                           checked={part.selected}
-                          onCheckedChange={() => togglePartition(part.name)}
+                          onCheckedChange={() => togglePartition(part.partition)}
                           disabled={flashing}
-                          aria-label={`Select ${part.name}`}
+                          aria-label={`Select ${part.partition}`}
                         />
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-sm font-medium text-foreground truncate">
-                      {part.name}
+                      {part.partition}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-xs text-muted-foreground tabular-nums">
-                      {part.sizeHuman}
+                      {part.size_human}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground truncate">
-                      {part.fileName ? (
-                        <span className="text-trace-copper font-medium">{part.fileName}</span>
+                      {part.image_name ? (
+                        <span className="text-trace-copper font-medium">{part.image_name}</span>
                       ) : (
                         "—"
                       )}
@@ -374,19 +274,19 @@ export const ScatterPanel = memo(function ScatterPanel({
           <div
             role="button"
             tabIndex={0}
-            onClick={() => void handleToggleIncludePreloader(!includePreloader)}
+            onClick={() => setIncludePreloader(!options.includePreloader)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                void handleToggleIncludePreloader(!includePreloader);
+                setIncludePreloader(!options.includePreloader);
               }
             }}
             className="flex items-center gap-2 cursor-pointer text-xs font-medium select-none"
           >
             <Checkbox
               id="scatter-include-preloader-footer"
-              checked={includePreloader}
-              onCheckedChange={(checked) => void handleToggleIncludePreloader(Boolean(checked))}
+              checked={options.includePreloader}
+              onCheckedChange={(checked) => setIncludePreloader(Boolean(checked))}
               disabled={flashing}
               aria-label="Include preloader in flash"
             />
@@ -401,11 +301,11 @@ export const ScatterPanel = memo(function ScatterPanel({
 
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground">
-            Selected: <strong className="text-foreground">{selectedCount}</strong> / {partitions.length}
+            Selected: <strong className="text-foreground">{selectedFlashCount}</strong> / {rows.length}
           </span>
           <Button
             size="sm"
-            disabled={disabled || flashing || selectedCount === 0 || !daInstalled}
+            disabled={disabled || flashing || selectedFlashCount === 0 || !daInstalled}
             onClick={() => void handleStartFlash()}
             className="gap-2 bg-trace-copper text-zinc-950 font-semibold hover:bg-trace-gold"
           >
