@@ -243,20 +243,20 @@ export const PartitionTablePanel = memo(function PartitionTablePanel({
       {/* Partition List Table */}
       <div className="panel-shell flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="border-b border-border/80 bg-card/96">
-          <Table className="table-fixed min-w-full">
+          <Table className="table-fixed min-w-full" containerClassName="overflow-hidden">
             <colgroup>
-              <col className="w-44" />
-              <col className="w-32" />
-              <col className="w-28" />
-              <col className="w-24" />
-              <col className="w-64" />
+              <col className="w-auto min-w-[120px]" />
+              <col className="w-28 hidden xl:table-column" />
+              <col className="w-24 hidden sm:table-column" />
+              <col className="w-20 hidden md:table-column" />
+              <col className="w-44 sm:w-60" />
             </colgroup>
             <TableHeader className="[&_th]:text-muted-foreground [&_th]:font-bold text-xs">
               <TableRow>
                 <TableHead>Partition</TableHead>
-                <TableHead>Address</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Section</TableHead>
+                <TableHead className="hidden xl:table-cell">Address</TableHead>
+                <TableHead className="hidden sm:table-cell">Size</TableHead>
+                <TableHead className="hidden md:table-cell">Section</TableHead>
                 <TableHead className="text-right pr-4">Operations</TableHead>
               </TableRow>
             </TableHeader>
@@ -273,13 +273,13 @@ export const PartitionTablePanel = memo(function PartitionTablePanel({
               </p>
             </div>
           ) : (
-            <Table className="table-fixed min-w-full">
+            <Table className="table-fixed min-w-full" containerClassName="overflow-hidden">
               <colgroup>
-                <col className="w-44" />
-                <col className="w-32" />
-                <col className="w-28" />
-                <col className="w-24" />
-                <col className="w-64" />
+                <col className="w-auto min-w-[120px]" />
+                <col className="w-28 hidden xl:table-column" />
+                <col className="w-24 hidden sm:table-column" />
+                <col className="w-20 hidden md:table-column" />
+                <col className="w-44 sm:w-60" />
               </colgroup>
               <TableBody>
                 {filteredPartitions.map((part) => {
@@ -289,13 +289,13 @@ export const PartitionTablePanel = memo(function PartitionTablePanel({
                       <TableCell className="font-mono text-sm font-medium text-foreground truncate">
                         {part.name}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground tabular-nums">
+                      <TableCell className="hidden xl:table-cell font-mono text-xs text-muted-foreground tabular-nums">
                         0x{part.address.toString(16).toUpperCase().padStart(8, "0")}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground tabular-nums">
+                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground tabular-nums">
                         {part.sizeFormatted}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
+                      <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">
                         {part.section}
                       </TableCell>
                       <TableCell className="text-right pr-2">
@@ -305,44 +305,44 @@ export const PartitionTablePanel = memo(function PartitionTablePanel({
                             size="sm"
                             disabled={disabled || Boolean(busyPartition)}
                             onClick={() => void handleDump(part)}
-                            className="h-7 px-2 text-[11px] gap-1"
+                            className="h-7 px-1.5 sm:px-2 text-[11px] gap-1"
                             title="Dump partition to disk"
                           >
                             <Download className="h-3 w-3 text-signal-green" />
-                            Read
+                            <span className="hidden sm:inline">Read</span>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             disabled={disabled || Boolean(busyPartition)}
                             onClick={() => void handleWrite(part)}
-                            className="h-7 px-2 text-[11px] gap-1"
+                            className="h-7 px-1.5 sm:px-2 text-[11px] gap-1"
                             title="Flash image into partition"
                           >
                             <Edit3 className="h-3 w-3 text-trace-copper" />
-                            Write
+                            <span className="hidden sm:inline">Write</span>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             disabled={disabled || Boolean(busyPartition)}
                             onClick={() => void handleFormat(part)}
-                            className="h-7 px-2 text-[11px] gap-1"
+                            className="h-7 px-1.5 sm:px-2 text-[11px] gap-1"
                             title="Format partition"
                           >
                             <Eraser className="h-3 w-3 text-signal-amber" />
-                            Format
+                            <span className="hidden sm:inline">Format</span>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             disabled={disabled || Boolean(busyPartition)}
                             onClick={() => void handleErase(part)}
-                            className="h-7 px-2 text-[11px] gap-1 hover:text-error"
+                            className="h-7 px-1.5 sm:px-2 text-[11px] gap-1 hover:text-error"
                             title="Erase partition"
                           >
                             <Trash2 className="h-3 w-3 text-error" />
-                            Erase
+                            <span className="hidden sm:inline">Erase</span>
                           </Button>
                         </div>
                       </TableCell>

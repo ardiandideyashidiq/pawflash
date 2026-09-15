@@ -27,7 +27,7 @@ interface PartitionTableProps {
   onClearOverrideImage?: (partition: string) => void;
 }
 
-const columnWidths = ["w-12", "w-36", "w-28", "w-40", "w-64"];
+const columnWidths = ["w-12", "w-40 sm:w-48", "w-28", "w-32", "w-auto"];
 
 export const PartitionTable = memo(function PartitionTable({
   partitions,
@@ -86,13 +86,15 @@ export const PartitionTable = memo(function PartitionTable({
   }
 
   return (
-    <div className={cn("panel-shell flex min-h-0 flex-1 flex-col overflow-x-auto [&_th]:border-r [&_th]:border-border [&_td]:border-r [&_td]:border-border", className)}>
+    <div className={cn("panel-shell flex min-h-0 flex-1 flex-col overflow-hidden [&_th]:border-r [&_th]:border-border [&_td]:border-r [&_td]:border-border", className)}>
       <div className="border-b border-border/80 bg-card/96">
-        <Table className="table-fixed min-w-max">
+        <Table className="table-fixed min-w-full w-full" containerClassName="overflow-hidden">
           <colgroup>
-            {columnWidths.map((width, i) => (
-              <col key={width} className={cn(width, (i === 2 || i === 3) && "max-lg:hidden")} />
-            ))}
+            <col className={columnWidths[0]} />
+            <col className={columnWidths[1]} />
+            <col className={cn(columnWidths[2], "hidden sm:table-column")} />
+            <col className={cn(columnWidths[3], "hidden lg:table-column")} />
+            <col className={columnWidths[4]} />
           </colgroup>
           <TableHeader className="[&_th]:text-muted-foreground [&_th]:text-center [&_th]:font-bold">
             <TableRow>
@@ -107,7 +109,7 @@ export const PartitionTable = memo(function PartitionTable({
                 </div>
               </TableHead>
               <TableHead className={columnWidths[1]}>Partition</TableHead>
-              <TableHead className={cn(columnWidths[2], "hidden lg:table-cell")}>Size</TableHead>
+              <TableHead className={cn(columnWidths[2], "hidden sm:table-cell")}>Size</TableHead>
               <TableHead className={cn(columnWidths[3], "hidden lg:table-cell")}>Type</TableHead>
               <TableHead className={columnWidths[4]}>Image</TableHead>
             </TableRow>
@@ -115,11 +117,13 @@ export const PartitionTable = memo(function PartitionTable({
         </Table>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <Table className="table-fixed min-w-max">
+        <Table className="table-fixed min-w-full w-full" containerClassName="overflow-hidden">
           <colgroup>
-            {columnWidths.map((width, i) => (
-              <col key={width} className={cn(width, (i === 2 || i === 3) && "max-lg:hidden")} />
-            ))}
+            <col className={columnWidths[0]} />
+            <col className={columnWidths[1]} />
+            <col className={cn(columnWidths[2], "hidden sm:table-column")} />
+            <col className={cn(columnWidths[3], "hidden lg:table-column")} />
+            <col className={columnWidths[4]} />
           </colgroup>
           <TableBody>
             {partitions.map((partition) => (
@@ -141,7 +145,7 @@ export const PartitionTable = memo(function PartitionTable({
                 <TableCell className="truncate text-left" title={partition.partition}>
                   <span className="font-mono">{partition.partition}</span>
                 </TableCell>
-                <TableCell className="hidden whitespace-nowrap text-right tabular-nums lg:table-cell">
+                <TableCell className="hidden whitespace-nowrap text-right tabular-nums sm:table-cell">
                   {partition.size_human}
                 </TableCell>
                 <TableCell className="hidden truncate text-center lg:table-cell">

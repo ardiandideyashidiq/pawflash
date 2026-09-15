@@ -202,11 +202,11 @@ export const ScatterPanel = memo(function ScatterPanel({
       {/* Partition table */}
       <div className="panel-shell flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="border-b border-border/80 bg-card/96">
-          <Table className="table-fixed min-w-full">
+          <Table className="table-fixed min-w-full" containerClassName="overflow-hidden">
             <colgroup>
               <col className="w-12" />
-              <col className="w-48" />
-              <col className="w-32" />
+              <col className="w-36 sm:w-48" />
+              <col className="w-28 hidden sm:table-column" />
               <col className="w-auto" />
             </colgroup>
             <TableHeader className="[&_th]:text-muted-foreground [&_th]:font-bold text-xs">
@@ -223,7 +223,7 @@ export const ScatterPanel = memo(function ScatterPanel({
                   </div>
                 </TableHead>
                 <TableHead>Partition</TableHead>
-                <TableHead>Size</TableHead>
+                <TableHead className="hidden sm:table-cell">Size</TableHead>
                 <TableHead>Image File</TableHead>
               </TableRow>
             </TableHeader>
@@ -237,11 +237,11 @@ export const ScatterPanel = memo(function ScatterPanel({
               <p className="text-xs mt-1">Load a MediaTek scatter file to review partition images.</p>
             </div>
           ) : (
-            <Table className="table-fixed min-w-full">
+            <Table className="table-fixed min-w-full" containerClassName="overflow-hidden">
               <colgroup>
                 <col className="w-12" />
-                <col className="w-48" />
-                <col className="w-32" />
+                <col className="w-36 sm:w-48" />
+                <col className="w-28 hidden sm:table-column" />
                 <col className="w-auto" />
               </colgroup>
               <TableBody>
@@ -260,7 +260,7 @@ export const ScatterPanel = memo(function ScatterPanel({
                     <TableCell className="font-mono text-sm font-medium text-foreground truncate">
                       {part.name}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground tabular-nums">
+                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground tabular-nums">
                       {part.sizeHuman}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground truncate">
