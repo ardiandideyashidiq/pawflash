@@ -13,12 +13,11 @@ export interface RebootTargetMeta {
   iconColor: string;
 }
 
-export const rebootTargets: RebootTarget[] = [
+export const rebootTargets: FastbootRebootTarget[] = [
   "system",
   "bootloader",
   "fastbootd",
   "recovery",
-  "shutdown",
 ];
 
 export const mtkRebootTargets: RebootTarget[] = [

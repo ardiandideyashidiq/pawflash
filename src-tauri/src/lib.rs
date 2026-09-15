@@ -539,6 +539,11 @@ async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), App
 #[tauri::command]
 async fn reboot_device(target: String, simulate: bool) -> Result<(), AppError> {
   if target == "shutdown" {
+    if !simulate && pawflash_core::penumbra::detect_mtk_port().is_none() {
+      return Err(AppError::Other {
+        message: "fastboot mode does not support shutdown command; shutdown is only available in penumbra or preloader mode".into(),
+      });
+    }
     return shutdown_device(simulate).await;
   }
   let _lock = DEVICE_CHECK_LOCK.lock().await;
