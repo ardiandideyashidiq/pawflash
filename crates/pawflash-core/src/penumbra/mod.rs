@@ -37,10 +37,11 @@ pub use device::{open_device, open_device_with_auth, PenumbraDevice, parse_da_fi
 pub use error::{PenumbraError, Result};
 pub use manifest::{fetch_da_manifest, list_dais, resolve_by_brand_chipset, resolve_by_device, DAEntry, DAManifest, DA_MANIFEST_URL};
 pub use ops::{
-    crash, erase_offset, erase_partition, format, pgpt, peek, poke, read_all, read_offset,
-    read_partition, reboot, rpmb_auth, rpmb_read, rpmb_write, seccfg, set_active_slot, shutdown,
-    upload, write_all, write_offset, write_partition, download_flash, PenumbraBootMode,
-    PenumbraRunner, PartitionEntry, RealPenumbra, SimulatedPenumbra,
+    backup_calibration, crash, download_flash, erase_offset, erase_partition, flash_scatter,
+    format, peek, pgpt, poke, read_all, read_offset, read_partition, reboot, rpmb_auth,
+    rpmb_read, rpmb_write, seccfg, set_active_slot, shutdown, upload, write_all, write_offset,
+    write_partition, CALIBRATION_PARTITIONS, PartitionEntry, PenumbraBootMode, PenumbraRunner,
+    RealPenumbra, SimulatedPenumbra,
 };
 pub use penumbra::core::storage::PartitionKind;
 pub use platform::{base_data_dir, penumbra_dir};

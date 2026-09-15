@@ -466,6 +466,124 @@ impl PenumbraRunner for RealPenumbra {
         emit_done(on_event, true, "preloader assertion triggered, device crashed to bootrom".into());
         Ok(())
     }
+
+    fn flash_scatter(
+        &self,
+        scatter_path: &Path,
+        partitions: Option<&[String]>,
+        backup_protected: bool,
+        on_event: EventCb<'_>,
+    ) -> Result<()> {
+        let scatter = crate::scatter_parser::parse::parse_scatter(scatter_path)
+            .map_err(|e| PenumbraError::Penumbra(format!("failed to parse scatter: {e}")))?;
+        let scatter_dir = scatter_path.parent().unwrap_or_else(|| Path::new("."));
+
+        let mut targets = Vec::new();
+        for layout_parts in scatter.layouts.values() {
+            for p in layout_parts {
+                if !p.is_download {
+                    continue;
+                }
+                if let Some(filter) = partitions {
+                    if !filter.contains(&p.name) {
+                        continue;
+                    }
+                }
+                if let Some(ref filename) = p.file_name {
+                    let img_path = scatter_dir.join(filename);
+                    if img_path.is_file() {
+                        targets.push((p.name.clone(), img_path));
+                    }
+                }
+            }
+        }
+
+        if targets.is_empty() {
+            return Err(PenumbraError::Penumbra("no downloadable partitions found to flash".into()));
+        }
+
+        self.with_device(|dev| {
+            dev.enter_da_mode().map_err(|e| Self::map_penumbra_err(&e))?;
+
+            if backup_protected {
+                emit_phase(on_event, "scatter-flash", "backing up protected partitions");
+                let backup_dir = scatter_dir.join("backup");
+                let _ = create_dir_all(&backup_dir);
+                for (name, _) in &targets {
+                    if crate::penumbra::ops::CALIBRATION_PARTITIONS.contains(&name.as_str()) {
+                        let out_path = backup_dir.join(format!("{name}.bin"));
+                        if let Ok(f) = File::create(&out_path) {
+                            let mut writer = BufWriter::new(f);
+                            let mut cb = throttled_progress(on_event, 0);
+                            let _ = dev.upload(name, &mut writer, &mut cb);
+                        }
+                    }
+                }
+            }
+
+            let total_count = targets.len();
+            for (idx, (name, img_path)) in targets.iter().enumerate() {
+                emit_phase(
+                    on_event,
+                    "scatter-flash",
+                    &format!("flashing {name} ({}/{total_count})", idx + 1),
+                );
+
+                let file_size = std::fs::metadata(img_path)
+                    .map_err(|e| PenumbraError::Cache(e.to_string()))?
+                    .len();
+                let f = File::open(img_path).map_err(|e| PenumbraError::Cache(e.to_string()))?;
+                let mut reader = BufReader::new(f);
+                let mut cb = throttled_progress(on_event, file_size);
+                dev.download(name, Self::file_len_usize(file_size)?, &mut reader, &mut cb)
+                    .map_err(|e| Self::map_penumbra_err(&e))?;
+                drop(cb);
+            }
+
+            emit_done(
+                on_event,
+                true,
+                format!("successfully flashed {total_count} partitions from scatter"),
+            );
+            Ok(())
+        })
+    }
+
+    fn backup_calibration(&self, dir: &Path, on_event: EventCb<'_>) -> Result<Vec<String>> {
+        create_dir_all(dir).map_err(|e| PenumbraError::Cache(e.to_string()))?;
+        self.with_device(|dev| {
+            emit_phase(on_event, "backup-calibration", "reading partition table");
+            dev.enter_da_mode().map_err(|e| Self::map_penumbra_err(&e))?;
+            let partitions = dev.get_partitions();
+            let mut backed_up = Vec::new();
+
+            for part in partitions {
+                if crate::penumbra::ops::CALIBRATION_PARTITIONS.contains(&part.name.as_str()) {
+                    emit_phase(
+                        on_event,
+                        "backup-calibration",
+                        &format!("reading {}", part.name),
+                    );
+                    let out = dir.join(format!("{}.bin", part.name));
+                    let f = File::create(&out).map_err(|e| PenumbraError::Cache(e.to_string()))?;
+                    let mut writer = BufWriter::new(f);
+                    let mut cb = throttled_progress(on_event, part.size as u64);
+                    dev.upload(&part.name, &mut writer, &mut cb)
+                        .map_err(|e| Self::map_penumbra_err(&e))?;
+                    drop(cb);
+                    writer.flush().map_err(|e| PenumbraError::Cache(e.to_string()))?;
+                    backed_up.push(part.name);
+                }
+            }
+
+            emit_done(
+                on_event,
+                true,
+                format!("backed up {} calibration partitions", backed_up.len()),
+            );
+            Ok(backed_up)
+        })
+    }
 }
 
 /// The user-section `PartitionKind` for the connected storage, used by offset

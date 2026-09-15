@@ -206,6 +206,62 @@ impl PenumbraRunner for SimulatedPenumbra {
         emit_done(on_event, true, "simulated crash".into());
         Ok(())
     }
+
+    fn flash_scatter(
+        &self,
+        scatter_path: &Path,
+        partitions: Option<&[String]>,
+        backup_protected: bool,
+        on_event: EventCb<'_>,
+    ) -> Result<()> {
+        emit_phase(
+            on_event,
+            "scatter-flash",
+            &format!("parsing {} (simulated)", scatter_path.display()),
+        );
+        if backup_protected {
+            emit_phase(on_event, "scatter-flash", "backing up protected partitions (simulated)");
+        }
+        let dummy_parts = partitions.map_or_else(
+            || vec!["boot".to_string(), "recovery".to_string(), "system".to_string()],
+            <[String]>::to_vec,
+        );
+        let total = dummy_parts.len();
+        for (i, part) in dummy_parts.iter().enumerate() {
+            emit_phase(
+                on_event,
+                "scatter-flash",
+                &format!("flashing {part} ({}/{total}) (simulated)", i + 1),
+            );
+            Self::emit_progress(on_event, 1024 * 1024);
+        }
+        emit_done(on_event, true, format!("simulated flash of {total} partitions"));
+        Ok(())
+    }
+
+    fn backup_calibration(&self, _dir: &Path, on_event: EventCb<'_>) -> Result<Vec<String>> {
+        emit_phase(on_event, "backup-calibration", "reading partition table (simulated)");
+        let dummy_calib = vec![
+            "nvram".to_string(),
+            "nvdata".to_string(),
+            "protect_f".to_string(),
+            "protect_s".to_string(),
+        ];
+        for part in &dummy_calib {
+            emit_phase(
+                on_event,
+                "backup-calibration",
+                &format!("backing up {part} (simulated)"),
+            );
+            Self::emit_progress(on_event, 512 * 1024);
+        }
+        emit_done(
+            on_event,
+            true,
+            format!("backed up {} calibration partitions (simulated)", dummy_calib.len()),
+        );
+        Ok(dummy_calib)
+    }
 }
 
 #[cfg(test)]
@@ -267,5 +323,29 @@ mod tests {
             .iter()
             .any(|e| matches!(e, PenumbraEvent::Phase { phase, message } if phase == "read-all" && message.contains("skipping boot")));
         assert!(skipped);
+    }
+
+    #[test]
+    fn simulated_flash_scatter_emits_done() {
+        let mut events = Vec::new();
+        SimulatedPenumbra
+            .flash_scatter(
+                Path::new("/dummy/scatter.txt"),
+                Some(&["boot".to_string(), "recovery".to_string()]),
+                true,
+                &mut |e| events.push(e.clone()),
+            )
+            .unwrap();
+        assert!(matches!(events.last(), Some(PenumbraEvent::Done { ok: true, .. })));
+    }
+
+    #[test]
+    fn simulated_backup_calibration_returns_partitions() {
+        let mut events = Vec::new();
+        let backed_up = SimulatedPenumbra
+            .backup_calibration(Path::new("/dummy/backup"), &mut |e| events.push(e.clone()))
+            .unwrap();
+        assert!(backed_up.contains(&"nvram".to_string()));
+        assert!(matches!(events.last(), Some(PenumbraEvent::Done { ok: true, .. })));
     }
 }

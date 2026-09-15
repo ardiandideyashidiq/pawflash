@@ -251,7 +251,40 @@ pub trait PenumbraRunner {
     ///
     /// Returns a [`crate::penumbra::PenumbraError`] on device open or run failure.
     fn crash(&self, on_event: EventCb<'_>) -> Result<()>;
+
+    /// Flash partitions from a scatter file.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`crate::penumbra::PenumbraError`] on device open or run failure.
+    fn flash_scatter(
+        &self,
+        scatter_path: &Path,
+        partitions: Option<&[String]>,
+        backup_protected: bool,
+        on_event: EventCb<'_>,
+    ) -> Result<()>;
+
+    /// Backup critical calibration partitions (`nvram`, `nvdata`, etc.) to `dir`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`crate::penumbra::PenumbraError`] on device open or run failure.
+    fn backup_calibration(&self, dir: &Path, on_event: EventCb<'_>) -> Result<Vec<String>>;
 }
+
+/// `MediaTek` critical calibration and device-specific partitions.
+pub const CALIBRATION_PARTITIONS: &[&str] = &[
+    "nvram",
+    "nvdata",
+    "protect_f",
+    "protect_s",
+    "nvcfg",
+    "proinfo",
+    "persist",
+    "seccfg",
+    "sec1",
+];
 
 /// Emit a phase event with the given message.
 pub(crate) fn emit_phase(on_event: EventCb<'_>, phase: &str, message: &str) {
@@ -284,10 +317,19 @@ pub(crate) fn throttled_progress(
 
 /// Resolve the runner: real when `simulate` is false, simulated otherwise.
 fn runner(simulate: bool, da_bytes: &[u8]) -> Box<dyn PenumbraRunner> {
+    runner_with_auth(simulate, da_bytes, None)
+}
+
+/// Resolve the runner with optional auth data.
+fn runner_with_auth(simulate: bool, da_bytes: &[u8], auth_bytes: Option<&[u8]>) -> Box<dyn PenumbraRunner> {
     if simulate {
         Box::new(SimulatedPenumbra)
     } else {
-        Box::new(RealPenumbra::new(da_bytes.to_vec()))
+        let mut r = RealPenumbra::new(da_bytes.to_vec());
+        if let Some(auth) = auth_bytes {
+            r = r.with_auth(Some(auth.to_vec()));
+        }
+        Box::new(r)
     }
 }
 
@@ -297,6 +339,44 @@ fn run_with<T>(
     op: impl FnOnce(&dyn PenumbraRunner) -> Result<T>,
 ) -> Result<T> {
     op(&*runner(simulate, da_bytes))
+}
+
+/// Flash partitions from a scatter file.
+///
+/// `da_bytes` is ignored in simulate mode.
+///
+/// # Errors
+///
+/// Returns any [`crate::penumbra::PenumbraError`] from device open or the run.
+pub fn flash_scatter(
+    da_bytes: &[u8],
+    auth_bytes: Option<&[u8]>,
+    scatter_path: &Path,
+    partitions: Option<&[String]>,
+    backup_protected: bool,
+    simulate: bool,
+    on_event: EventCb<'_>,
+) -> Result<()> {
+    let r = runner_with_auth(simulate, da_bytes, auth_bytes);
+    r.flash_scatter(scatter_path, partitions, backup_protected, on_event)
+}
+
+/// Backup critical calibration partitions (`nvram`, `nvdata`, etc.) to `dir`.
+///
+/// `da_bytes` is ignored in simulate mode.
+///
+/// # Errors
+///
+/// Returns any [`crate::penumbra::PenumbraError`] from device open or the run.
+pub fn backup_calibration(
+    da_bytes: &[u8],
+    auth_bytes: Option<&[u8]>,
+    dir: &Path,
+    simulate: bool,
+    on_event: EventCb<'_>,
+) -> Result<Vec<String>> {
+    let r = runner_with_auth(simulate, da_bytes, auth_bytes);
+    r.backup_calibration(dir, on_event)
 }
 
 /// Read a partition to `file`; returns bytes read.

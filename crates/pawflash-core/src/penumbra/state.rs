@@ -21,6 +21,10 @@ pub struct DaSelection {
     pub chipset: String,
     pub path: String,
     pub sha256: String,
+    #[serde(default)]
+    pub auth_path: Option<String>,
+    #[serde(default)]
+    pub is_custom: bool,
 }
 
 /// Load the persisted selection, if any.
@@ -84,6 +88,8 @@ mod tests {
             chipset: "mt6789".into(),
             path: "/tmp/da/infinix-mt6789.bin".into(),
             sha256: "3c7de4ee52b47f1d4c5122868b52dfa06c18e5ef940f4c8a04c46365a696bbdd".into(),
+            auth_path: Some("/tmp/auth/infinix.auth".into()),
+            is_custom: false,
         }
     }
 
