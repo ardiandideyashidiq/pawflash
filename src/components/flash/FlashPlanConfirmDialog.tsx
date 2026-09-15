@@ -20,6 +20,12 @@ const rebootNotices: Record<RebootTarget, string> = {
   bootloader: "The device will reboot to the bootloader after flashing completes.",
   fastbootd: "The device will reboot to fastbootd after flashing completes.",
   recovery: "The device will reboot into recovery after flashing completes.",
+  "mtk:normal": "The device will reboot to system via MediaTek DA after flashing.",
+  "mtk:fastboot": "The device will reboot to fastboot via MediaTek DA after flashing.",
+  "mtk:recovery": "The device will reboot to recovery via MediaTek DA after flashing.",
+  "mtk:meta": "The device will reboot to meta mode via MediaTek DA after flashing.",
+  "mtk:test": "The device will reboot to test mode via MediaTek DA after flashing.",
+  shutdown: "The device will power off after flashing completes.",
 };
 
 export const FlashPlanConfirmDialog = memo(function FlashPlanConfirmDialog({

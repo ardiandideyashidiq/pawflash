@@ -13,13 +13,19 @@ import { useForceFastboot } from "@/hooks/useForceFastboot";
 import { useSimulation } from "@/hooks/useSimulation";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/types/api";
-import { rebootTargets, targetMeta, type RebootTarget } from "@/lib/reboot";
+import { rebootTargets, mtkRebootTargets, targetMeta, type RebootTarget } from "@/lib/reboot";
 
 const successLabels: Record<RebootTarget, string> = {
   system: "Rebooted to system",
   bootloader: "Rebooted to bootloader",
   fastbootd: "Rebooted to fastbootd",
   recovery: "Rebooted to recovery",
+  "mtk:normal": "Rebooted to system",
+  "mtk:fastboot": "Rebooted to fastboot",
+  "mtk:recovery": "Rebooted to recovery",
+  "mtk:meta": "Rebooted to meta mode",
+  "mtk:test": "Rebooted to test mode",
+  shutdown: "Shutdown command sent",
 };
 
 interface RebootMenuProps {
@@ -37,9 +43,28 @@ export const RebootMenu = memo(function RebootMenu({
 }: RebootMenuProps) {
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [deviceMode, setDeviceMode] = useState<string>("fastboot");
   const { simulate } = useSimulation();
   const flash = useFlashPhase();
   const force = useForceFastboot();
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkMode = async () => {
+      try {
+        const mode = await invoke<string>("detect_device_mode", { simulate });
+        if (!cancelled) setDeviceMode(mode);
+      } catch {
+        if (!cancelled) setDeviceMode("fastboot");
+      }
+    };
+    void checkMode();
+    const interval = setInterval(() => void checkMode(), 3500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [simulate]);
 
   const sessionLive = useMemo(
     () => flash.phase === "waiting" || flash.phase === "flashing" || force.phase === "waiting",
@@ -47,6 +72,13 @@ export const RebootMenu = memo(function RebootMenu({
   );
 
   const menuDisabled = disabled || busy || sessionLive;
+
+  const activeTargets = useMemo(() => {
+    if (deviceMode === "brom" || deviceMode === "preloader") {
+      return mtkRebootTargets;
+    }
+    return rebootTargets;
+  }, [deviceMode]);
 
   const handleReboot = async (nextTarget: RebootTarget) => {
     if (menuDisabled) return;
@@ -100,7 +132,10 @@ export const RebootMenu = memo(function RebootMenu({
       <Menu.Portal>
         <Menu.Positioner side="right" align="start" sideOffset={8} className="isolate z-50">
           <Menu.Popup className="z-50 w-56 rounded-lg border border-border/80 bg-popover p-1.5 text-popover-foreground shadow-xl outline-none space-y-0.5">
-            {rebootTargets.map((targetKey) => {
+            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/60 mb-1">
+              {deviceMode === "brom" || deviceMode === "preloader" ? `MediaTek (${deviceMode})` : "Fastboot Modes"}
+            </div>
+            {activeTargets.map((targetKey) => {
               const meta = targetMeta[targetKey];
               const isSelected = target === targetKey;
 

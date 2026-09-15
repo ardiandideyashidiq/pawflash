@@ -38,7 +38,16 @@ export const ProgressWidget = memo(function ProgressWidget() {
       ? Math.min(100, Math.round((flash.overallBytes / flash.overallTotal) * 100))
       : 0;
 
-  const operationLabel = flash.operation === "erase" ? "Erasing" : "Flashing";
+  const operationLabel =
+    flash.operation === "erase"
+      ? "Erasing"
+      : flash.operation === "format"
+        ? "Formatting"
+        : flash.operation === "read"
+          ? "Reading"
+          : flash.operation === "backup"
+            ? "Backing up"
+            : "Flashing";
 
   return (
     <div className="border-b border-border/60 bg-muted/20 px-4 py-2.5">

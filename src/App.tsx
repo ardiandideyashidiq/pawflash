@@ -78,7 +78,8 @@ function AppRoot() {
   const [isCancellingFlash, setIsCancellingFlash] = useState(false);
   const [isCancellingForceFastboot, setIsCancellingForceFastboot] = useState(false);
   const [flashConfirmOpen, setFlashConfirmOpen] = useState(false);
-  const [flashOpen, setFlashOpen] = useState(false);
+  const flashOpen = flash.dialogOpen;
+  const setFlashOpen = flash.setDialogOpen;
   const [forceOpen, setForceOpen] = useState(false);
 
   const activeFlashSession = flash.phase === "waiting" || flash.phase === "flashing";
@@ -282,6 +283,7 @@ function AppRoot() {
     flash,
     isStartingFlash,
     planState,
+    setFlashOpen,
     simulate,
     force.phase,
   ]);
@@ -357,7 +359,7 @@ function AppRoot() {
         setIsStartingFlash(false);
       }
     },
-    [addEntry, addProgressEvent, flash, force, isStartingFlash, simulate],
+    [addEntry, addProgressEvent, flash, force, isStartingFlash, setFlashOpen, simulate],
   );
 
   const cancelFlash = useCallback(async () => {
@@ -392,7 +394,7 @@ function AppRoot() {
     if (flash.phase === "complete" || flash.phase === "cancelled" || flash.phase === "error") {
       flash.reset();
     }
-  }, [flash]);
+  }, [flash, setFlashOpen]);
 
   const hideForceDialog = useCallback(() => {
     setForceOpen(false);

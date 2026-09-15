@@ -26,6 +26,7 @@ export const FlashDialog = memo(function FlashDialog({
 }: FlashDialogProps) {
   const {
     phase,
+    operation,
     partition,
     bytes,
     total,
@@ -56,7 +57,7 @@ export const FlashDialog = memo(function FlashDialog({
           <div className="grid gap-3 border-b border-border px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
             <div className="min-w-0">
               <DialogPrimitive.Title className={cn("truncate text-base font-semibold", tone.title)}>
-                {compactTitle(phase)}
+                {compactTitle(phase, operation)}
               </DialogPrimitive.Title>
             </div>
             <div className="relative z-10 flex shrink-0 flex-wrap items-center justify-end gap-2">
@@ -217,25 +218,35 @@ function phaseTone(phase: FlashPhase) {
   }
 }
 
-function compactTitle(phase: FlashPhase) {
+function compactTitle(phase: FlashPhase, operation = "") {
   switch (phase) {
     case "waiting":
       return "Waiting for device...";
     case "flashing":
+      if (operation === "read") return "Read progress";
+      if (operation === "backup") return "Backup progress";
+      if (operation === "erase") return "Erase progress";
+      if (operation === "format") return "Format progress";
       return "Flash progress";
     case "complete":
+      if (operation === "read") return "Read completed";
+      if (operation === "backup") return "Backup completed";
+      if (operation === "erase") return "Erase completed";
+      if (operation === "format") return "Format completed";
       return "Flash completed";
     case "cancelled":
       return "Cancelled";
     case "error":
-      return "Flash failed";
+      return "Operation failed";
     default:
       return "Preparing...";
   }
 }
 
-function currentProgressLabel(phase: FlashPhase) {
+function currentProgressLabel(phase: FlashPhase, operation = "") {
   if (phase === "waiting") return "Current step";
+  if (operation === "read" || operation === "backup") return "Source partition";
+  if (operation === "erase" || operation === "format") return "Target partition";
   return "Current partition";
 }
 

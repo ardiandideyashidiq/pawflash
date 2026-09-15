@@ -18,7 +18,7 @@ export type FlashPhase =
   | "cancelled"
   | "error";
 
-export type FlashOperation = "" | "flash" | "format" | "erase";
+export type FlashOperation = "" | "flash" | "format" | "erase" | "read" | "backup";
 
 export interface FlashSummary {
   flashed: number;
@@ -39,24 +39,29 @@ export interface FlashProgressData {
   summary: FlashSummary | null;
   errorMessage: string;
   statusText: string;
+  dialogOpen: boolean;
 }
 
 export interface FlashProgressActions {
   reset: () => void;
   fail: (message: string) => void;
   onEvent: (event: ProgressEvent) => void;
+  setDialogOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+  openDialog: () => void;
+  closeDialog: () => void;
 }
 
 export interface FlashProgressState extends FlashProgressData, FlashProgressActions {}
 
 /**
- * Coarse-grained flash session state: only `phase` and the stable action
+ * Coarse-grained flash session state: only `phase`, `dialogOpen` and the stable action
  * callbacks. The context value changes only on phase transitions, so
  * consumers such as `App` and `LogPanel` stay out of the per-byte
  * re-render storm driven by high-frequency `Flashing` events.
  */
 export interface FlashPhaseState extends FlashProgressActions {
   phase: FlashPhase;
+  dialogOpen: boolean;
 }
 
 const FlashProgressContext = createContext<FlashProgressState | null>(null);
@@ -74,6 +79,7 @@ const initialState: FlashProgressData = {
   summary: null,
   errorMessage: "",
   statusText: "",
+  dialogOpen: false,
 };
 
 /**
@@ -127,6 +133,21 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
     partitionStartRef.current = null;
     setState(initialState);
   }, []);
+
+  const setDialogOpen = useCallback((open: boolean | ((prev: boolean) => boolean)) => {
+    setState((prev) => ({
+      ...prev,
+      dialogOpen: typeof open === "function" ? open(prev.dialogOpen) : open,
+    }));
+  }, []);
+
+  const openDialog = useCallback(() => {
+    setDialogOpen(true);
+  }, [setDialogOpen]);
+
+  const closeDialog = useCallback(() => {
+    setDialogOpen(false);
+  }, [setDialogOpen]);
 
   const fail = useCallback((message: string) => {
     setState((prev) => ({
@@ -263,13 +284,23 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
         }));
         break;
       case "PenumbraPhase":
-      case "MtkPhase":
+      case "MtkPhase": {
+        const phaseName = event.data.phase.toLowerCase();
+        let op: FlashOperation = "";
+        if (phaseName.includes("erase")) op = "erase";
+        else if (phaseName.includes("format")) op = "format";
+        else if (phaseName.includes("read")) op = "read";
+        else if (phaseName.includes("backup")) op = "backup";
+        else if (phaseName.includes("scatter-flash") || phaseName.includes("write") || phaseName.includes("download")) op = "flash";
+
         setState((prev) => ({
           ...prev,
           phase: prev.phase === "idle" ? "waiting" : prev.phase,
           statusText: event.data.message,
+          operation: op || prev.operation,
         }));
         break;
+      }
       case "PenumbraProgress":
       case "MtkProgress": {
         const now = performance.now();
@@ -301,7 +332,7 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
         setState((prev) => ({
           ...prev,
           phase: "flashing",
-          operation: "flash",
+          operation: prev.operation || "flash",
           partition,
           bytes,
           total,
@@ -332,8 +363,8 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const actions = useMemo(
-    () => ({ reset, fail, onEvent }),
-    [reset, fail, onEvent],
+    () => ({ reset, fail, onEvent, setDialogOpen, openDialog, closeDialog }),
+    [reset, fail, onEvent, setDialogOpen, openDialog, closeDialog],
   );
 
   const fineValue = useMemo<FlashProgressState>(
@@ -342,8 +373,8 @@ export function FlashProgressProvider({ children }: { children: ReactNode }) {
   );
 
   const coarseValue = useMemo<FlashPhaseState>(
-    () => ({ phase: state.phase, ...actions }),
-    [state.phase, actions],
+    () => ({ phase: state.phase, dialogOpen: state.dialogOpen, ...actions }),
+    [state.phase, state.dialogOpen, actions],
   );
 
   return (
