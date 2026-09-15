@@ -241,23 +241,23 @@ export const PartitionTablePanel = memo(function PartitionTablePanel({
       </div>
 
       {/* Partition List Table */}
-      <div className="panel-shell flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="panel-shell flex min-h-0 flex-1 flex-col overflow-hidden [&_th]:border-r [&_th]:border-border/60 [&_td]:border-r [&_td]:border-border/60 [&_th:last-child]:border-r-0 [&_td:last-child]:border-r-0">
         <div className="border-b border-border/80 bg-card/96">
           <Table className="table-fixed min-w-full" containerClassName="overflow-hidden">
             <colgroup>
-              <col className="w-auto min-w-[120px]" />
+              <col className="w-auto min-w-[100px]" />
               <col className="w-28 hidden xl:table-column" />
-              <col className="w-24 hidden sm:table-column" />
-              <col className="w-20 hidden md:table-column" />
-              <col className="w-44 sm:w-60" />
+              <col className="w-24 hidden md:table-column" />
+              <col className="w-20 hidden lg:table-column" />
+              <col className="w-28 sm:w-56" />
             </colgroup>
             <TableHeader className="[&_th]:text-muted-foreground [&_th]:font-bold text-xs">
               <TableRow>
-                <TableHead>Partition</TableHead>
-                <TableHead className="hidden xl:table-cell">Address</TableHead>
-                <TableHead className="hidden sm:table-cell">Size</TableHead>
-                <TableHead className="hidden md:table-cell">Section</TableHead>
-                <TableHead className="text-right pr-4">Operations</TableHead>
+                <TableHead className="px-3">Partition</TableHead>
+                <TableHead className="hidden xl:table-cell px-3">Address</TableHead>
+                <TableHead className="hidden md:table-cell px-3 text-right">Size</TableHead>
+                <TableHead className="hidden lg:table-cell px-3 text-center">Section</TableHead>
+                <TableHead className="text-right pr-3 sm:pr-4">Operations</TableHead>
               </TableRow>
             </TableHeader>
           </Table>
@@ -275,30 +275,30 @@ export const PartitionTablePanel = memo(function PartitionTablePanel({
           ) : (
             <Table className="table-fixed min-w-full" containerClassName="overflow-hidden">
               <colgroup>
-                <col className="w-auto min-w-[120px]" />
+                <col className="w-auto min-w-[100px]" />
                 <col className="w-28 hidden xl:table-column" />
-                <col className="w-24 hidden sm:table-column" />
-                <col className="w-20 hidden md:table-column" />
-                <col className="w-44 sm:w-60" />
+                <col className="w-24 hidden md:table-column" />
+                <col className="w-20 hidden lg:table-column" />
+                <col className="w-28 sm:w-56" />
               </colgroup>
               <TableBody>
                 {filteredPartitions.map((part) => {
                   const isBusy = busyPartition === part.name;
                   return (
                     <TableRow key={part.name} className={isBusy ? "row-tint-flash" : undefined}>
-                      <TableCell className="font-mono text-sm font-medium text-foreground truncate">
+                      <TableCell className="font-mono text-xs sm:text-sm font-medium text-foreground truncate px-3">
                         {part.name}
                       </TableCell>
-                      <TableCell className="hidden xl:table-cell font-mono text-xs text-muted-foreground tabular-nums">
+                      <TableCell className="hidden xl:table-cell font-mono text-xs text-muted-foreground tabular-nums px-3">
                         0x{part.address.toString(16).toUpperCase().padStart(8, "0")}
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground tabular-nums">
+                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground tabular-nums px-3 text-right">
                         {part.sizeFormatted}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">
+                      <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground px-3 text-center">
                         {part.section}
                       </TableCell>
-                      <TableCell className="text-right pr-2">
+                      <TableCell className="text-right pr-2 sm:pr-3">
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="outline"

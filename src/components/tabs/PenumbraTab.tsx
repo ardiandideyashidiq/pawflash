@@ -45,7 +45,10 @@ export default memo(function PenumbraTab() {
   const { simulate } = useSimulation();
   const [activeTab, setActiveTab] = useState<PenumbraSubTab>("scatter");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sidepanelOpen, setSidepanelOpen] = useState(true);
+  const [sidepanelOpen, setSidepanelOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.innerWidth >= 1280;
+  });
   const [status, setStatus] = useState<PenumbraStatusPayload | null>(null);
 
   const refreshStatus = useCallback(async () => {
@@ -77,12 +80,12 @@ export default memo(function PenumbraTab() {
   const CurrentIcon = currentTab.icon;
 
   return (
-    <div className="flex h-full min-h-0 gap-3">
+    <div className="relative flex h-full min-h-0 gap-3 overflow-hidden">
       {/* Main Canvas (Sub-tabs Navigation + Content Panels) */}
-      <div className="flex min-w-0 flex-1 min-h-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-1 min-h-0 flex-col gap-3 overflow-hidden">
         {/* Navigation Header with Dropdown Menu */}
-        <div className="flex items-center justify-between gap-2 border-b border-border/70 pb-2 shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 border-b border-border/70 pb-2 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             <Menu.Root open={menuOpen} onOpenChange={setMenuOpen}>
               <Menu.Trigger
                 className="flex items-center gap-2.5 rounded-md border border-border/80 bg-card/90 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-all duration-200 ease-out hover:border-trace-copper/40 hover:bg-accent-soft/80 focus-visible:ring-2 focus-visible:ring-trace-copper/50 cursor-pointer select-none"
@@ -135,23 +138,24 @@ export default memo(function PenumbraTab() {
           </div>
 
           {/* Quick status & Sidepanel Toggle */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Badge
               variant="outline"
-              className={
+              className={cn(
+                "text-xs font-mono px-2 py-0.5 max-w-[110px] sm:max-w-[150px] truncate",
                 status?.da_installed
-                  ? "border-trace-copper/60 bg-trace-copper/10 text-trace-copper text-xs font-mono"
-                  : "text-muted-foreground text-xs"
-              }
+                  ? "border-trace-copper/60 bg-trace-copper/10 text-trace-copper"
+                  : "text-muted-foreground"
+              )}
             >
-              <Cpu className="mr-1 h-3 w-3" />
-              <span className="max-w-[140px] truncate">{daSummaryLabel}</span>
+              <Cpu className="mr-1 h-3 w-3 shrink-0" />
+              <span className="truncate">{daSummaryLabel}</span>
             </Badge>
 
             {status?.device_visible && (
-              <Badge variant="outline" className="border-signal-green/60 text-signal-green text-xs">
+              <Badge variant="outline" className="border-signal-green/60 text-signal-green text-xs px-2 py-0.5">
                 <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-signal-green animate-pulse" />
-                MTK Port
+                <span className="hidden sm:inline">MTK Port</span>
               </Badge>
             )}
 
@@ -159,7 +163,7 @@ export default memo(function PenumbraTab() {
               variant="outline"
               size="sm"
               onClick={() => setSidepanelOpen((prev) => !prev)}
-              className="h-8 gap-1.5 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+              className="h-8 gap-1.5 px-2 sm:px-2.5 text-xs text-muted-foreground hover:text-foreground shrink-0"
               title={sidepanelOpen ? "Collapse device panel" : "Expand device panel"}
             >
               {sidepanelOpen ? (
@@ -190,15 +194,29 @@ export default memo(function PenumbraTab() {
         </div>
       </div>
 
-      {/* Collapsable Right Sidepanel */}
+      {/* Collapsable Right Sidepanel: Drawer overlay on small screens (< 1280px), inline on wide screens (>= 1280px) */}
       {sidepanelOpen && (
-        <aside className="w-80 shrink-0 h-full min-h-0 flex flex-col transition-all duration-200 ease-out">
-          <DeviceSidepanel
-            status={status}
-            onRefresh={refreshStatus}
-            onClose={() => setSidepanelOpen(false)}
+        <>
+          {/* Backdrop on screens < xl */}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Close setup panel"
+            className="fixed inset-0 z-40 bg-stone-950/40 backdrop-blur-xs xl:hidden"
+            onClick={() => setSidepanelOpen(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSidepanelOpen(false);
+            }}
           />
-        </aside>
+
+          <aside className="fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] h-full shadow-2xl xl:static xl:z-auto xl:shadow-none xl:w-72 2xl:w-80 shrink-0 min-h-0 flex flex-col transition-all duration-200 ease-out">
+            <DeviceSidepanel
+              status={status}
+              onRefresh={refreshStatus}
+              onClose={() => setSidepanelOpen(false)}
+            />
+          </aside>
+        </>
       )}
     </div>
   );

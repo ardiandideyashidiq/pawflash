@@ -110,24 +110,24 @@ export const ScatterPanel = memo(function ScatterPanel({
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       {/* Header bar */}
-      <div className="panel-shell flex flex-wrap items-center justify-between gap-3 p-3 shrink-0">
-        <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+      <div className="panel-shell flex flex-wrap items-center justify-between gap-2.5 p-2.5 sm:p-3 shrink-0">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           <Button
             variant="outline"
             size="sm"
             disabled={disabled || flashing}
             onClick={() => void handlePickScatter()}
-            className="gap-2 shrink-0"
+            className="gap-1.5 sm:gap-2 shrink-0 h-8 px-2.5 sm:px-3 text-xs"
           >
             <FolderOpen className="h-4 w-4 text-trace-copper" />
-            Choose Scatter
+            <span>Choose Scatter</span>
           </Button>
-          <div className="font-mono text-xs truncate text-muted-foreground bg-muted/40 px-2.5 py-1.5 rounded border border-border/60 flex-1">
+          <div className="font-mono text-[11px] sm:text-xs truncate text-muted-foreground bg-muted/40 px-2.5 py-1.5 rounded border border-border/60 flex-1 min-w-0">
             {scatterPath || "No scatter file selected (.txt or .xml)"}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 select-none">
+        <div className="flex items-center gap-2 select-none shrink-0">
           <Checkbox
             id="scatter-include-preloader"
             checked={options.includePreloader}
@@ -145,19 +145,19 @@ export const ScatterPanel = memo(function ScatterPanel({
       </div>
 
       {/* Partition table */}
-      <div className="panel-shell flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="panel-shell flex min-h-0 flex-1 flex-col overflow-hidden [&_th]:border-r [&_th]:border-border/60 [&_td]:border-r [&_td]:border-border/60 [&_th:last-child]:border-r-0 [&_td:last-child]:border-r-0">
         <div className="border-b border-border/80 bg-card/96">
           <Table className="table-fixed min-w-full" containerClassName="overflow-hidden">
             <colgroup>
-              <col className="w-12" />
-              <col className="w-36 sm:w-48" />
-              <col className="w-28 hidden sm:table-column" />
-              <col className="w-32 hidden lg:table-column" />
+              <col className="w-10 sm:w-12" />
+              <col className="w-28 sm:w-36 md:w-44" />
+              <col className="w-20 sm:w-24 hidden md:table-column" />
+              <col className="w-24 sm:w-28 hidden xl:table-column" />
               <col className="w-auto" />
             </colgroup>
             <TableHeader className="[&_th]:text-muted-foreground [&_th]:font-bold text-xs">
               <TableRow>
-                <TableHead className="px-0 text-center">
+                <TableHead className="w-10 sm:w-12 px-0 text-center">
                   <div className="flex justify-center">
                     <Checkbox
                       checked={allSelected}
@@ -168,10 +168,10 @@ export const ScatterPanel = memo(function ScatterPanel({
                     />
                   </div>
                 </TableHead>
-                <TableHead>Partition</TableHead>
-                <TableHead className="hidden sm:table-cell">Size</TableHead>
-                <TableHead className="hidden lg:table-cell text-center">Type</TableHead>
-                <TableHead>Image File</TableHead>
+                <TableHead className="w-28 sm:w-36 md:w-44 px-3">Partition</TableHead>
+                <TableHead className="w-20 sm:w-24 hidden md:table-cell px-3 text-right">Size</TableHead>
+                <TableHead className="w-24 sm:w-28 hidden xl:table-cell text-center px-3">Type</TableHead>
+                <TableHead className="px-3">Image File</TableHead>
               </TableRow>
             </TableHeader>
           </Table>
@@ -186,16 +186,16 @@ export const ScatterPanel = memo(function ScatterPanel({
           ) : (
             <Table className="table-fixed min-w-full" containerClassName="overflow-hidden">
               <colgroup>
-                <col className="w-12" />
-                <col className="w-36 sm:w-48" />
-                <col className="w-28 hidden sm:table-column" />
-                <col className="w-32 hidden lg:table-column" />
+                <col className="w-10 sm:w-12" />
+                <col className="w-28 sm:w-36 md:w-44" />
+                <col className="w-20 sm:w-24 hidden md:table-column" />
+                <col className="w-24 sm:w-28 hidden xl:table-column" />
                 <col className="w-auto" />
               </colgroup>
               <TableBody>
                 {rows.map((part) => (
                   <TableRow key={part.partition} className={part.selected ? "row-tint-flash" : undefined}>
-                    <TableCell className="px-0 text-center">
+                    <TableCell className="w-10 sm:w-12 px-0 text-center">
                       <div className="flex justify-center">
                         <Checkbox
                           checked={part.selected}
@@ -205,20 +205,20 @@ export const ScatterPanel = memo(function ScatterPanel({
                         />
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono text-sm font-medium text-foreground truncate">
+                    <TableCell className="w-28 sm:w-36 md:w-44 px-3 font-mono text-xs sm:text-sm font-medium text-foreground truncate">
                       {part.partition}
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground tabular-nums">
+                    <TableCell className="w-20 sm:w-24 hidden md:table-cell px-3 text-right text-xs text-muted-foreground tabular-nums">
                       {part.size_human}
                     </TableCell>
-                    <TableCell className="hidden truncate text-center text-xs text-muted-foreground lg:table-cell">
+                    <TableCell className="w-24 sm:w-28 hidden xl:table-cell px-3 truncate text-center text-xs text-muted-foreground">
                       {part.image_type ? (
                         part.image_type
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground truncate">
+                    <TableCell className="px-3 font-mono text-xs text-muted-foreground truncate">
                       {part.image_name ? (
                         <span className="text-trace-copper font-medium">{part.image_name}</span>
                       ) : (
@@ -234,9 +234,9 @@ export const ScatterPanel = memo(function ScatterPanel({
       </div>
 
       {/* Flash Action Footer */}
-      <div className="panel-shell flex flex-wrap items-center justify-between gap-4 p-4 shrink-0">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2 select-none">
+      <div className="panel-shell flex flex-wrap items-center justify-between gap-3 p-3 sm:p-4 shrink-0">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2 select-none shrink-0">
             <Checkbox
               id="scatter-backup-nvram"
               checked={backupProtected}
@@ -248,20 +248,20 @@ export const ScatterPanel = memo(function ScatterPanel({
               htmlFor="scatter-backup-nvram"
               className="flex items-center gap-1.5 cursor-pointer text-xs font-medium select-none"
             >
-              <ShieldCheck className="h-3.5 w-3.5 text-signal-green" />
-              Backup NVRAM & Calibration
+              <ShieldCheck className="h-3.5 w-3.5 text-signal-green shrink-0" />
+              <span>Backup NVRAM & Calibration</span>
             </Label>
           </div>
 
           {plan?.chipset && (
-            <div className="flex items-center gap-3 text-xs text-muted-foreground border-l border-border/60 pl-3">
+            <div className="flex items-center gap-2 sm:gap-3 text-xs text-muted-foreground border-l border-border/60 pl-2.5 sm:pl-3 shrink-0">
               <span>Platform: <strong className="text-foreground font-mono">{plan.chipset}</strong></span>
               {plan.project && <span>Project: <strong className="text-foreground font-mono">{plan.project}</strong></span>}
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 w-full sm:w-auto">
           <span className="text-xs text-muted-foreground">
             Selected: <strong className="text-foreground">{selectedFlashCount}</strong> / {rows.length}
           </span>
@@ -269,7 +269,7 @@ export const ScatterPanel = memo(function ScatterPanel({
             size="sm"
             disabled={disabled || flashing || selectedFlashCount === 0 || !daInstalled}
             onClick={() => void handleStartFlash()}
-            className="gap-2 bg-trace-copper text-zinc-950 font-semibold hover:bg-trace-gold"
+            className="gap-2 bg-trace-copper text-zinc-950 font-semibold hover:bg-trace-gold shrink-0 h-8"
           >
             <Zap className="h-4 w-4" />
             {flashing ? "Flashing..." : "Flash Firmware"}
