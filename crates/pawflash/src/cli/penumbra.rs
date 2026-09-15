@@ -630,6 +630,8 @@ fn run_da_download(
             chipset: "custom".into(),
             path: path.display().to_string(),
             sha256: String::new(),
+            auth_path: None,
+            is_custom: true,
         };
         save_selection(&sel).into_diagnostic()?;
         output::status::ok("DA selected", path.display().to_string());
@@ -658,6 +660,8 @@ fn run_da_download(
         chipset: entry.chipset.clone(),
         path: path.display().to_string(),
         sha256: entry.sha256.clone(),
+        auth_path: None,
+        is_custom: false,
     };
     save_selection(&sel).into_diagnostic()?;
     output::status::ok("DA installed", format!("{} ({})", entry.brand, entry.chipset));

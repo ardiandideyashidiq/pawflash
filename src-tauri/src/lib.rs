@@ -13,7 +13,7 @@ use pawflash_core::flash::progress::{FlashRunOptions, FlashTransferEvent};
 use pawflash_core::flash::FlashExecutor;
 use pawflash_core::scatter_parser as sp;
 use pawflash_core::flash::simulate::simulated_vars;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sim::AnyExecutor;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -538,10 +538,53 @@ async fn cancel_force_fastboot(cancel: State<'_, CancelState>) -> Result<(), App
 #[tracing::instrument(skip_all, fields(target, simulate))]
 #[tauri::command]
 async fn reboot_device(target: String, simulate: bool) -> Result<(), AppError> {
+  if target == "shutdown" {
+    return shutdown_device(simulate).await;
+  }
   let _lock = DEVICE_CHECK_LOCK.lock().await;
   let t0 = std::time::Instant::now();
+
+  if target.starts_with("mtk:") {
+    let mode_str = target.trim_start_matches("mtk:");
+    let boot = match mode_str {
+      "normal" | "system" => pawflash_core::penumbra::PenumbraBootMode::Normal,
+      "homescreen" => pawflash_core::penumbra::PenumbraBootMode::HomeScreen,
+      "fastboot" | "bootloader" => pawflash_core::penumbra::PenumbraBootMode::Fastboot,
+      "meta" => pawflash_core::penumbra::PenumbraBootMode::Meta,
+      "test" => pawflash_core::penumbra::PenumbraBootMode::Test,
+      other => return Err(AppError::Other { message: format!("invalid MTK boot mode '{other}'") }),
+    };
+    let da = gui_da_bytes(simulate)?;
+    info!(?boot, %simulate, "rebooting via penumbra");
+    return tokio::task::spawn_blocking(move || {
+      pawflash_core::penumbra::reboot(&da, boot, simulate, &mut |_| {})
+    })
+    .await
+    .map_err(|e| AppError::Other { message: e.to_string() })?
+    .map_err(|e| AppError::Other { message: penumbra_err_string(&e) });
+  }
+
   let boot_target: BootTarget = target.parse().map_err(|e: String| e)?;
-  let mut executor = AnyExecutor::connect(simulate, None).await?;
+  let mut executor = match AnyExecutor::connect(simulate, None).await {
+    Ok(exec) => exec,
+    Err(e) => {
+      if let Some(port_mode) = pawflash_core::penumbra::detect_mtk_port() {
+        info!(?port_mode, "fastboot not found, routing reboot through detected MTK port");
+        let da = gui_da_bytes(simulate)?;
+        let boot = match boot_target {
+          BootTarget::Bootloader | BootTarget::Fastboot => pawflash_core::penumbra::PenumbraBootMode::Fastboot,
+          BootTarget::Recovery | BootTarget::System => pawflash_core::penumbra::PenumbraBootMode::Normal,
+        };
+        return tokio::task::spawn_blocking(move || {
+          pawflash_core::penumbra::reboot(&da, boot, simulate, &mut |_| {})
+        })
+        .await
+        .map_err(|err| AppError::Other { message: err.to_string() })?
+        .map_err(|err| AppError::Other { message: penumbra_err_string(&err) });
+      }
+      return Err(AppError::from(e));
+    }
+  };
   let connect_duration = t0.elapsed();
   info!(?boot_target, %simulate, ?connect_duration, "rebooting");
   let t_reboot = std::time::Instant::now();
@@ -554,6 +597,23 @@ async fn reboot_device(target: String, simulate: bool) -> Result<(), AppError> {
   let total = t0.elapsed();
   info!(?boot_target, ?connect_duration, ?reboot_duration, ?total, "reboot command succeeded");
   Ok(())
+}
+
+#[tracing::instrument(skip_all, fields(simulate))]
+#[tauri::command]
+async fn shutdown_device(simulate: bool) -> Result<(), AppError> {
+  let _lock = DEVICE_CHECK_LOCK.lock().await;
+  let da = gui_da_bytes(simulate)?;
+  if simulate {
+    info!("simulated shutdown succeeded");
+    return Ok(());
+  }
+  tokio::task::spawn_blocking(move || {
+    pawflash_core::penumbra::shutdown(&da, false, &mut |_| {})
+  })
+  .await
+  .map_err(|e| AppError::Other { message: e.to_string() })?
+  .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })
 }
 
 #[tracing::instrument(skip_all, fields(simulate))]
@@ -954,6 +1014,8 @@ pub struct PenumbraStatusPayload {
   pub da_installed: bool,
   pub device_visible: bool,
   pub platform: String,
+  pub auth_path: Option<String>,
+  pub is_custom: bool,
 }
 
 /// Map a core `PenumbraError` to a GUI-friendly string.
@@ -986,6 +1048,22 @@ fn gui_da_bytes(simulate: bool) -> Result<Vec<u8>, AppError> {
   std::fs::read(&sel.path).map_err(|e| AppError::Other { message: e.to_string() })
 }
 
+/// Resolve optional auth bytes for a GUI op.
+fn gui_auth_bytes(simulate: bool) -> Result<Option<Vec<u8>>, AppError> {
+  if simulate {
+    return Ok(None);
+  }
+  if let Some(sel) = pawflash_core::penumbra::load_selection()
+    && let Some(auth_path) = sel.auth_path
+    && !auth_path.trim().is_empty()
+    && Path::new(&auth_path).is_file()
+  {
+    let bytes = std::fs::read(&auth_path).map_err(|e| AppError::Other { message: e.to_string() })?;
+    return Ok(Some(bytes));
+  }
+  Ok(None)
+}
+
 #[tracing::instrument(skip_all)]
 #[tauri::command]
 async fn penumbra_status(simulate: bool) -> Result<PenumbraStatusPayload, AppError> {
@@ -998,15 +1076,20 @@ async fn penumbra_status(simulate: bool) -> Result<PenumbraStatusPayload, AppErr
   } else {
     pawflash_core::udev::device_visible().await
   };
-  let da_version = if simulate { None } else { pawflash_core::penumbra::load_selection().map(|s| format!("{} ({})", s.brand, s.chipset)) };
+  let selection = if simulate { None } else { pawflash_core::penumbra::load_selection() };
+  let da_version = selection.as_ref().map(|s| format!("{} ({})", s.brand, s.chipset));
   let da_installed = da_version.is_some();
-  let da_path = pawflash_core::penumbra::load_selection().map(|s| s.path);
+  let da_path = selection.as_ref().map(|s| s.path.clone());
+  let auth_path = selection.as_ref().and_then(|s| s.auth_path.clone());
+  let is_custom = selection.as_ref().is_some_and(|s| s.is_custom);
   Ok(PenumbraStatusPayload {
     da_version,
     da_path,
     da_installed,
     device_visible,
     platform,
+    auth_path,
+    is_custom,
   })
 }
 
@@ -1034,11 +1117,14 @@ async fn penumbra_da_download(
   };
   send_progress(&on_event, ProgressEvent::PenumbraPhase { phase: "download".into(), message: format!("Downloading {} ({})...", entry.brand, entry.chipset) });
 
+  let existing_auth = pawflash_core::penumbra::load_selection().and_then(|s| s.auth_path);
   let selection = pawflash_core::penumbra::DaSelection {
     brand: entry.brand.clone(),
     chipset: entry.chipset.clone(),
     path: String::new(),
     sha256: entry.sha256.clone(),
+    auth_path: existing_auth,
+    is_custom: false,
   };
   let channel = on_event.clone();
   let path = tokio::task::spawn_blocking(move || {
@@ -1060,6 +1146,8 @@ async fn penumbra_da_download(
     chipset: selection.chipset,
     path: path.display().to_string(),
     sha256: selection.sha256,
+    auth_path: selection.auth_path,
+    is_custom: false,
   };
   pawflash_core::penumbra::save_selection(&sel)
     .map_err(|e| AppError::Other { message: penumbra_err_string(&e) })?;
@@ -1206,20 +1294,217 @@ async fn penumbra_seccfg(
   .await
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PenumbraPartitionInfo {
+  pub name: String,
+  pub address: u64,
+  pub size: u64,
+  pub size_formatted: String,
+  pub section: String,
+}
+
+#[tracing::instrument(skip_all, fields(partition, simulate))]
+#[tauri::command]
+async fn penumbra_format(
+  partition: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<(), AppError> {
+  let da = gui_da_bytes(simulate)?;
+  send_progress(
+    &on_event,
+    ProgressEvent::PenumbraPhase {
+      phase: "format".into(),
+      message: format!("Formatting partition {partition}"),
+    },
+  );
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::format(&da, &partition, simulate, emit)
+  })
+  .await
+}
+
 #[tracing::instrument(skip_all)]
 #[tauri::command]
-async fn penumbra_pgpt(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<Vec<String>, AppError> {
+async fn penumbra_pgpt(
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<Vec<PenumbraPartitionInfo>, AppError> {
   let da = gui_da_bytes(simulate)?;
   if simulate {
     send_progress(&on_event, ProgressEvent::PenumbraDone { ok: true, detail: "pgpt (simulated)".into() });
-    return Ok(vec!["boot".to_string(), "userdata".to_string()]);
+    return Ok(vec![
+      PenumbraPartitionInfo {
+        name: "boot".into(),
+        address: 0x1000,
+        size: 64 * 1024 * 1024,
+        size_formatted: "64.0 MiB".into(),
+        section: "USER".into(),
+      },
+      PenumbraPartitionInfo {
+        name: "recovery".into(),
+        address: 0x5000,
+        size: 64 * 1024 * 1024,
+        size_formatted: "64.0 MiB".into(),
+        section: "USER".into(),
+      },
+      PenumbraPartitionInfo {
+        name: "nvram".into(),
+        address: 0x9000,
+        size: 5 * 1024 * 1024,
+        size_formatted: "5.0 MiB".into(),
+        section: "USER".into(),
+      },
+      PenumbraPartitionInfo {
+        name: "userdata".into(),
+        address: 0x10000,
+        size: 32 * 1024 * 1024 * 1024,
+        size_formatted: "32.0 GiB".into(),
+        section: "USER".into(),
+      },
+    ]);
   }
   run_penumbra_op(&on_event, move |emit| {
     pawflash_core::penumbra::pgpt(&da, false, emit).map(|entries| {
-      entries.iter().map(|p| format!("{} 0x{:016X} 0x{:016X} {}", p.name, p.address, p.size, p.section)).collect()
+      entries
+        .into_iter()
+        .map(|p| PenumbraPartitionInfo {
+          size_formatted: pawflash_core::scatter_parser::human_size(p.size as i64),
+          name: p.name,
+          address: p.address,
+          size: p.size,
+          section: p.section,
+        })
+        .collect()
     })
   })
   .await
+}
+
+#[tracing::instrument(skip_all, fields(scatter_path, backup_protected, simulate))]
+#[tauri::command]
+async fn penumbra_flash_scatter(
+  scatter_path: String,
+  partitions: Option<Vec<String>>,
+  backup_protected: bool,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<(), AppError> {
+  let da = gui_da_bytes(simulate)?;
+  let auth = gui_auth_bytes(simulate)?;
+  send_progress(
+    &on_event,
+    ProgressEvent::PenumbraPhase {
+      phase: "scatter-flash".into(),
+      message: format!("Flashing scatter: {scatter_path}"),
+    },
+  );
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::flash_scatter(
+      &da,
+      auth.as_deref(),
+      Path::new(&scatter_path),
+      partitions.as_deref(),
+      backup_protected,
+      simulate,
+      emit,
+    )
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(dir, simulate))]
+#[tauri::command]
+async fn penumbra_backup_calibration(
+  dir: String,
+  on_event: Channel<ProgressEvent>,
+  simulate: bool,
+) -> Result<Vec<String>, AppError> {
+  let da = gui_da_bytes(simulate)?;
+  let auth = gui_auth_bytes(simulate)?;
+  send_progress(
+    &on_event,
+    ProgressEvent::PenumbraPhase {
+      phase: "backup-calibration".into(),
+      message: format!("Backing up NVRAM & calibration to {dir}"),
+    },
+  );
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::backup_calibration(
+      &da,
+      auth.as_deref(),
+      Path::new(&dir),
+      simulate,
+      emit,
+    )
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(simulate))]
+#[tauri::command]
+async fn penumbra_crash(on_event: Channel<ProgressEvent>, simulate: bool) -> Result<(), AppError> {
+  let da = gui_da_bytes(simulate)?;
+  send_progress(
+    &on_event,
+    ProgressEvent::PenumbraPhase {
+      phase: "crash".into(),
+      message: "Crashing device to bootrom...".into(),
+    },
+  );
+  run_penumbra_op(&on_event, move |emit| {
+    pawflash_core::penumbra::crash(&da, simulate, emit)
+  })
+  .await
+}
+
+#[tracing::instrument(skip_all, fields(path))]
+#[tauri::command]
+async fn penumbra_set_custom_da(path: String, auth_path: Option<String>) -> Result<(), AppError> {
+  let p = Path::new(&path);
+  if !p.is_file() {
+    return Err(AppError::Other {
+      message: format!("custom DA file not found: {path}"),
+    });
+  }
+  let sel = pawflash_core::penumbra::DaSelection {
+    brand: "custom".into(),
+    chipset: "custom".into(),
+    path,
+    sha256: String::new(),
+    auth_path,
+    is_custom: true,
+  };
+  pawflash_core::penumbra::save_selection(&sel)
+    .map_err(|e| AppError::Other { message: e.to_string() })
+}
+
+#[tracing::instrument(skip_all, fields(auth_path))]
+#[tauri::command]
+async fn penumbra_set_auth(auth_path: Option<String>) -> Result<(), AppError> {
+  if let Some(mut sel) = pawflash_core::penumbra::load_selection() {
+    sel.auth_path = auth_path;
+    pawflash_core::penumbra::save_selection(&sel)
+      .map_err(|e| AppError::Other { message: e.to_string() })?;
+  }
+  Ok(())
+}
+
+#[tracing::instrument(skip_all, fields(simulate))]
+#[tauri::command]
+async fn detect_device_mode(simulate: bool) -> Result<String, AppError> {
+  if simulate {
+    return Ok("fastboot".into());
+  }
+  if let Ok(executor) = FlashExecutor::connect().await {
+    let _ = executor;
+    return Ok("fastboot".into());
+  }
+  if let Some(mode) = pawflash_core::penumbra::detect_mtk_port() {
+    return Ok(mode);
+  }
+  Ok("none".into())
 }
 
 #[tracing::instrument(skip_all, fields(mode, simulate))]
@@ -1725,10 +2010,18 @@ pub fn run() {
       penumbra_read,
       penumbra_write,
       penumbra_erase,
+      penumbra_format,
       penumbra_seccfg,
       penumbra_pgpt,
+      penumbra_flash_scatter,
+      penumbra_backup_calibration,
+      penumbra_crash,
+      penumbra_set_custom_da,
+      penumbra_set_auth,
+      detect_device_mode,
       penumbra_reboot,
       penumbra_shutdown,
+      shutdown_device,
       open_url,
     ])
     .run(tauri::generate_context!())

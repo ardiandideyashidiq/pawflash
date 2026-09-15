@@ -98,6 +98,18 @@ pub(crate) fn wait_for_port(wait: Duration, tick: Duration) -> Result<Box<dyn pe
     }
 }
 
+/// Detect any connected MTK device mode without building a full DA device.
+#[must_use]
+pub fn detect_mtk_port() -> Option<String> {
+    find_mtk_port().map(|port| {
+        match port.get_connection_type() {
+            penumbra::connection::port::ConnectionType::Brom => "brom".to_string(),
+            penumbra::connection::port::ConnectionType::Da => "da".to_string(),
+            penumbra::connection::port::ConnectionType::Preloader => "preloader".to_string(),
+        }
+    })
+}
+
 /// Try to parse the DA bytes to extract an `hw_code` for the error hint.
 fn da_bytes_parse_hint(da_bytes: &[u8]) -> Option<u16> {
     DAFile::parse_da(da_bytes)
