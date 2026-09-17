@@ -327,6 +327,14 @@ async fn get_device_info(
               vars: HashMap::new(),
               hint: Some("Fastboot interface busy".into()),
             })
+          } else if msg.contains("incompatible driver") || msg.contains("Failed to claim interface") {
+            warn!(?elapsed, error = %other, "get_device_info: incompatible driver");
+            Ok(DeviceInfo {
+              connected: false,
+              serial: None,
+              vars: HashMap::new(),
+              hint: Some("Fastboot device driver incompatible; verify WinUSB or Android Bootloader Interface driver is installed".into()),
+            })
           } else {
             // Permissions, open failures, protocol errors — report them so the GUI
             // does not silently present "not connected".

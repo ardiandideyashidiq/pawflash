@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use fastboot_protocol::nusb::{InterfaceKind, NusbFastBoot};
+use fastboot_protocol::nusb::{InterfaceKind, NusbFastBoot, NusbFastBootOpenError};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
@@ -142,7 +142,13 @@ impl FlashExecutor<NusbFastBoot> {
         let mut fb = match NusbFastBoot::from_info(&info).await {
             Ok(fb) => fb,
             Err(e) => {
-                if !platform::CURRENT.fastboot_interface_openable(&info) {
+                let is_incompatible = match &e {
+                    NusbFastBootOpenError::Interface(err) | NusbFastBootOpenError::Device(err) => {
+                        err.to_string().contains("incompatible driver")
+                    }
+                    _ => false,
+                };
+                if is_incompatible || !platform::CURRENT.fastboot_interface_openable(&info) {
                     let vidpid = format!("{:04x}:{:04x}", info.vendor_id(), info.product_id());
                     let serial = info.serial_number().map(str::to_owned);
                     let driver = platform::CURRENT.fastboot_driver_name(&info);
@@ -321,6 +327,17 @@ mod tests {
         let probes = vec![probe(0x046d, 0xc539, None, InterfaceKind::Other)];
         assert!(matches!(
             classify_no_device(&probes, None),
+            FlashError::NoDevice
+        ));
+    }
+
+    #[test]
+    fn unrelated_composite_peripheral_yields_no_device() {
+        let mut p = probe(0x046d, 0xc539, None, InterfaceKind::Other);
+        p.driver = Some("usbccgp".to_string());
+        p.product = Some("Logitech USB Receiver".to_string());
+        assert!(matches!(
+            classify_no_device(&[p], None),
             FlashError::NoDevice
         ));
     }

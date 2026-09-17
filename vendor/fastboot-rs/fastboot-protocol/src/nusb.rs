@@ -228,35 +228,43 @@ impl NusbFastBoot {
 
         #[cfg(target_os = "windows")]
         {
-            let driver = info.driver();
             let product = info.product_string();
-            let driver_matches = driver.is_some_and(|d| {
-                d.eq_ignore_ascii_case("winusb")
-                    || d.eq_ignore_ascii_case("androidwinusb")
-                    || d.eq_ignore_ascii_case("androidwinusb86")
-                    || d.eq_ignore_ascii_case("androidusb")
-                    || d.eq_ignore_ascii_case("usbccgp")
-            });
             let string_matches = product.is_some_and(|s| {
                 let lower = s.to_ascii_lowercase();
                 lower.contains("fastboot") || lower.contains("bootloader")
             });
 
+            let driver = info.driver();
+            let android_driver_matches = driver.is_some_and(|d| {
+                d.eq_ignore_ascii_case("androidwinusb")
+                    || d.eq_ignore_ascii_case("androidwinusb86")
+                    || d.eq_ignore_ascii_case("androidusb")
+            });
+
+            // Only fallback to interface 0 if:
+            // 1. The product string explicitly mentions fastboot/bootloader; OR
+            // 2. Interface enumeration was empty (descriptors unreadable) AND
+            //    the driver is a dedicated Android bootloader driver.
+            // Never match generic composite parent drivers (usbccgp) or generic winusb!
+            let fallback_matches = string_matches
+                || (android_driver_matches && info.interfaces().next().is_none());
+
             debug!(
                 vidpid = format_args!("{:04x}:{:04x}", info.vendor_id(), info.product_id()),
                 driver = driver.unwrap_or("<none>"),
                 product = product.unwrap_or("<none>"),
-                driver_matches,
                 string_matches,
+                android_driver_matches,
+                fallback_matches,
                 "evaluating Windows fastboot match"
             );
 
-            if driver_matches || string_matches {
+            if fallback_matches {
                 debug!(
                     vidpid = format_args!("{:04x}:{:04x}", info.vendor_id(), info.product_id()),
                     driver = driver.unwrap_or("<none>"),
                     product = product.unwrap_or("<none>"),
-                    "matched fastboot interface on Windows via driver/product match"
+                    "matched fastboot interface on Windows via fallback match"
                 );
                 return Some(0);
             }

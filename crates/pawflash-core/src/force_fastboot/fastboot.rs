@@ -120,7 +120,6 @@ pub async fn log_fastboot_diagnostics() {
                         || d.eq_ignore_ascii_case("androidwinusb")
                         || d.eq_ignore_ascii_case("androidwinusb86")
                         || d.eq_ignore_ascii_case("androidusb")
-                        || d.eq_ignore_ascii_case("usbccgp")
                 });
 
                 if is_openable {
