@@ -121,7 +121,7 @@ impl Platform for Impl {
     }
 
     fn post_handshake_hint(&self) -> &'static str {
-        "Device left preloader. If it does not appear in fastboot, verify Android Bootloader Interface or WinUSB driver is installed for the device."
+        "Device left preloader. If it does not appear in fastboot, verify Google USB Driver (android_winusb) or WinUSB driver is installed for the device."
     }
 
     fn fastboot_interface_openable(&self, info: &fastboot_protocol::nusb::DeviceInfo) -> bool {
@@ -130,6 +130,7 @@ impl Platform for Impl {
                 || d.eq_ignore_ascii_case("androidwinusb")
                 || d.eq_ignore_ascii_case("androidwinusb86")
                 || d.eq_ignore_ascii_case("androidusb")
+                || d.eq_ignore_ascii_case("wudfrd")
         })
     }
 

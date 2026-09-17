@@ -28,12 +28,22 @@ pub(crate) const fn is_candidate_mobile_device(vid: u16) -> bool {
         | 0x04e8 // Samsung
         | 0x12d1 // Huawei
         | 0x22d9 // OPPO / OnePlus / Realme
+        | 0x2a70 // OnePlus
         | 0x2d95 // Vivo
         | 0x22b8 // Motorola
         | 0x1004 // LG
         | 0x0b05 // Asus
         | 0x17ef // Lenovo
         | 0x1782 // Spreadtrum / Unisoc
+        | 0x0bb4 // HTC
+        | 0x19d2 // ZTE / Nubia / RedMagic
+        | 0x2970 // Nothing (Phone 1)
+        | 0x2b4c // Nothing (Phone 2)
+        | 0x0fce // Sony
+        | 0x054c // Sony
+        | 0x1bbb // TCL / Alcatel
+        | 0x2e04 // Fairphone
+        | 0x3312 // Meizu
     )
 }
 

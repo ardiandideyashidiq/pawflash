@@ -120,6 +120,7 @@ pub async fn log_fastboot_diagnostics() {
                         || d.eq_ignore_ascii_case("androidwinusb")
                         || d.eq_ignore_ascii_case("androidwinusb86")
                         || d.eq_ignore_ascii_case("androidusb")
+                        || d.eq_ignore_ascii_case("wudfrd")
                 });
 
                 if is_openable {
@@ -128,7 +129,7 @@ pub async fn log_fastboot_diagnostics() {
                         serial = p.serial.as_deref().unwrap_or("?"),
                         driver = drv,
                         product = prod,
-                        "USB candidate device has valid WinUSB driver but was not detected as fastboot",
+                        "USB candidate device has valid Google USB / WinUSB driver but was not detected as fastboot",
                     );
                 } else {
                     warn!(
@@ -136,7 +137,7 @@ pub async fn log_fastboot_diagnostics() {
                         serial = p.serial.as_deref().unwrap_or("?"),
                         driver = drv,
                         product = prod,
-                        "USB candidate device found but requires WinUSB or Android Bootloader Interface driver",
+                        "USB candidate device found but requires Google USB Driver or WinUSB driver",
                     );
                 }
             }

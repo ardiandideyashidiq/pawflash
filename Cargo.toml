@@ -34,3 +34,7 @@ missing_const_for_fn = "deny"
 needless_pass_by_value = "deny"
 redundant_clone = "deny"
 perf = "deny"
+
+[patch.crates-io]
+nusb = { path = "vendor/nusb" }
+

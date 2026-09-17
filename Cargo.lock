@@ -2597,8 +2597,6 @@ checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
 [[package]]
 name = "nusb"
 version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baf1553b6f47685e4c658b2100a6d7262abdc73cb97f423453546ca020155ae9"
 dependencies = [
  "core-foundation",
  "core-foundation-sys",
@@ -2610,7 +2608,7 @@ dependencies = [
  "rustix",
  "slab",
  "tokio",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

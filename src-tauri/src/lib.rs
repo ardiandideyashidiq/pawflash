@@ -333,7 +333,7 @@ async fn get_device_info(
               connected: false,
               serial: None,
               vars: HashMap::new(),
-              hint: Some("Fastboot device driver incompatible; verify WinUSB or Android Bootloader Interface driver is installed".into()),
+              hint: Some("Fastboot device driver incompatible; verify Google USB Driver (android_winusb) or WinUSB driver is installed".into()),
             })
           } else {
             // Permissions, open failures, protocol errors — report them so the GUI

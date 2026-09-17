@@ -17,7 +17,7 @@ pub enum FlashError {
     NoUsbInterface { vids: Vec<String> },
 
     #[error("fastboot device detected (VID:PID {vidpid}) but its USB driver is not supported: {}", .driver.as_deref().unwrap_or("unknown"))]
-    #[diagnostic(help("install the correct USB driver for the device (Zadig/WinUSB on Linux, WinUSB on Windows)"))]
+    #[diagnostic(help("install the correct USB driver for the device (Google USB Driver or WinUSB on Windows, udev rules on Linux)"))]
     UnsupportedDriver {
         vidpid: String,
         driver: Option<String>,
